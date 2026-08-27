@@ -1,0 +1,2322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bullhorn AEO Dashboard — Mockup</title>
+<style>
+:root{
+  --bg:#F3F5F7; --card:#FFFFFF; --border:#DFE4EA;
+  --ink:#1B2430; --ink-soft:#5B6472; --ink-faint:#8B93A1;
+  --brand:#1F6F6B; --brand-soft:#E4F0EF;
+  --dem:#2E5EAA; --dem-soft:#E7EEFA;
+  --rep:#B23B3B; --rep-soft:#FAEBEB;
+  --good:#3C8A5B; --warn:#C98A2E; --bad:#B23B3B;
+  --shadow:0 1px 2px rgba(20,30,40,.04), 0 1px 8px rgba(20,30,40,.04);
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+.app{display:flex;min-height:100vh;}
+.sidebar{width:220px;flex:0 0 220px;background:#161D26;color:#C9D1DA;padding:20px 0;position:sticky;top:0;height:100vh;overflow-y:auto;}
+.brand{display:flex;align-items:center;gap:9px;padding:0 20px 18px;border-bottom:1px solid #2A333F;margin-bottom:10px;}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px;flex:none;}
+.brand-name{font-size:14px;font-weight:600;color:#fff;line-height:1.2;}
+.brand-sub{font-size:10.5px;color:#7C8797;letter-spacing:.03em;}
+.nav-group-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#5C6675;padding:14px 20px 6px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;font-size:13.5px;border-left:3px solid transparent;color:#B7C0CC;}
+.nav-item:hover{background:#1D2632;color:#fff;}
+.nav-item.active{background:#1D2632;border-left-color:var(--brand);color:#fff;font-weight:600;}
+.nav-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+.mock-banner{margin:16px 16px 0;padding:9px 11px;background:#2A2116;border:1px solid #4A3A22;border-radius:8px;font-size:11px;color:#E0B876;line-height:1.4;}
+.main{flex:1;min-width:0;padding:26px 32px 60px;max-width:1560px;position:relative;}
+.page{display:none;} .page.active{display:block;}
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.page-title{font-size:22px;font-weight:700;letter-spacing:-.01em;}
+.page-desc{font-size:13px;color:var(--ink-soft);margin-top:3px;max-width:680px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:16px 18px;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
+.kpi.hi{border-color:var(--brand);background:var(--brand-soft);}
+.kpi-label{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
+.kpi-value{font-size:23px;font-weight:700;margin-top:4px;}
+.kpi-sub{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+.row2{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;align-items:start;}
+.row-eq{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media (max-width:1150px){.row2,.row-eq{grid-template-columns:1fr;}}
+.card-title{font-size:13.5px;font-weight:700;margin:0 0 2px;}
+.card-caption{font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;}
+.section-gap{margin-top:16px;}
+.filterbar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:14px;box-shadow:var(--shadow);}
+.filterbar label{font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;font-weight:600;display:block;margin-bottom:2px;}
+.fitem{display:flex;flex-direction:column;}
+select, input[type=date]{font-family:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:#fbfcfd;color:var(--ink);min-width:104px;}
+select[multiple]{min-height:64px;min-width:130px;}
+.filterbar .spacer{flex:1;}
+.btn{background:var(--brand);color:#fff;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand);}
+.btn.sm{padding:4px 9px;font-size:11px;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);border-bottom:1px solid var(--border);padding:6px 8px;cursor:pointer;white-space:nowrap;}
+th:hover{color:var(--ink);}
+th.sorted{color:var(--brand);}
+td{padding:7px 8px;border-bottom:1px solid #EEF1F4;white-space:nowrap;}
+tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10.5px;font-weight:700;}
+.badge.dem{background:var(--dem-soft);color:var(--dem);}
+.badge.rep{background:var(--rep-soft);color:var(--rep);}
+.badge.np{background:#EEF0F3;color:var(--ink-soft);}
+.heat{border-radius:5px;padding:2px 7px;font-weight:700;display:inline-block;min-width:34px;text-align:center;}
+.namecell{font-weight:600;cursor:pointer;color:var(--ink);}
+.namecell:hover{color:var(--brand);text-decoration:underline;}
+.gap-pos{color:var(--bad);font-weight:700;} .gap-neg{color:var(--good);font-weight:700;}
+.scroll-table{max-height:460px;overflow:auto;border:1px solid var(--border);border-radius:10px;}
+.scroll-table table{font-size:12px;}
+.scroll-table th{position:sticky;top:0;background:#fff;z-index:1;}
+.legend-row{display:flex;gap:14px;font-size:11.5px;color:var(--ink-soft);margin-top:8px;flex-wrap:wrap;}
+.legend-row span{display:inline-flex;align-items:center;gap:5px;}
+.legend-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+.callout{border-left:3px solid var(--brand);background:var(--brand-soft);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.5;color:#134441;}
+.callout.insight{padding:12px 14px;}
+.insight-head{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;display:flex;align-items:center;gap:6px;color:#134441;}
+.insight-spark{font-size:13px;}
+.insight-list{margin:0;padding-left:18px;}
+.insight-list li{margin-bottom:5px;line-height:1.5;font-size:12.5px;}
+.insight-list li:last-child{margin-bottom:0;}
+.cb-crumb-link{cursor:pointer;color:var(--brand);}
+.cb-crumb-link:hover{text-decoration:underline;}
+.drill-detail{border-top:1px solid var(--border);padding-top:10px;margin-top:10px;}
+.tag{font-size:10px;padding:1px 6px;border-radius:5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+.tag.recur{background:#FBEAEA;color:var(--bad);}
+.small-muted{font-size:11px;color:var(--ink-faint);}
+.expand-sub{background:#FAFBFC;}
+.expand-sub td{border-bottom:1px solid #EEF1F4;}
+.err-banner{background:#FBEAEA;border:1px solid #E9C0C0;color:#8A2E2E;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;}
+.fanout-wrap{margin-top:8px;padding:10px 12px;background:#FAFBFC;border:1px solid var(--border);border-radius:10px;}
+.fanout-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--ink-soft);}
+.topic-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;}
+.topic-name{width:140px;flex:none;}
+.topic-track{flex:1;height:10px;background:#EEF1F4;border-radius:5px;overflow:hidden;}
+.topic-fill{height:100%;border-radius:5px;}
+.topic-fill.core{background:var(--dem);}
+.topic-fill.emergent{background:#C7B98A;}
+.topic-pct{width:32px;text-align:right;font-weight:700;flex:none;font-size:11.5px;}
+.stack-track{flex:1;height:12px;background:#EEF1F4;border-radius:6px;overflow:hidden;display:flex;}
+.stack-seg{height:100%;}
+.drill-hint{display:flex;align-items:center;gap:4px;flex:none;color:var(--ink-faint);font-size:10.5px;}
+.drill-chevron{width:6px;height:6px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);}
+.drillable-row{cursor:pointer;transition:background .1s;border-radius:6px;padding:4px 6px;margin:0 -6px 6px;}
+.drillable-row:hover{background:#F3F6F8;}
+.drillable-row:hover .drill-hint{color:var(--brand);}
+.two-col-panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media (max-width:900px){.two-col-panels{grid-template-columns:1fr;}}
+/* Side panel (Prompt Fanout drill-in) */
+.overlay{position:fixed;inset:0;background:rgba(20,30,40,.35);display:none;z-index:50;}
+.overlay.open{display:block;}
+.sidepanel{position:fixed;top:0;right:0;width:460px;max-width:92vw;height:100vh;background:#fff;box-shadow:-8px 0 24px rgba(0,0,0,.15);z-index:51;transform:translateX(100%);transition:transform .18s ease;overflow-y:auto;padding:20px;}
+.sidepanel.open{transform:translateX(0);}
+.sidepanel-close{position:absolute;top:14px;right:16px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--ink-soft);}
+.hist-item{border:1px solid var(--border);border-radius:9px;padding:9px 10px;margin-bottom:8px;cursor:pointer;font-size:12px;}
+.hist-item:hover{border-color:var(--brand);}
+.run-detail{border:1px solid var(--border);border-radius:9px;padding:12px;background:#FAFBFC;font-size:12.5px;line-height:1.55;}
+.dimscore-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font-size:12px;}
+.dimscore-grid div{display:flex;justify-content:space-between;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px 8px;}
+
+/* ============================================================================
+   CUSTOM DROPDOWN COMPONENT (visually replaces native <select> elements;
+   the native <select> stays in the DOM, hidden, as the real source of truth —
+   every existing filter/change-handler keeps working unmodified)
+   ============================================================================ */
+.xsel-native{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.xsel{position:relative;display:inline-flex;flex-direction:column;min-width:150px;}
+.xsel-trigger{display:flex;align-items:center;gap:6px;font-family:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;min-height:30px;transition:border-color .12s,box-shadow .12s;}
+.xsel-trigger:hover{border-color:#C3CCD6;}
+.xsel.open .xsel-trigger{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);}
+.xsel-trigger-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);}
+.xsel-trigger-label.placeholder{color:var(--ink-faint);}
+.xsel-chevron{flex:none;width:9px;height:9px;border-right:1.6px solid var(--ink-faint);border-bottom:1.6px solid var(--ink-faint);transform:rotate(45deg);margin-top:-3px;transition:transform .12s;}
+.xsel.open .xsel-chevron{transform:rotate(-135deg);margin-top:2px;}
+.xsel-badge{flex:none;background:var(--brand);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;line-height:1.4;}
+.xsel-panel{position:absolute;top:calc(100% + 5px);left:0;min-width:100%;width:max-content;max-width:290px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 20px rgba(20,30,40,.13);z-index:40;display:none;overflow:hidden;}
+.xsel.open .xsel-panel{display:block;}
+.xsel.panel-right .xsel-panel{left:auto;right:0;}
+.xsel-search{padding:7px;border-bottom:1px solid var(--border);}
+.xsel-search input{width:100%;font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:#fbfcfd;}
+.xsel-search input:focus{outline:none;border-color:var(--brand);}
+.xsel-actions{display:flex;gap:0;border-bottom:1px solid var(--border);}
+.xsel-actions button{flex:1;background:none;border:none;font-family:inherit;font-size:11px;font-weight:600;color:var(--brand);padding:6px 4px;cursor:pointer;}
+.xsel-actions button:hover{background:var(--brand-soft);}
+.xsel-actions button+button{border-left:1px solid var(--border);}
+.xsel-list{max-height:230px;overflow-y:auto;padding:4px;}
+.xsel-opt{display:flex;align-items:center;gap:7px;font-size:12.5px;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--ink);}
+.xsel-opt:hover{background:var(--bg);}
+.xsel-opt.selected{background:var(--brand-soft);color:#134441;font-weight:600;}
+.xsel-opt.focused{outline:1.5px solid var(--brand);outline-offset:-1.5px;}
+.xsel-check{flex:none;width:14px;height:14px;border:1.6px solid #C3CCD6;border-radius:4px;display:flex;align-items:center;justify-content:center;background:#fff;}
+.xsel-opt.selected .xsel-check{background:var(--brand);border-color:var(--brand);}
+.xsel-check svg{display:none;width:9px;height:9px;}
+.xsel-opt.selected .xsel-check svg{display:block;}
+.xsel-opt-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.xsel-empty{padding:14px 10px;text-align:center;color:var(--ink-faint);font-size:12px;}
+.xsel-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
+.xsel-chip{display:inline-flex;align-items:center;gap:4px;background:var(--brand-soft);color:#134441;font-size:10.5px;font-weight:600;border-radius:5px;padding:2px 5px 2px 7px;max-width:120px;}
+.xsel-chip-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.xsel-chip-x{flex:none;cursor:pointer;font-size:12px;line-height:1;color:#4A7D79;padding:0 1px;}
+.xsel-chip-x:hover{color:#0F2E2C;}
+.xsel-chip-more{display:inline-flex;align-items:center;background:#EEF1F4;color:var(--ink-soft);font-size:10.5px;font-weight:600;border-radius:5px;padding:2px 6px;}
+
+/* ============================================================================
+   COLLAPSED FILTER BAR — replaces a long row of visible dropdowns with a
+   single "Filters" trigger + active-filter chips + a grouped popover panel.
+   ============================================================================ */
+.filterbar.fbar{display:block;padding:9px 10px;position:relative;}
+.fbar-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.fbar-head>label{margin:0;align-self:center;}
+.fbar-trigger{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 11px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;}
+.fbar-trigger:hover{border-color:#C3CCD6;}
+.fbar.open .fbar-trigger{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);}
+.fbar-trigger svg{width:13px;height:13px;flex:none;color:var(--ink-soft);}
+.fbar-count{background:var(--brand);color:#fff;font-size:10px;font-weight:700;border-radius:9px;padding:1px 6px;min-width:16px;text-align:center;}
+.fbar-dates{display:flex;gap:8px;align-items:flex-end;}
+.fbar-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0;}
+.fbar-chip{display:inline-flex;align-items:center;gap:5px;background:var(--brand-soft);color:#134441;font-size:11.5px;border-radius:7px;padding:4px 6px 4px 9px;max-width:230px;}
+.fbar-chip b{font-weight:700;}
+.fbar-chip span.fbar-chip-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fbar-chip-x{cursor:pointer;font-size:12px;color:#4A7D79;padding:0 2px;flex:none;}
+.fbar-chip-x:hover{color:#0F2E2C;}
+.fbar-reset{background:none;border:none;font-family:inherit;font-size:11.5px;font-weight:600;color:var(--ink-faint);cursor:pointer;padding:4px 2px;text-decoration:underline;flex:none;}
+.fbar-reset:hover{color:var(--bad);}
+.fbar-panel{display:none;position:absolute;top:calc(100% + 6px);left:10px;right:10px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 28px rgba(20,30,40,.16);z-index:39;padding:14px 16px;}
+.fbar.open .fbar-panel{display:block;}
+.fbar-panel-grid{display:flex;flex-wrap:wrap;gap:12px 16px;}
+.fbar-panel .fitem{min-width:150px;}
+.fbar-panel-foot{display:flex;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);}
+@media (max-width:640px){.fbar-panel{left:0;right:0;}}
+</style>
+</head>
+<body>
+<div id="data-loading" style="position:fixed;inset:0;background:#fff;z-index:9999;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;color:#555;">Loading dashboard data…</div>
+<div class="app">
+  <div class="sidebar">
+    <div class="brand"><div class="brand-mark">B</div><div><div class="brand-name">Bullhorn AEO</div><div class="brand-sub">Scoring dashboard</div></div></div>
+    <div class="mock-banner">⚠ Interim data — Visibility/Favorability/Citations are real (CampSight-derived + real Evertune AZ-01 sample); Depth/Accuracy/Narrative/Consistency/Refusal-alignment are dummy pending the real scoring pipeline (no API credentials yet). See DASHBOARD_DATA_SOURCES.md.</div>
+    <div class="nav-group-label">Overview</div>
+    <div class="nav-item active" data-page="overview"><span class="nav-dot" style="background:var(--brand)"></span>Aggregate</div>
+    <div class="nav-item" data-page="fanout"><span class="nav-dot" style="background:var(--brand)"></span>Prompt Fanout</div>
+    <div class="nav-group-label">Dimensions</div>
+    <div class="nav-item" data-page="visibility"><span class="nav-dot" style="background:#6B8FC9"></span>Visibility</div>
+    <div class="nav-item" data-page="favorability"><span class="nav-dot" style="background:#7FA98F"></span>Favorability</div>
+    <div class="nav-item" data-page="depth"><span class="nav-dot" style="background:#B79A5C"></span>Depth</div>
+    <div class="nav-item" data-page="accuracy"><span class="nav-dot" style="background:var(--bad)"></span>Accuracy</div>
+    <div class="nav-item" data-page="consistency"><span class="nav-dot" style="background:#8B7FB0"></span>Consistency</div>
+    <div class="nav-item" data-page="narrative"><span class="nav-dot" style="background:#4F8B8B"></span>Narrative Alignment</div>
+    <div class="nav-group-label">Diagnostics</div>
+    <div class="nav-item" data-page="prompthealth"><span class="nav-dot" style="background:#C9915A"></span>Prompt Library Health</div>
+    <div class="nav-item" data-page="citations"><span class="nav-dot" style="background:#6B9BC9"></span>Citation Breakout</div>
+  </div>
+
+  <div class="main" id="main-root">
+    <div class="page active" id="page-overview"></div>
+    <div class="page" id="page-fanout"></div>
+    <div class="page" id="page-visibility"></div>
+    <div class="page" id="page-favorability"></div>
+    <div class="page" id="page-depth"></div>
+    <div class="page" id="page-accuracy"></div>
+    <div class="page" id="page-consistency"></div>
+    <div class="page" id="page-narrative"></div>
+    <div class="page" id="page-prompthealth"></div>
+    <div class="page" id="page-citations"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeSidePanel()"></div>
+<div class="sidepanel" id="sidepanel">
+  <button class="sidepanel-close" onclick="closeSidePanel()">✕</button>
+  <div id="sidepanel-content"></div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================================
+   0. SAFETY HARNESS — wrap every render call so one failure never cascades
+   ============================================================================ */
+function safe(label, fn){
+  try{ fn(); }
+  catch(err){
+    console.error('Render error in '+label+':', err);
+    const el = document.getElementById('page-'+label) || document.getElementById(label);
+    if(el) el.insertAdjacentHTML('afterbegin', `<div class="err-banner">⚠ Render error in "${label}": ${String(err.message||err)}. Other tabs are unaffected.</div>`);
+  }
+}
+
+/* ============================================================================
+   1. SEEDED RNG (deterministic — same inputs always produce same mock output)
+   ============================================================================ */
+function strHash(str){ let h=2166136261>>>0; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return((t^t>>>14)>>>0)/4294967296; }; }
+let RNG = mulberry32(42);
+function rnd(min,max){return min+RNG()*(max-min);}
+function rndInt(min,max){return Math.floor(rnd(min,max+1));}
+function pick(arr){return arr[Math.floor(RNG()*arr.length)];}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function seededRng(seedStr){ return mulberry32(strHash(seedStr)); }
+
+/* ============================================================================
+   2. LIGHTWEIGHT SVG CHART HELPERS (no external library / no CDN dependency)
+   ============================================================================ */
+function svgEl(tag,attrs){ let s='<'+tag; for(const k in attrs){ s+=` ${k}="${attrs[k]}"`; } return s+'/>'; }
+/* Measures a chart container's real rendered width so the SVG viewBox matches it (avoiding
+   letterboxed whitespace when the container is wider than a hardcoded default). Floors at 200px —
+   a transient layout pass (e.g. right as a page becomes visible) can report a small-but-nonzero
+   width that would otherwise squash the chart before the container settles to its real size. */
+function measuredChartWidth(containerId, fallback){
+  const el = document.getElementById(containerId);
+  const w = el && el.clientWidth;
+  return (w && w>=200) ? w : fallback;
+}
+function svgElOpen(tag,attrs){ let s='<'+tag; for(const k in attrs){ s+=` ${k}="${attrs[k]}"`; } return s+'>'; }
+
+function barChart(containerId, categories, series, opts){
+  opts = opts||{}; const W=measuredChartWidth(containerId, opts.width||520), H=opts.height||240;
+  const min = opts.min!==undefined?opts.min:0, max = opts.max!==undefined?opts.max:100;
+  const padL=38, padB=34, padT=10, padR=10;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  const groupW = plotW/categories.length;
+  const barGap=6, nBars=series.length;
+  const barW = Math.max(6,(groupW - barGap*(nBars+1))/nBars);
+  const yScale = v => padT + plotH - (clamp(v,min,max)-min)/(max-min)*plotH;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;font-family:inherit;">`;
+  // gridlines
+  [0,0.25,0.5,0.75,1].forEach(f=>{
+    const y = padT+plotH*(1-f); const val = Math.round(min+f*(max-min));
+    svg += svgEl('line',{x1:padL,y1:y,x2:W-padR,y2:y,stroke:'#EEF1F4','stroke-width':1});
+    svg += `<text x="${padL-6}" y="${y+3}" font-size="9.5" text-anchor="end" fill="#8B93A1">${val}</text>`;
+  });
+  categories.forEach((cat,ci)=>{
+    const gx = padL + ci*groupW;
+    series.forEach((s,si)=>{
+      const v = s.values[ci];
+      if(v===null||v===undefined) return;
+      const bx = gx + barGap + si*(barW+barGap);
+      const by = yScale(v); const bh = padT+plotH-by;
+      svg += svgEl('rect',{x:bx.toFixed(1),y:by.toFixed(1),width:barW.toFixed(1),height:bh.toFixed(1),rx:3,fill:s.color});
+      svg += `<text x="${(bx+barW/2).toFixed(1)}" y="${(by-4).toFixed(1)}" font-size="10" text-anchor="middle" fill="#5B6472" font-weight="700">${fmt1(v)}</text>`;
+    });
+    svg += `<text x="${(gx+groupW/2).toFixed(1)}" y="${H-10}" font-size="10.5" text-anchor="middle" fill="#5B6472">${escapeXml(cat)}</text>`;
+  });
+  svg += `</svg>`;
+  document.getElementById(containerId).innerHTML = svg;
+  renderLegend(containerId, series);
+}
+function renderLegend(containerId, series){
+  const el = document.getElementById(containerId);
+  const legendId = containerId+'-legend';
+  let legend = document.getElementById(legendId);
+  if(!legend){ legend = document.createElement('div'); legend.id = legendId; legend.className='legend-row'; el.parentNode.insertBefore(legend, el.nextSibling); }
+  legend.innerHTML = series.map(s=>`<span><span class="legend-dot" style="background:${s.color}"></span>${escapeXml(s.name)}</span>`).join('');
+}
+function lineChart(containerId, labels, series, opts){
+  opts=opts||{}; const W=measuredChartWidth(containerId, opts.width||520), H=opts.height||240;
+  const min = opts.min!==undefined?opts.min:0, max = opts.max!==undefined?opts.max:100;
+  const padL=38, padB=26, padT=10, padR=10;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const xScale = i => padL + (labels.length<=1?0:(i/(labels.length-1))*plotW);
+  const yScale = v => padT + plotH - (clamp(v,min,max)-min)/(max-min)*plotH;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;">`;
+  [0,0.25,0.5,0.75,1].forEach(f=>{
+    const y = padT+plotH*(1-f); const val = Math.round(min+f*(max-min));
+    svg += svgEl('line',{x1:padL,y1:y,x2:W-padR,y2:y,stroke:'#EEF1F4','stroke-width':1});
+    svg += `<text x="${padL-6}" y="${y+3}" font-size="9.5" text-anchor="end" fill="#8B93A1">${val}</text>`;
+  });
+  const tickEvery = Math.max(1, Math.floor(labels.length/6));
+  labels.forEach((l,i)=>{ if(i%tickEvery===0) svg += `<text x="${xScale(i).toFixed(1)}" y="${H-8}" font-size="9" text-anchor="middle" fill="#8B93A1">${l.slice(5)}</text>`; });
+  series.forEach(s=>{
+    const pts = s.values.map((v,i)=> v===null? null : `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).filter(Boolean).join(' ');
+    const attrs = {points:pts,fill:'none',stroke:s.color,'stroke-width':2,'stroke-linejoin':'round'};
+    if(s.dash) attrs['stroke-dasharray']=s.dash;
+    svg += svgEl('polyline',attrs);
+  });
+  svg += `</svg>`;
+  document.getElementById(containerId).innerHTML = svg;
+  renderLegend(containerId, series);
+}
+function escapeXml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmt1(v){ if(v===null||v===undefined) return '—'; return (Math.round(v*10)/10).toFixed(1); }
+function heatColor(v,min=0,max=100){ const pct=clamp((v-min)/(max-min),0,1); return `rgba(${Math.round(210-pct*150)},${Math.round(90+pct*110)},95,0.18)`; }
+function heatText(v,min=0,max=100){ const pct=clamp((v-min)/(max-min),0,1); return pct>0.6? '#2E6B44' : pct>0.35? '#8A6A1E':'#A03A3A'; }
+function sentColor(v){ const pct=clamp((v+100)/200,0,1); const r=Math.round(210-pct*160), g=Math.round(80+pct*130); return `rgb(${r},${g},95)`; }
+
+/* ============================================================================
+   2.5 CUSTOM DROPDOWN COMPONENT — visually replaces native <select> elements.
+   The native <select> stays in the DOM (visually hidden) as the real source of
+   truth: every existing piece of code that reads .value / .selectedOptions or
+   listens for 'change' keeps working completely unmodified. This function is
+   called once after all pages are built, and can be called again (harmlessly —
+   already-enhanced selects are skipped) if a page ever adds new filterbars.
+   ============================================================================ */
+function escXHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escXAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function enhanceSelects(root){
+  (root||document).querySelectorAll('.filterbar select').forEach(sel=>{
+    if(sel.dataset.xselDone) return;
+    sel.dataset.xselDone = '1';
+    buildXSel(sel);
+  });
+}
+function refreshXSel(sel){
+  const wrap = sel.closest('.xsel');
+  if(wrap && wrap._xsel) wrap._xsel.renderAll();
+}
+function buildXSel(sel){
+  const multiple = sel.multiple;
+  const wrap = document.createElement('div');
+  wrap.className = 'xsel';
+  sel.classList.add('xsel-native');
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(sel);
+  const trigger = document.createElement('div');
+  trigger.className = 'xsel-trigger'; trigger.tabIndex = 0;
+  trigger.innerHTML = `<span class="xsel-trigger-label"></span><span class="xsel-badge" style="display:none;"></span><span class="xsel-chevron"></span>`;
+  wrap.appendChild(trigger);
+  const panel = document.createElement('div');
+  panel.className = 'xsel-panel';
+  wrap.appendChild(panel);
+  let searchTerm = '';
+  const opts = () => Array.from(sel.options).map(o=>({value:o.value, label:o.textContent, selected:o.selected}));
+  const selectedOpts = () => opts().filter(o=>o.selected);
+  function labelFor(){
+    const so = selectedOpts();
+    if(multiple){
+      if(!so.length) return {text:'All', placeholder:true};
+      if(so.length===1) return {text:so[0].label, placeholder:false};
+      return {text:so.length+' selected', placeholder:false};
+    }
+    if(!so.length) return {text:'—', placeholder:true};
+    return {text:so[0].label, placeholder:false};
+  }
+  function renderTrigger(){
+    const {text,placeholder} = labelFor();
+    const lbl = trigger.querySelector('.xsel-trigger-label');
+    lbl.textContent = text; lbl.classList.toggle('placeholder', placeholder);
+    const badge = trigger.querySelector('.xsel-badge');
+    if(multiple && selectedOpts().length>1){ badge.style.display=''; badge.textContent = selectedOpts().length; }
+    else badge.style.display='none';
+  }
+  function renderChips(){
+    let chipsEl = wrap.querySelector('.xsel-chips');
+    if(!multiple){ if(chipsEl) chipsEl.remove(); return; }
+    const so = selectedOpts();
+    if(!chipsEl){ chipsEl = document.createElement('div'); chipsEl.className='xsel-chips'; wrap.appendChild(chipsEl); }
+    if(!so.length){ chipsEl.innerHTML=''; return; }
+    const shown = so.slice(0,3);
+    let html = shown.map(o=>`<span class="xsel-chip" data-val="${escXAttr(o.value)}"><span class="xsel-chip-label">${escXHtml(o.label)}</span><span class="xsel-chip-x">✕</span></span>`).join('');
+    if(so.length>shown.length) html += `<span class="xsel-chip-more">+${so.length-shown.length} more</span>`;
+    chipsEl.innerHTML = html;
+    chipsEl.querySelectorAll('.xsel-chip-x').forEach(x=>x.addEventListener('click', e=>{ e.stopPropagation(); toggleVal(x.closest('.xsel-chip').dataset.val, false); }));
+  }
+  function toggleVal(val, forceState){
+    const o = Array.from(sel.options).find(oo=>oo.value===val);
+    if(!o) return;
+    if(multiple){ o.selected = (forceState!==undefined) ? forceState : !o.selected; }
+    else { Array.from(sel.options).forEach(oo=>oo.selected=false); o.selected = true; }
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+    renderAll();
+    if(!multiple) close();
+  }
+  function renderPanel(){
+    const term = searchTerm.trim().toLowerCase();
+    const all = opts();
+    const filtered = term? all.filter(o=>o.label.toLowerCase().includes(term)) : all;
+    let inner = '';
+    if(all.length>7) inner += `<div class="xsel-search"><input type="text" placeholder="Search…" value="${escXAttr(searchTerm)}"></div>`;
+    if(multiple) inner += `<div class="xsel-actions"><button data-act="all">Select all</button><button data-act="clear">Clear</button></div>`;
+    if(!filtered.length) inner += `<div class="xsel-empty">No matches</div>`;
+    else inner += `<div class="xsel-list">` + filtered.map(o=>`
+        <div class="xsel-opt ${o.selected?'selected':''}" data-val="${escXAttr(o.value)}">
+          ${multiple? `<span class="xsel-check"><svg viewBox="0 0 10 10"><path d="M1 5l2.7 2.7L9 2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` : ''}
+          <span class="xsel-opt-label">${escXHtml(o.label)}</span>
+        </div>`).join('') + `</div>`;
+    panel.innerHTML = inner;
+    const inp = panel.querySelector('.xsel-search input');
+    if(inp){ inp.addEventListener('input', e=>{ searchTerm=e.target.value; renderPanel(); }); inp.addEventListener('click', e=>e.stopPropagation()); }
+    const allBtn = panel.querySelector('[data-act="all"]');
+    if(allBtn) allBtn.addEventListener('click', e=>{ e.stopPropagation(); filtered.forEach(o=>{ const oo=Array.from(sel.options).find(x=>x.value===o.value); if(oo) oo.selected=true; }); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
+    const clearBtn = panel.querySelector('[data-act="clear"]');
+    if(clearBtn) clearBtn.addEventListener('click', e=>{ e.stopPropagation(); Array.from(sel.options).forEach(oo=>oo.selected=false); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
+    panel.querySelectorAll('.xsel-opt').forEach(row=>row.addEventListener('click', e=>{ e.stopPropagation(); toggleVal(row.dataset.val); }));
+  }
+  function renderAll(){ renderTrigger(); renderChips(); if(wrap.classList.contains('open')) renderPanel(); }
+  function open(){
+    document.querySelectorAll('.xsel.open').forEach(o=>{ if(o!==wrap) o.classList.remove('open'); });
+    wrap.classList.add('open'); searchTerm=''; renderPanel();
+    const r = wrap.getBoundingClientRect();
+    wrap.classList.toggle('panel-right', r.left > window.innerWidth - 300);
+    setTimeout(()=>{ const inp=panel.querySelector('.xsel-search input'); if(inp) inp.focus(); },0);
+  }
+  function close(){ wrap.classList.remove('open'); }
+  trigger.addEventListener('click', e=>{ e.stopPropagation(); wrap.classList.contains('open')? close() : open(); });
+  trigger.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); wrap.classList.contains('open')?close():open(); } if(e.key==='Escape') close(); });
+  document.addEventListener('click', e=>{ if(!wrap.contains(e.target)) close(); });
+  wrap._xsel = {renderAll};
+  renderAll();
+}
+
+/* ============================================================================
+   2.6 COLLAPSED FILTER BAR — retrofits an existing, already-wired .filterbar
+   into a compact "Filters" trigger + active-chip row + grouped popover, with
+   zero changes to any page's filter LOGIC. Date-range fitems (usually 1-2 per
+   bar and already compact) stay visible inline; everything select-based moves
+   into the popover. Call after enhanceSelects() has styled the selects inside.
+   ============================================================================ */
+const FUNNEL_SVG = `<svg viewBox="0 0 20 20" fill="none"><path d="M2 4h16l-6 7v5l-4 2v-7L2 4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+function collapseAllFilterbars(root){
+  (root||document).querySelectorAll('.filterbar').forEach(bar=>{ if(!bar.dataset.fbarDone) collapseFilterbar(bar); });
+}
+function collapseFilterbar(bar){
+  bar.dataset.fbarDone = '1';
+  const allFitems = Array.from(bar.querySelectorAll(':scope > .fitem'));
+  const dateFitems = allFitems.filter(fi=>fi.querySelector('input[type=date]'));
+  const selectFitems = allFitems.filter(fi=>fi.querySelector('select'));
+  const otherNodes = Array.from(bar.children).filter(c=>!allFitems.includes(c) && !c.classList.contains('spacer'));
+  if(!selectFitems.length){ return; } // nothing worth collapsing (e.g. narrative extra's candidate-only bar stays as-is if ever routed here)
+
+  const panel = document.createElement('div'); panel.className = 'fbar-panel';
+  const grid = document.createElement('div'); grid.className = 'fbar-panel-grid';
+  selectFitems.forEach(fi=>grid.appendChild(fi));
+  panel.appendChild(grid);
+  const foot = document.createElement('div'); foot.className='fbar-panel-foot';
+  const doneBtn = document.createElement('button'); doneBtn.className='btn sm'; doneBtn.textContent='Done'; doneBtn.type='button';
+  foot.appendChild(doneBtn); panel.appendChild(foot);
+
+  const trigger = document.createElement('button'); trigger.type='button'; trigger.className='fbar-trigger';
+  trigger.innerHTML = `${FUNNEL_SVG}<span>Filters</span><span class="fbar-count" style="display:none;"></span>`;
+  const chipRow = document.createElement('div'); chipRow.className='fbar-chips';
+  const resetBtn = document.createElement('button'); resetBtn.type='button'; resetBtn.className='fbar-reset'; resetBtn.textContent='Reset'; resetBtn.style.display='none';
+  const dateWrap = document.createElement('div'); dateWrap.className='fbar-dates';
+  dateFitems.forEach(fi=>dateWrap.appendChild(fi));
+
+  const head = document.createElement('div'); head.className='fbar-head';
+  head.appendChild(trigger);
+  if(dateFitems.length) head.appendChild(dateWrap);
+  head.appendChild(chipRow);
+  head.appendChild(resetBtn);
+  otherNodes.forEach(n=>head.appendChild(n)); // preserve any stray action buttons/labels
+
+  bar.innerHTML = '';
+  bar.classList.add('fbar');
+  bar.appendChild(head);
+  bar.appendChild(panel);
+
+  function fieldLabel(fi){ const l = fi.querySelector('label'); return l? l.textContent : ''; }
+  function isDefaultSel(sel){ return sel.multiple ? sel.selectedOptions.length===0 : (sel.value==='all'||sel.value===''); }
+  function summarySel(sel){
+    if(sel.multiple){
+      const so = Array.from(sel.selectedOptions);
+      return so.length===1 ? so[0].textContent : so.length+' selected';
+    }
+    const o = sel.options[sel.selectedIndex];
+    return o ? o.textContent : sel.value;
+  }
+  function resetSel(sel){
+    if(sel.multiple) Array.from(sel.options).forEach(o=>o.selected=false);
+    else { const a = Array.from(sel.options).find(o=>o.value==='all'); sel.value = a? 'all' : (sel.options[0]?sel.options[0].value:''); }
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function render(){
+    const active = selectFitems.map(fi=>({fi, sel:fi.querySelector('select'), label:fieldLabel(fi)})).filter(m=>!isDefaultSel(m.sel));
+    const badge = trigger.querySelector('.fbar-count');
+    if(active.length){ badge.style.display=''; badge.textContent = active.length; } else badge.style.display='none';
+    resetBtn.style.display = active.length? '' : 'none';
+    chipRow.innerHTML = active.map((m,i)=>`<span class="fbar-chip" data-i="${i}"><b>${escXHtml(m.label)}:</b><span class="fbar-chip-txt">${escXHtml(summarySel(m.sel))}</span><span class="fbar-chip-x">✕</span></span>`).join('');
+    chipRow.querySelectorAll('.fbar-chip-x').forEach(x=>x.addEventListener('click', e=>{ e.stopPropagation(); resetSel(active[+x.closest('.fbar-chip').dataset.i].sel); }));
+  }
+  trigger.addEventListener('click', e=>{
+    e.stopPropagation();
+    const opening = !bar.classList.contains('open');
+    document.querySelectorAll('.fbar.open').forEach(b=>{ if(b!==bar) b.classList.remove('open'); });
+    bar.classList.toggle('open', opening);
+    if(opening) selectFitems.forEach(fi=>{ const s=fi.querySelector('select'); if(s) refreshXSel(s); });
+  });
+  doneBtn.addEventListener('click', e=>{ e.stopPropagation(); bar.classList.remove('open'); });
+  resetBtn.addEventListener('click', e=>{ e.stopPropagation(); selectFitems.forEach(fi=>{ const s=fi.querySelector('select'); if(s && !isDefaultSel(s)) resetSel(s); }); });
+  document.addEventListener('click', e=>{ if(!bar.contains(e.target)) bar.classList.remove('open'); });
+  bar.addEventListener('change', render);
+  render();
+}
+
+/* ============================================================================
+   3. DATA — roster, entities, aggregate metrics (unchanged approach from v1)
+   ============================================================================ */
+/* ============================================================================
+   3. DATA — fetched from dashboard_data/dist/*.json (see DASHBOARD_DATA_SOURCES.md),
+   not synthetic. loadAllData()+buildFromFetchedData() populate everything below before
+   INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
+   ============================================================================ */
+let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null;
+
+async function loadAllData(){
+  const base='dashboard_data/dist/';
+  const j = u => fetch(base+u).then(r=>r.json());
+  [AGG, TEXT, CITATIONS_RAW, ROSTER_RAW, ACCURACY_ISSUES_RAW, NARRATIVE_GAPS_RAW] = await Promise.all([
+    j('prompt_results_agg.json'), j('prompt_results_text.json'), j('citations.json'),
+    j('roster.json'), j('accuracy_issues.json'), j('narrative_alignment_gaps.json')
+  ]);
+}
+function aggRows(){
+  const {columns, data, row_count} = AGG;
+  const rows = new Array(row_count);
+  for(let i=0;i<row_count;i++){ const r={}; for(const c of columns) r[c]=data[c][i]; rows[i]=r; }
+  return rows;
+}
+
+const MODELS = ['ChatGPT Search','Gemini Search','AI Overview'];
+const MODEL_TO_PROVIDER = {'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview'};
+
+const DIM_KEYS = ['visibility','favorability','depth','accuracy','consistency','narrative'];
+const DIM_LABELS = {visibility:'Visibility',favorability:'Favorability',depth:'Depth',accuracy:'Accuracy',consistency:'Consistency',narrative:'Narrative Alignment'};
+const DIM_RANGE = {visibility:[0,100],favorability:[-100,100],depth:[0,100],accuracy:[0,100],consistency:[0,100],narrative:[0,100]};
+const CAT_TO_DIMKEY = {'Sentiment':'favorability','Narrative Alignment':'narrative','Visibility':'visibility','Accuracy':'accuracy','Depth':'depth','Consistency':'consistency'};
+
+const ACCURACY_CATEGORIES = [
+  {key:'factual_error',label:'Factual error'},{key:'misattribution',label:'Misattribution'},
+  {key:'policy_position_error',label:'Policy position error'},{key:'voting_record_error',label:'Voting/legislative record error'},
+  {key:'fabricated_claim',label:'Fabricated claim / fake news'},{key:'misleading_conclusion',label:'Misleading conclusion'},
+  {key:'stale_information',label:'Stale/outdated information'}];
+const ACCURACY_CATEGORY_LABEL = Object.fromEntries(ACCURACY_CATEGORIES.map(c=>[c.key,c.label]));
+const LEVERS_ACCURACY_BY_CAT = {
+  factual_error: ["Cross-check the disputed fact against the current dossier and correct any stale or missing sourcing."],
+  misattribution: ["Verify the fact base clearly attributes the claim to the correct person/entity."],
+  policy_position_error: ["Add an explicit, current position statement to the dossier."],
+  voting_record_error: ["Document the exact vote count, date, and bill number in the dossier."],
+  fabricated_claim: ["Highest-severity category — escalate for live-search verification immediately."],
+  misleading_conclusion: ["Add explicit framing/context so a technically-true fact can't be paired with a false implication."],
+  stale_information: ["Refresh the dossier with the current status."]
+};
+/* Root-cause "recommended levers" text, per dimension — generic per-bucket copy for now (whether
+   this should be per-category-specific static playbook copy or LLM-generated per response is an
+   open question, DASHBOARD_BUILD_INSTRUCTIONS.md Section 6 item 3/4, not yet decided). */
+const LEVERS_BY_DIM = {
+  visibility: {__default: ["Low mention rate usually means weak name recognition for this category of question — reinforce distinctive, repeatable framing (a title, a signature issue) that models can latch onto."]},
+  favorability: {__default: ["Review the underlying responses for this category to identify the specific framing driving negative or neutral sentiment, then address it directly in the dossier."]},
+  depth: {__default: ["Add concrete, checkable specifics (dates, numbers, named proposals) to the dossier for this category so responses have more to draw from."]},
+  consistency: {__default: ["Instability here usually means the dossier itself has a factual inconsistency or an under-specified position — pin down one canonical phrasing."]}
+};
+
+/* ---- Root-cause taxonomy (DASHBOARD_DATA_SOURCES.md Section 3.8, confirmed with user 2026-08-27) ---- */
+const CATEGORY_BUCKET = {
+  'Named Bio & Record':'bio', 'Credential/Reputation':'bio', 'Litmus':'bio', 'Vulnerabilities & Counter-Narratives':'bio',
+  'Issue-Grounded':'policy', 'Named/Issue':'policy', 'Policy Area: Cost of Living & Affordability':'policy',
+  'Comparison':'policy', 'Persuasion':'policy', 'Foundational':'policy',
+  'Ballot Basics':'other', 'Voting Mechanics':'other'
+};
+function categoryBucket(cat){ return CATEGORY_BUCKET[cat] || 'other'; }
+const BUCKET_LABELS = {bio:'Bio & Credentials', policy:'Issue & Policy Positions', other:'Ballot & Voting Logistics'};
+const BUCKET_COLORS = {bio:'#8E6FB0', policy:'#3F7D5C', other:'#B08A3F'};
+const CATEGORY_PLAIN_LABEL = {
+  'Named Bio & Record': 'biography & record questions', 'Credential/Reputation': 'credentials & reputation questions',
+  'Litmus': 'loyalty/litmus-test questions', 'Vulnerabilities & Counter-Narratives': 'vulnerability & counter-narrative questions',
+  'Issue-Grounded': 'policy & issue questions', 'Named/Issue': 'candidate-linked issue questions',
+  'Policy Area: Cost of Living & Affordability': 'cost-of-living policy questions',
+  'Comparison': 'candidate-comparison questions', 'Persuasion': 'persuasion-style questions', 'Foundational': 'foundational persuasion questions',
+  'Ballot Basics': 'basic ballot/election questions', 'Voting Mechanics': 'voting-logistics questions'
+};
+function categoryPlain(cat){ return CATEGORY_PLAIN_LABEL[cat] || (cat||'').toLowerCase(); }
+
+const IS_BUCKET3 = {visibility:true, favorability:true, depth:true, accuracy:true, consistency:true};
+const HAS_ROOT_CAUSE_SECTION = {visibility:true, favorability:true, depth:true, consistency:true};
+const BUCKET3_ORDER = {favorability:['neg','neu','pos'], depth:['0','1','2'], accuracy:['0','1','2'], visibility:['0','1'], consistency:['0','1','2']};
+const BUCKET3_COLORS = {pos:'#3C8A5B', neu:'#9AA3AF', neg:'#B23B3B', '2':'#3C8A5B', '1':'#9AA3AF', '0':'#B23B3B'};
+const BUCKET3_COLORS_OVERRIDE = {visibility: {'1':'#3C8A5B', '0':'#B23B3B'}};
+const BUCKET3_LABELS = {
+  favorability: {pos:'Positive', neu:'Neutral', neg:'Negative'},
+  depth: {'2':'Fully substantive', '1':'Partially substantive', '0':'Not substantive'},
+  accuracy: {'2':'Fully accurate', '1':'Partially accurate', '0':'Inaccurate'},
+  visibility: {'1':'Mentioned', '0':'Not mentioned'},
+  consistency: {'2':'Consistent', '1':'Partially consistent', '0':'Inconsistent'}
+};
+function favBucket(score){ return score >= 15 ? 'pos' : score <= -15 ? 'neg' : 'neu'; }
+function bucketOf(key, v){ return key==='favorability' ? favBucket(v) : String(v); }
+function bucket3Label(key,b){ return (BUCKET3_LABELS[key]||{})[b] || b; }
+function bucket3Color(key,b){ return (BUCKET3_COLORS_OVERRIDE[key]&&BUCKET3_COLORS_OVERRIDE[key][b]) || BUCKET3_COLORS[b] || '#999'; }
+function bucket3Order(key){ return BUCKET3_ORDER[key] || ['0','1','2']; }
+function stackedRowHtml(key, buckets, total){
+  const order = bucket3Order(key);
+  return `<div class="stack-track">${order.map(b=>{ const pct = total? 100*(buckets[b]||0)/total : 0; return pct>0? `<div class="stack-seg" style="width:${pct}%;background:${bucket3Color(key,b)};" title="${bucket3Label(key,b)}: ${fmt1(pct)}%"></div>` : ''; }).join('')}</div>`;
+}
+function bucket3Legend(key){
+  return `<div class="legend-row">${bucket3Order(key).map(b=>`<span><span class="legend-dot" style="background:${bucket3Color(key,b)}"></span>${bucket3Label(key,b)}</span>`).join('')}</div>`;
+}
+/* Real per-day bucket share for one entity/dimension — replaces the mockup's synthetic
+   smooth-curve-based version. Visibility/Favorability are prompt-level percentages (averaged
+   across that day's prompts); Depth/Accuracy/Narrative/Consistency are literal per-response 0/1/2
+   counts for that day. */
+function dailyBucketShare(entityId, dim, dayIdx){
+  const zero = dim==='visibility' ? {'0':0,'1':0} : dim==='favorability' ? {pos:0,neu:0,neg:0} : {'0':0,'1':0,'2':0};
+  const ent = entityById(entityId);
+  const d = DATES[dayIdx];
+  if(!ent || d===undefined) return zero;
+  const side = ent.role==='ours' ? 'candidate' : 'opponent';
+  const dayRows = aggRowsCache.filter(r=>r.race===ent.race && r.report_date===d);
+  if(dim==='favorability'){
+    const pos=[], neu=[], neg=[];
+    dayRows.forEach(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side]; if(p!==''&&p!=null){ pos.push(+p); neu.push(+r['prompt_level_favorability_pct_neutral_'+side]); neg.push(+r['prompt_level_favorability_pct_negative_'+side]); } });
+    if(!pos.length) return zero;
+    return {pos:avg(pos), neu:avg(neu), neg:avg(neg)};
+  }
+  if(dim==='visibility'){
+    const vals = dayRows.map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
+    if(!vals.length) return zero;
+    const one = avg(vals);
+    return {'1':one, '0':100-one};
+  }
+  const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
+  const vals = dayRows.map(r=>r[field]).filter(v=>v!==''&&v!=null);
+  if(!vals.length) return zero;
+  const total = vals.length;
+  return {'0':100*vals.filter(v=>v==='0').length/total, '1':100*vals.filter(v=>v==='1').length/total, '2':100*vals.filter(v=>v==='2').length/total};
+}
+
+/* ---- Narrative taxonomy: real 14-category rolled-up scheme (PROJECT_SPEC.md 6.2), NOT the
+   mockup's originally-invented 21 — confirmed during data-pipeline pressure-testing. ---- */
+const GRANULAR_TOPICS = {
+  'Affordability & Cost of Living': ['Grocery/food prices','Housing affordability','Prescription drug costs','Energy/utility costs','Taxes','Inflation'],
+  'Public Safety & Crime': ['Policing/law enforcement','Gun policy','Drug enforcement','Sentencing/law-and-order','Emergency/disaster management'],
+  'Border Security & Immigration': ['Border security/enforcement','Deportation/ICE','Asylum/pathway to citizenship','Immigrant workforce'],
+  'Education': ['K-12 funding','Teacher pay/shortage','Higher ed/student loans','Early childhood education'],
+  'Healthcare': ['ACA/coverage','Medicare/Medicaid','Reproductive rights/abortion','Mental health','Rural hospital access'],
+  'Jobs & the Economy': ['Unemployment/job creation','Small business support','Labor rights/unions','Manufacturing','Trade policy'],
+  'Common Critiques': ['Too liberal/radical','Too Trump-aligned/MAGA','Party-over-constituents'],
+  'Corruption & Ethics': ['Stock trading','Donor/PAC influence','Ethics violations','Residency/carpetbagger'],
+  'Energy': ['Data centers/grid','Fossil fuel production','Renewables','Nuclear'],
+  'Public Infrastructure': ['Roads & bridges','Broadband','Transit/rail','Water infrastructure'],
+  'Climate & Natural Resources': ['Water quality/contamination','Climate change policy','Conservation/public lands'],
+  'Foreign Policy': ['Israel/Gaza','Ukraine/Russia','China','Defense/military spending'],
+  'Election Administration': ['Election operations & security','Voter registration & database access/privacy','Election integrity disputes'],
+  'Other': ['Term limits/congressional reform','LGBTQ rights','Veterans (non-healthcare)']
+};
+const ROLLED_UP_TOPICS = Object.keys(GRANULAR_TOPICS);
+const TOPIC_COLORS = {
+  'Affordability & Cost of Living':'#C9822E','Public Safety & Crime':'#B23B3B','Border Security & Immigration':'#8B5E3C',
+  'Education':'#2E6FA7','Healthcare':'#3C8A5B','Jobs & the Economy':'#5C7CB0','Common Critiques':'#9A4F8C',
+  'Corruption & Ethics':'#7C4A4A','Energy':'#C9A22E','Public Infrastructure':'#5C8A8A','Climate & Natural Resources':'#4F8B6B',
+  'Foreign Policy':'#6F5EA0','Election Administration':'#4A6F8B','Other':'#8A8F98'
+};
+function topicColor(t){ return TOPIC_COLORS[t] || '#999'; }
+/* Core-topic set by party — DASHBOARD_DATA_SOURCES.md Section 5. NP inherits Democrat's set. */
+const CORE_TOPICS_BY_PARTY = {
+  'Democrat': ['Affordability & Cost of Living','Healthcare'], 'NP': ['Affordability & Cost of Living','Healthcare'],
+  'Republican': ['Border Security & Immigration','Public Safety & Crime']
+};
+function coreTopicsForParty(party){ return CORE_TOPICS_BY_PARTY[party] || []; }
+
+let DATES = [];
+function buildDateAxis(){
+  const set = new Set();
+  aggRowsCache.forEach(r=>{ if(r.report_date) set.add(r.report_date); });
+  DATES = [...set].sort();
+  if(DATES.length===0) DATES=['2026-08-13'];
+}
+
+let ROSTER = [], ENTITIES = [], aggRowsCache = [], PROMPTS = [], PROMPTS_BY_RACE = {}, CITATION_EVENTS = [];
+let RUN_INDEX = {}, PROMPT_INDEX = {}, ACC_ISSUES_BY_ROW = {}, NARR_GAPS_BY_ROW = {};
+let METRICS = {};
+
+const CITATION_CATEGORIES = [
+  {key:'National News', label:'National News', color:'#2E5EAA'},
+  {key:'Local/Regional News', label:'Local/Regional News', color:'#4F8B8B'},
+  {key:'Candidate/Officeholder-Owned Content', label:'Candidate-Owned Content', color:'#3C8A5B'},
+  {key:'Institutional', label:'Institutional', color:'#7C8797'},
+  {key:'Blog/Informal Content', label:'Blogs & Informal Content', color:'#B79A5C'},
+  {key:'Party / Advocacy Org', label:'Party / Advocacy Org', color:'#8B7FB0'},
+  {key:'Reference Database', label:'Reference Database', color:'#C98A2E'},
+  {key:'Social Media', label:'Social Media', color:'#B23B3B'},
+  {key:'Other', label:'Other', color:'#8A8F98'},
+];
+function citationCatColor(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.color : '#999'; }
+function citationCatLabel(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.label : k; }
+
+function entityById(id){ return ENTITIES.find(e=>e.id===id); }
+function ourEntity(raceIdx){ return entityById('c'+raceIdx); }
+function oppEntity(raceIdx){ return entityById('o'+raceIdx); }
+
+function buildFromFetchedData(){
+  ROSTER = ROSTER_RAW.map(r=>({
+    name: r.candidate_name, party: r.candidate_party_affiliation,
+    opponent: r.opponent_name || null, opponent_party: r.opponent_party_affiliation || null,
+    state: r.state, location: r.location, office: r.office_name,
+    race: r.race, race_level: r.race_level, race_type: r.race_type
+  }));
+  const raceIdxByRace = {}; ROSTER.forEach((r,i)=>raceIdxByRace[r.race]=i);
+
+  ENTITIES = [];
+  ROSTER.forEach((r,i)=>{
+    ENTITIES.push({id:'c'+i, raceIdx:i, role:'ours', name:r.name, party:r.party, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId: r.opponent? ('o'+i): null});
+    if(r.opponent){ ENTITIES.push({id:'o'+i, raceIdx:i, role:'opp', name:r.opponent, party:r.opponent_party, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId:'c'+i}); }
+  });
+
+  aggRowsCache = aggRows();
+  buildDateAxis();
+  RUN_INDEX = {}; PROMPT_INDEX = {};
+  aggRowsCache.forEach(r=>{
+    RUN_INDEX[r.prompt_id+'|'+r.ai_provider+'|'+r.report_date] = r;
+    if(!PROMPT_INDEX[r.prompt_id]) PROMPT_INDEX[r.prompt_id] = r;
+  });
+
+  ACC_ISSUES_BY_ROW = {};
+  ACCURACY_ISSUES_RAW.forEach(i=>{
+    const k = i.prompt_result_id+'|'+i.candidate_role;
+    (ACC_ISSUES_BY_ROW[k] = ACC_ISSUES_BY_ROW[k]||[]).push({statement:i.inaccurate_statement, category:i.category, description:i.description});
+  });
+  NARR_GAPS_BY_ROW = {};
+  NARRATIVE_GAPS_RAW.forEach(g=>{
+    const k = g.prompt_result_id+'|'+g.candidate_role;
+    (NARR_GAPS_BY_ROW[k] = NARR_GAPS_BY_ROW[k]||[]).push(g.missing_topic);
+  });
+
+  CITATION_EVENTS = CITATIONS_RAW.map(c=>{
+    const raceIdx = raceIdxByRace[c.race];
+    const rosterRow = ROSTER[raceIdx];
+    return {
+      raceIdx, race: c.race, date: c.report_date, domain: c.domain, url: c.url,
+      source_type: c.source_type, count: +c.source_count, catKey: c.aeo_site_category,
+      office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
+    };
+  });
+
+  PROMPTS = Object.values(PROMPT_INDEX).map(r=>{
+    const raceIdx = raceIdxByRace[r.race];
+    const dims = (r.dimensions_assessed||'').split(',').map(s=>s.trim()).map(d=>CAT_TO_DIMKEY[d]||d.toLowerCase()).filter(Boolean);
+    return {
+      id: r.prompt_id, text: r.full_query, category: r.prompt_category,
+      category_bucket: r.prompt_category_bucket, topic: r.issue_tag || null,
+      raceIdx, race: r.race, cand: r.candidate_name, cand_party: r.candidate_party_affiliation,
+      opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null,
+      state: r.state, location: r.location, office: r.office_name,
+      race_level: r.race_level, race_type: r.race_type,
+      is_blind: r.is_blind==='t' ? 'Y' : 'N', target: r.target_candidate, dims
+    };
+  });
+  PROMPTS_BY_RACE = {};
+  PROMPTS.forEach(p=>{ (PROMPTS_BY_RACE[p.raceIdx] = PROMPTS_BY_RACE[p.raceIdx]||[]).push(p); });
+
+  buildFilterOptionLists();
+  buildMetrics();
+}
+function topicsForCategory(cat){ return [...new Set(PROMPTS.filter(p=>p.category===cat && p.topic).map(p=>p.topic))].sort(); }
+
+function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
+function stddev(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); if(v.length<2) return 0; const m=avg(v); return Math.sqrt(avg(v.map(x=>(x-m)*(x-m)))); }
+function pctScored2(rows, field){
+  const vals = rows.map(r=>r[field]).filter(v=>v!==''&&v!==null&&v!==undefined);
+  if(!vals.length) return null;
+  return 100*vals.filter(v=>v==='2').length/vals.length;
+}
+function rowsForEntity(ent){ return aggRowsCache.filter(r=>r.race===ent.race); }
+
+function buildMetrics(){
+  METRICS = {};
+  ENTITIES.forEach(e=>{
+    const rows = rowsForEntity(e);
+    const side = e.role==='ours' ? 'candidate' : 'opponent';
+
+    const promptLevelVis = {}, promptLevelFav = {};
+    rows.forEach(r=>{
+      const vis = r['prompt_level_visibility_score_'+side];
+      if(vis!=='' && vis!=null) promptLevelVis[r.prompt_id] = +vis;
+      const pos = r['prompt_level_favorability_pct_positive_'+side], neg = r['prompt_level_favorability_pct_negative_'+side];
+      if(pos!=='' && pos!=null) promptLevelFav[r.prompt_id] = (+pos) - (+neg);
+    });
+    const base = {
+      visibility: avg(Object.values(promptLevelVis)),
+      favorability: avg(Object.values(promptLevelFav)),
+      depth: pctScored2(rows, 'depth_score_'+side),
+      accuracy: pctScored2(rows, 'accuracy_score_'+side),
+      narrative: pctScored2(rows, 'narrative_alignment_score_'+side),
+      consistency: pctScored2(rows, 'consistency_score_'+side)
+    };
+
+    const history = {};
+    DIM_KEYS.forEach(dim=>{
+      history[dim] = DATES.map(d=>{
+        const dayRows = rows.filter(r=>r.report_date===d);
+        if(dim==='visibility'){
+          const vals = dayRows.map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
+          return avg(vals);
+        }
+        if(dim==='favorability'){
+          const vals = dayRows.map(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side], n=r['prompt_level_favorability_pct_negative_'+side]; return (p!==''&&p!=null)? (+p-+n) : null; });
+          return avg(vals);
+        }
+        const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
+        return pctScored2(dayRows, field);
+      });
+    });
+
+    const accVals = rows.map(r=>r['accuracy_score_'+side]).filter(v=>v!==''&&v!=null);
+    const n2=accVals.filter(v=>v==='2').length, n1=accVals.filter(v=>v==='1').length, n0=accVals.filter(v=>v==='0').length;
+
+    const topicCounts = {};
+    rows.forEach(r=>{ const t=r['key_topics_'+side+'_rolled_up']; if(t) t.split('|').forEach(x=>{ topicCounts[x]=(topicCounts[x]||0)+1; }); });
+    const core = coreTopicsForParty(e.party);
+    const topics = Object.entries(topicCounts).map(([topic,count])=>({topic, core: core.includes(topic), count})).sort((a,b)=>b.count-a.count);
+
+    const gapCounts = {}; let gapDenom = 0;
+    rows.forEach(r=>{ const k=r.id+'|'+side; const gaps = NARR_GAPS_BY_ROW[k]; if(gaps){ gapDenom++; gaps.forEach(t=>{ gapCounts[t]=(gapCounts[t]||0)+1; }); } });
+    const gaps = Object.entries(gapCounts).map(([topic,n])=>({topic, pctMissing: gapDenom? Math.round(100*n/gapDenom): 0})).sort((a,b)=>b.pctMissing-a.pctMissing);
+
+    METRICS[e.id] = {base, history, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, topics, gaps, coreTopics: core};
+  });
+}
+const WEIGHTS = {visibility:0.40,favorability:0.15,depth:0.15,accuracy:0.15,narrative:0.15};
+function composite(e){
+  const m=METRICS[e.id].base;
+  const favN = m.favorability!=null? (m.favorability+100)/2 : null;
+  const parts=[[m.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]];
+  const known = parts.filter(([v])=>v!=null);
+  if(!known.length) return null;
+  const wsum = known.reduce((a,[,w])=>a+w,0);
+  return known.reduce((a,[v,w])=>a+v*w,0)/wsum;
+}
+
+/* ---- real per-run lookup, replacing the old RNG-based getRun() — same output shape.
+   Returns null when no real run exists for this prompt+model+date (real data is sparser than
+   the old synthetic 45-day grid) — callers must handle a null run. ---- */
+function getRun(prompt, model, dateStr){
+  const provider = MODEL_TO_PROVIDER[model];
+  const row = RUN_INDEX[prompt.id+'|'+provider+'|'+dateStr];
+  if(!row) return null;
+  const opp = oppEntity(prompt.raceIdx);
+  function sideScores(side){
+    const out = {};
+    DIM_KEYS.forEach(dim=>{
+      if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? (+v>=50?1:0) : null; return; }
+      if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? (+v - +row['favorability_pct_negative_'+side]) : null; return; }
+      const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
+      const v = row[field];
+      out[dim] = (v!==''&&v!=null) ? +v : null;
+    });
+    return out;
+  }
+  const oursSide = sideScores('candidate');
+  const oppSide = opp ? sideScores('opponent') : {};
+  const accIssue = { ours: (ACC_ISSUES_BY_ROW[row.id+'|candidate']||[])[0]||null, opp: opp? (ACC_ISSUES_BY_ROW[row.id+'|opponent']||[])[0]||null : null };
+  const missingTopics = { ours: NARR_GAPS_BY_ROW[row.id+'|candidate']||[], opp: opp? (NARR_GAPS_BY_ROW[row.id+'|opponent']||[]) : [] };
+  return { model, date: dateStr, scores:{ours:oursSide, opp:oppSide}, accIssue, missingTopics,
+           response: (TEXT[row.id] && TEXT[row.id].full_response) || '', _row: row };
+}
+
+/* ---- refusal / hypothesis-alignment lookup, replacing getHealthRun() — real is_refusal /
+   response_tests_hypothesis, same output shape. ---- */
+function getHealthRun(p, m, d){
+  const provider = MODEL_TO_PROVIDER[m];
+  const row = RUN_INDEX[p.id+'|'+provider+'|'+d];
+  if(!row) return null;
+  const refused = row.is_refusal === 'Y';
+  const alignment = refused ? null : (row.response_tests_hypothesis || null);
+  return {refused, alignment};
+}
+
+/* ============================================================================
+   3.7 HORIZONTAL 100% STACKED BAR — reusable across Prompt Health (alignment
+   breakdown per category) and Citation Breakout (category composition).
+   ============================================================================ */
+function stackedBarChart(containerId, rows, opts){
+  opts = opts||{};
+  const W=measuredChartWidth(containerId, opts.width||640), barH=opts.barH||24, rowGap=opts.rowGap||12, labelW=opts.labelW||150, padR=6, padT=6;
+  const H = padT + rows.length*(barH+rowGap);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;font-family:inherit;">`;
+  const plotW = W-labelW-padR;
+  rows.forEach((row,ri)=>{
+    const total = row.segments.reduce((a,s)=>a+s.value,0)||1;
+    const y = padT + ri*(barH+rowGap);
+    svg += `<text x="0" y="${(y+barH/2+4).toFixed(1)}" font-size="11" fill="var(--ink)" font-weight="600">${escXHtml(row.label)}</text>`;
+    let x = labelW;
+    row.segments.forEach(seg=>{
+      const w = plotW*(seg.value/total);
+      if(w>0.4){
+        svg += svgEl('rect',{x:x.toFixed(1),y:y.toFixed(1),width:w.toFixed(1),height:barH,rx:4,fill:seg.color});
+        if(w>28) svg += `<text x="${(x+w/2).toFixed(1)}" y="${(y+barH/2+4).toFixed(1)}" font-size="9.5" text-anchor="middle" fill="#fff" font-weight="700">${Math.round(100*seg.value/total)}%</text>`;
+      }
+      x += w;
+    });
+    svg += svgEl('rect',{x:labelW,y:y.toFixed(1),width:plotW,height:barH,rx:4,fill:'none',stroke:'#DFE4EA','stroke-width':1});
+  });
+  svg += '</svg>';
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+/* ============================================================================
+   4. NAVIGATION
+   ============================================================================ */
+/* Every page is built once at init while hidden (display:none), so any chart that measures its
+   own container's real width (barChart/lineChart/stackedBarChart) sees 0 at build time and falls
+   back to a default that's almost always narrower than the actual visible card — leaving
+   letterboxed whitespace on first view. Re-running each page's own render function right after it
+   becomes visible fixes this for good, not just for pages that happen to re-render via a filter. */
+const PAGE_RERENDER = {
+  overview: ()=>renderOverview(),
+  fanout: ()=>renderFanoutTable(),
+  visibility: ()=>renderDimensionPage('visibility'),
+  favorability: ()=>renderDimensionPage('favorability'),
+  depth: ()=>renderDimensionPage('depth'),
+  accuracy: ()=>{ renderDimensionPage('accuracy'); renderAccuracyPriority(); },
+  consistency: ()=>renderDimensionPage('consistency'),
+  narrative: ()=>{ renderDimensionPage('narrative'); renderNarrativeTopics(); },
+  prompthealth: ()=>renderPromptHealth(),
+  citations: ()=>renderCitations()
+};
+document.querySelectorAll('.nav-item').forEach(item=>{
+  item.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+    item.classList.add('active');
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+item.dataset.page).classList.add('active');
+    const rerender = PAGE_RERENDER[item.dataset.page];
+    if(rerender){ try{ rerender(); }catch(e){ console.error('Re-render error on nav to '+item.dataset.page, e); } }
+  });
+});
+function openSidePanel(html){ document.getElementById('sidepanel-content').innerHTML = html; document.getElementById('overlay').classList.add('open'); document.getElementById('sidepanel').classList.add('open'); }
+function closeSidePanel(){ document.getElementById('overlay').classList.remove('open'); document.getElementById('sidepanel').classList.remove('open'); }
+
+/* ============================================================================
+   5. SHARED: FILTER OPTIONS
+   ============================================================================ */
+/* NOTE: these were originally `const`s computed from ROSTER/PROMPTS at module-parse time — a real
+   bug in this migration, since ROSTER/PROMPTS are empty until the async data load finishes. Now
+   `let`s, (re)computed by buildFilterOptionLists() inside buildFromFetchedData() once real data
+   is in. Declared here (still empty) only so every function that references them by name works
+   before that point without a ReferenceError. */
+let ALL_STATES = [], ALL_OFFICES = [], ALL_LEVELS = [], ALL_RACES = [], ALL_CATEGORIES = [], ALL_PARTIES = [];
+function buildFilterOptionLists(){
+  ALL_STATES = [...new Set(ROSTER.map(r=>r.state))].sort();
+  ALL_OFFICES = [...new Set(ROSTER.map(r=>r.office))].sort();
+  ALL_LEVELS = [...new Set(ROSTER.map(r=>r.race_level))].sort();
+  ALL_RACES = ROSTER.map((r,i)=>({idx:i,label:r.race}));
+  ALL_CATEGORIES = [...new Set(PROMPTS.map(p=>p.category))].sort();
+  // both sides — candidate party alone misses Republican entirely (candidate is always Dem/NP by
+  // this project's convention; Republican only ever appears as opponent_party). See
+  // DASHBOARD_DATA_SOURCES.md Section 4.
+  ALL_PARTIES = [...new Set(ROSTER.flatMap(r=>[r.party, r.opponent_party]).filter(Boolean))].sort();
+}
+
+function opt(v,label){ return `<option value="${v}">${label}</option>`; }
+function selectOptions(list, allLabel){ return opt('all',allLabel) + list.map(v=>opt(v,v)).join(''); }
+
+/* ============================================================================
+   6. SHARED COMPONENT: race-level table with gap sort + fanout drill-in
+   ============================================================================ */
+function computeRaceRows(dimKey, filters){
+  let idxs = ROSTER.map((r,i)=>i);
+  if(filters.state && filters.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===filters.state);
+  if(filters.office && filters.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===filters.office);
+  if(filters.level && filters.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===filters.level);
+  return idxs.map(i=>{
+    const ours = ourEntity(i), opp = oppEntity(i);
+    let ourVal, oppVal, gap;
+    if(dimKey==='favorability'){
+      ourVal = worstShare('favorability', entityBucketTotals(ours,'favorability'));
+      oppVal = opp? worstShare('favorability', entityBucketTotals(opp,'favorability')) : null;
+      gap = (oppVal!==null && ourVal!==null) ? ourVal-oppVal : null; // positive = we're more negative than opponent
+    } else {
+      if(dimKey==='accuracy'){ ourVal = METRICS[ours.id].accCounts.total? 100*METRICS[ours.id].accCounts[2]/METRICS[ours.id].accCounts.total : null; oppVal = opp? (METRICS[opp.id].accCounts.total? 100*METRICS[opp.id].accCounts[2]/METRICS[opp.id].accCounts.total : null) : null; }
+      else if(dimKey==='composite'){ ourVal = composite(ours); oppVal = opp? composite(opp): null; }
+      else { ourVal = METRICS[ours.id].base[dimKey]; oppVal = opp? METRICS[opp.id].base[dimKey] : null; }
+      gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null;
+    }
+    return {raceIdx:i, ours, opp, ourVal, oppVal, gap};
+  });
+}
+function renderRaceTable(containerId, dimKey, filters, opts){
+  opts = opts||{};
+  const isFav = dimKey==='favorability';
+  const rows = computeRaceRows(dimKey, filters).sort((a,b)=>{
+    if(isFav){ const av=a.ourVal===null?-1:a.ourVal, bv=b.ourVal===null?-1:b.ourVal; return bv-av; }
+    const av = a.gap===null? -9999 : a.gap, bv = b.gap===null? -9999 : b.gap;
+    return bv-av;
+  });
+  const showAllId = containerId+'-showall';
+  const showAll = window.__showAllState && window.__showAllState[containerId];
+  const shown = showAll ? rows : rows.slice(0,15);
+  const range = isFav ? [0,100] : (DIM_RANGE[dimKey]||[0,100]);
+  const heat=(v)=> v===null? '<span class="small-muted">—</span>' : `<span class="heat" style="background:${heatColor(isFav?100-v:v,range[0],range[1])};color:${heatText(isFav?100-v:v,range[0],range[1])}">${fmt1(v)}${isFav?'%':''}</span>`;
+  let html = `<table><tr><th>Race</th><th>State</th><th>Office</th><th>${isFav?'Our % negative':'Our score'}</th><th>${isFav?'Opponent % negative':'Opponent score'}</th><th>Gap</th></tr>`;
+  shown.forEach(r=>{
+    html += `<tr class="clickable" onclick="toggleFanoutRow('${containerId}', ${r.raceIdx}, '${dimKey}')" data-racerow="${containerId}-${r.raceIdx}">
+      <td><b>${r.ours.name}</b><br><span class="small-muted">${escapeXml(r.ours.race)}</span></td>
+      <td>${r.ours.state}</td><td class="small-muted">${r.ours.office}</td>
+      <td>${heat(r.ourVal)}</td><td>${heat(r.oppVal)}</td>
+      <td class="${r.gap>0?'gap-pos':r.gap<0?'gap-neg':''}">${r.gap===null?'—':(r.gap>0?'+':'')+fmt1(r.gap)}</td></tr>
+      <tr id="fanoutrow-${containerId}-${r.raceIdx}" style="display:none;"><td colspan="6" style="padding:0;border-bottom:none;"><div id="fanoutbody-${containerId}-${r.raceIdx}"></div></td></tr>`;
+  });
+  html += `</table>`;
+  document.getElementById(containerId).innerHTML = html;
+  const moreWrap = document.getElementById(containerId+'-more');
+  if(moreWrap) moreWrap.innerHTML = rows.length>15 ? `<button class="btn ghost sm" onclick="toggleShowAll('${containerId}','${dimKey}', ${JSON.stringify(filters).replace(/"/g,'&quot;')})">${showAll? 'Show top 15 only' : 'Show all '+rows.length+' races'}</button><span class="small-muted"> &nbsp;${rows.length} races match current filters, sorted by ${isFav?'highest % negative first':'biggest gap first'}.</span>` : `<span class="small-muted">${rows.length} races match current filters.</span>`;
+}
+window.__showAllState = {};
+function toggleShowAll(containerId, dimKey, filters){
+  window.__showAllState[containerId] = !window.__showAllState[containerId];
+  renderRaceTable(containerId, dimKey, filters);
+}
+function toggleFanoutRow(containerId, raceIdx, dimKey){
+  const rowEl = document.getElementById(`fanoutrow-${containerId}-${raceIdx}`);
+  const bodyEl = document.getElementById(`fanoutbody-${containerId}-${raceIdx}`);
+  const isOpen = rowEl.style.display!=='none';
+  // close any other open fanout in this table to keep it tidy
+  document.querySelectorAll(`tr[id^="fanoutrow-${containerId}-"]`).forEach(el=>el.style.display='none');
+  if(isOpen) return;
+  rowEl.style.display='';
+  bodyEl.innerHTML = renderFanoutHtml(raceIdx, dimKey);
+}
+function renderFanoutHtml(raceIdx, dimKey){
+  const prompts = PROMPTS_BY_RACE[raceIdx]||[];
+  const latestDate = DATES[DATES.length-1];
+  const ours = ourEntity(raceIdx), opp = oppEntity(raceIdx);
+  if(!prompts.length) return `<div class="fanout-wrap"><span class="small-muted">No sampled prompts available for this race in the mockup dataset.</span></div>`;
+  let rows = [];
+  prompts.forEach(p=>{ MODELS.forEach(m=>{ rows.push({p, m, run:getRun(p,m,latestDate)}); }); });
+  rows = rows.filter(r=>r.run);
+  if(!rows.length) return `<div class="fanout-wrap"><span class="small-muted">No real runs on ${latestDate} for this race — real data is sparser than a full daily grid; try a different date range.</span></div>`;
+  const range = DIM_RANGE[dimKey]||[0,100];
+  const heat=(v)=> v===null? '<span class="small-muted">—</span>' : `<span class="heat" style="background:${heatColor(v,range[0],range[1])};color:${heatText(v,range[0],range[1])}">${fmt1(v)}</span>`;
+  let html = `<div class="fanout-wrap"><div class="fanout-head"><span>Prompt fanout for <b>${ours.race}</b> — runs from ${latestDate} (most recent day in range)</span><span class="small-muted">${rows.length} prompt × model runs</span></div>`;
+  html += `<div class="scroll-table" style="max-height:320px;"><table><tr><th>Prompt</th><th>Model</th><th>Our score</th><th>Opp. score</th><th>Gap</th>${dimKey==='accuracy'?'<th></th>':''}</tr>`;
+  rows.forEach((r,ri)=>{
+    const ov=r.run.scores.ours[dimKey], pv=r.run.scores.opp[dimKey];
+    const gap = (ov!==null&&pv!==null)? pv-ov : null;
+    const nonAccurate = dimKey==='accuracy' && (ov===0||ov===1||pv===0||pv===1);
+    html += `<tr class="${nonAccurate?'clickable':''}" ${nonAccurate?`onclick="showAccuracyDetail(${raceIdx},'${r.p.id}','${r.m}','${latestDate}')"`:''}>
+      <td style="max-width:230px;white-space:normal;">${escapeXml(r.p.text)}<br><span class="small-muted">${r.p.category}</span></td>
+      <td class="small-muted">${r.m}</td><td>${heat(ov)}</td><td>${heat(pv)}</td>
+      <td class="${gap>0?'gap-pos':gap<0?'gap-neg':''}">${gap===null?'—':(gap>0?'+':'')+fmt1(gap)}</td>
+      ${dimKey==='accuracy'?`<td>${nonAccurate?'<span class="tag recur" style="background:#FBEAEA;color:var(--bad);">view flag</span>':'<span class="small-muted">fully accurate</span>'}</td>`:''}
+      </tr>`;
+  });
+  html += `</table></div></div>`;
+  return html;
+}
+function showAccuracyDetail(raceIdx, promptId, model, date){
+  const p = PROMPTS.find(x=>x.id===promptId);
+  const run = getRun(p, model, date);
+  if(!run) return;
+  const ours = ourEntity(raceIdx), opp = oppEntity(raceIdx);
+  const issue = run.accIssue.ours || run.accIssue.opp;
+  const who = run.accIssue.ours? ours.name : (run.accIssue.opp? opp.name : null);
+  openSidePanel(`
+    <h3 style="margin-top:6px;">Accuracy flag detail</h3>
+    <div class="small-muted" style="margin-bottom:10px;">${p.category} · ${model} · ${date}</div>
+    <div class="run-detail"><b>Prompt:</b> ${escapeXml(p.text)}</div>
+    ${who? `<div class="callout section-gap"><b>Flag on:</b> ${who}<br><b>Inaccurate statement:</b> ${escapeXml(issue.statement)}<br><b>Category:</b> ${ACCURACY_CATEGORIES.find(c=>c.key===issue.category)?.label||issue.category}<br><b>Why it's inaccurate:</b> ${escapeXml(issue.description)}</div>` : `<div class="callout section-gap">Partially accurate — no single flagged statement, but response left a specific error/omission versus the knowledge base.</div>`}
+    <div class="section-gap"><button class="btn ghost sm" onclick="closeSidePanel()">Close</button></div>
+  `);
+}
+
+/* ============================================================================
+   7. OVERVIEW (AGGREGATE) PAGE
+   ============================================================================ */
+function buildOverviewPage(){
+  document.getElementById('page-overview').innerHTML = `
+    <div class="page-head"><div><div class="page-title">Aggregate — All Candidates</div><div class="page-desc">Composite and individual dimension scores across all 74 tracked candidacies. Composite weights: Visibility 40%, Favorability/Depth/Accuracy/Narrative 15% each. Consistency tracked separately, not in composite.</div></div></div>
+    <div class="callout insight" id="ov-insight">
+      <div class="insight-head"><span class="insight-spark">✦</span> Key issues &amp; opportunities</div>
+      <div id="ov-insight-body"></div>
+    </div>
+    <div class="filterbar">
+      <div class="fitem"><label>Party</label><select id="ov-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
+      <div class="fitem"><label>State</label><select id="ov-state">${selectOptions(ALL_STATES,'All')}</select></div>
+      <div class="fitem"><label>Office</label><select id="ov-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+      <div class="fitem"><label>Race level</label><select id="ov-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+      <div class="fitem"><label>Location</label><select id="ov-location"><option value="all">All</option></select></div>
+    </div>
+    <div class="kpis" id="ov-kpis"></div>
+    <div class="card">
+      <div class="card-title">Score by dimension</div>
+      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if filters resolve to a single race.</div>
+      <div id="ov-chart"></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">All races</div>
+      <div class="card-caption">Click a race to expand candidate vs. opponent detail across all dimensions. Sorted by biggest gap first.</div>
+      <div class="scroll-table" id="ov-table"></div>
+      <div class="section-gap" id="ov-table-more"></div>
+    </div>`;
+  populateLocationSelect('ov-location','ov-state');
+  ['ov-party','ov-state','ov-office','ov-level','ov-location'].forEach(id=>document.getElementById(id).addEventListener('change', renderOverview));
+  document.getElementById('ov-state').addEventListener('change', ()=>populateLocationSelect('ov-location','ov-state'));
+  renderOverview();
+}
+function populateLocationSelect(selId, stateSelId){
+  const st = document.getElementById(stateSelId).value;
+  const locs = [...new Set(ROSTER.filter(r=> st==='all'||r.state===st).map(r=>r.location))].sort();
+  const selEl = document.getElementById(selId);
+  selEl.innerHTML = selectOptions(locs,'All');
+  refreshXSel(selEl);
+}
+function ovFilters(){
+  return {party:document.getElementById('ov-party').value, state:document.getElementById('ov-state').value, office:document.getElementById('ov-office').value, level:document.getElementById('ov-level').value, location:document.getElementById('ov-location').value};
+}
+function resolveEntitiesForFilters(f){
+  let idxs = ROSTER.map((r,i)=>i);
+  if(f.state && f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
+  if(f.office && f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+  if(f.level && f.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===f.level);
+  if(f.location && f.location!=='all') idxs = idxs.filter(i=>ROSTER[i].location===f.location);
+  if(f.party && f.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===f.party);
+  return idxs;
+}
+function renderOverviewInsight(ours){
+  const bodyEl = document.getElementById('ov-insight-body');
+  if(!bodyEl) return;
+  const bullets = [];
+  if(ours.length){
+    const bucketDims = ['visibility','favorability','depth','accuracy'];
+    const dimShares = bucketDims.map(dim=>({dim, share: worstShare(dim, mergeBucketTotals(ours.map(e=>entityBucketTotals(e,dim))))})).filter(x=>x.share!==null);
+    if(dimShares.length){
+      dimShares.sort((a,b)=>b.share-a.share);
+      const worstDim = dimShares[0];
+      const worstLabel = bucket3Label(worstDim.dim, worstDim.dim==='favorability'?'neg':'0').toLowerCase();
+      bullets.push(`${DIM_LABELS[worstDim.dim]} is the biggest opportunity across the ${ours.length} candidate${ours.length===1?'':'s'} in view — ${fmt1(worstDim.share)}% of scored responses are ${worstLabel}.`);
+      const catAcc = categoryScoresAcrossEntities(ours, worstDim.dim);
+      const catRows = Object.entries(catAcc).map(([cat,c])=>({cat,share:worstShare(worstDim.dim,c)})).filter(x=>x.share!==null).sort((a,b)=>b.share-a.share);
+      if(catRows.length) bullets.push(`Within ${DIM_LABELS[worstDim.dim]}, ${categoryPlain(catRows[0].cat)} are the biggest driver (${fmt1(catRows[0].share)}% ${worstLabel}) — see the ${DIM_LABELS[worstDim.dim]} page for the specific responses and recommended fixes.`);
+      if(dimShares.length>1){
+        const secondBest = [...dimShares].sort((a,b)=>a.share-b.share)[0];
+        bullets.push(`${DIM_LABELS[secondBest.dim]} is doing best by comparison (${fmt1(secondBest.share)}% ${bucket3Label(secondBest.dim, secondBest.dim==='favorability'?'neg':'0').toLowerCase()}).`);
+      }
+    }
+    const narrAvg = avg(ours.map(e=>METRICS[e.id].base.narrative));
+    if(narrAvg!==null && narrAvg<60) bullets.push(`Narrative Alignment also averages a modest ${fmt1(narrAvg)}/100 — check the Narrative Alignment page's topic explorer for the specific themes going missing.`);
+  }
+  bodyEl.innerHTML = bullets.length? `<ul class="insight-list">${bullets.map(b=>`<li>${b}</li>`).join('')}</ul>` : `<div class="small-muted">Not enough data in the current filter to generate insights.</div>`;
+}
+function renderOverview(){
+  const f = ovFilters();
+  const idxs = resolveEntitiesForFilters(f);
+  const ours = idxs.map(i=>ourEntity(i));
+  renderOverviewInsight(ours);
+  const compAvg = avg(ours.map(composite));
+  document.getElementById('ov-kpis').innerHTML = `
+    <div class="kpi hi"><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
+    <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.visibility)))}</div></div>
+    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.favorability)))}</div></div>
+    <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.depth)))}</div></div>
+    <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.accuracy)))}</div></div>
+    <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.narrative)))}</div></div>`;
+
+  // chart: if exactly one race resolved, show candidate vs opponent; else Dem vs Rep (within filtered set)
+  const dims=['visibility','favorability','depth','accuracy','narrative'];
+  const dimLabels=['Visibility','Favorability','Depth','Accuracy','Narrative'];
+  const norm=(v,d)=> d==='favorability'? (v+100)/2 : v;
+  let series;
+  if(idxs.length===1){
+    const o=ourEntity(idxs[0]), p=oppEntity(idxs[0]);
+    series=[{name:o.name,color:'#2E5EAA',values:dims.map(d=>norm(METRICS[o.id].base[d],d))}];
+    if(p) series.push({name:p.name,color:'#B23B3B',values:dims.map(d=>norm(METRICS[p.id].base[d],d))});
+  } else {
+    const demIdx = idxs.filter(i=>ROSTER[i].party==='Democrat').map(i=>ourEntity(i));
+    const repEntities = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
+    series=[{name:'Democrats',color:'#2E5EAA',values:dims.map(d=>norm(avg(demIdx.map(e=>METRICS[e.id].base[d])),d))},
+             {name:'Republicans',color:'#B23B3B',values:dims.map(d=>norm(avg(repEntities.map(e=>METRICS[e.id].base[d])),d))}];
+  }
+  barChart('ov-chart', dimLabels, series, {height:230});
+
+  // race table: composite, one row per race, expand -> candidate + opponent sub-rows
+  const rows = idxs.map(i=>{ const o=ourEntity(i), p=oppEntity(i); const ov=composite(o), pv=p?composite(p):null; return {raceIdx:i,o,p,ov,pv,gap:(pv!==null?pv-ov:null)}; })
+    .sort((a,b)=>{ const av=a.gap===null?-9999:a.gap, bv=b.gap===null?-9999:b.gap; return bv-av; });
+  const showAll = window.__showAllState['ov-table'];
+  const shown = showAll? rows: rows.slice(0,15);
+  let html = `<table><tr><th>Race</th><th>State</th><th>Office</th><th>Our composite</th><th>Opponent composite</th><th>Gap</th></tr>`;
+  shown.forEach(r=>{
+    const heat=(v)=> v===null?'<span class="small-muted">—</span>':`<span class="heat" style="background:${heatColor(v)};color:${heatText(v)}">${fmt1(v)}</span>`;
+    html += `<tr class="clickable" onclick="toggleOvExpand(${r.raceIdx})"><td><b>${r.o.name}</b><br><span class="small-muted">${escapeXml(r.o.race)}</span></td><td>${r.o.state}</td><td class="small-muted">${r.o.office}</td><td>${heat(r.ov)}</td><td>${heat(r.pv)}</td><td class="${r.gap>0?'gap-pos':r.gap<0?'gap-neg':''}">${r.gap===null?'—':(r.gap>0?'+':'')+fmt1(r.gap)}</td></tr>
+    <tr id="ov-expand-${r.raceIdx}" style="display:none;" class="expand-sub"><td colspan="6" style="padding:0;"><div id="ov-expand-body-${r.raceIdx}"></div></td></tr>`;
+  });
+  html += `</table>`;
+  document.getElementById('ov-table').innerHTML = html;
+  document.getElementById('ov-table-more').innerHTML = rows.length>15? `<button class="btn ghost sm" onclick="window.__showAllState['ov-table']=!window.__showAllState['ov-table'];renderOverview();">${showAll?'Show top 15 only':'Show all '+rows.length+' races'}</button>` : `<span class="small-muted">${rows.length} races shown.</span>`;
+}
+function toggleOvExpand(raceIdx){
+  const rowEl = document.getElementById('ov-expand-'+raceIdx);
+  const open = rowEl.style.display!=='none';
+  document.querySelectorAll('tr[id^="ov-expand-"]').forEach(el=>el.style.display='none');
+  if(open) return;
+  const o=ourEntity(raceIdx), p=oppEntity(raceIdx);
+  const dims=['visibility','favorability','depth','accuracy','narrative'];
+  const heat=(v)=>`<span class="heat" style="background:${heatColor(v)};color:${heatText(v)}">${fmt1(v)}</span>`;
+  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td><span class="badge ${e.party==='Democrat'?'dem':e.party==='Republican'?'rep':'np'}">${e.party==='Democrat'?'D':e.party==='Republican'?'R':'NP'}</span></td>${dims.map(d=>`<td>${heat(d==='favorability'?(METRICS[e.id].base[d]+100)/2:METRICS[e.id].base[d])}</td>`).join('')}<td><b>${fmt1(composite(e))}</b></td></tr>`:'';
+  document.getElementById('ov-expand-body-'+raceIdx).innerHTML = `<table style="margin-top:4px;"><tr><th style="padding-left:24px;">Name</th><th>Party</th><th>Vis.</th><th>Fav.</th><th>Depth</th><th>Acc.</th><th>Narr.</th><th>Composite</th></tr>${subRow(o)}${subRow(p)}</table>`;
+  document.getElementById('ov-expand-'+raceIdx).style.display='';
+}
+
+/* ============================================================================
+   8. GENERIC DIMENSION PAGE (Visibility / Favorability / Depth / Consistency / Narrative share this; Accuracy extends it)
+   ============================================================================ */
+const DIM_DESC = {
+  visibility:'Whether the candidate is mentioned at all in responses to blind (candidate-not-named) prompts.',
+  favorability:'Sentiment toward the candidate in responses where they are named (vendor-provided).',
+  depth:'How specific and complete responses are about the candidate, when actually mentioned.',
+  accuracy:'Response-level factual accuracy vs. each candidate\u2019s knowledge base. 0 = fully inaccurate, 1 = partially accurate, 2 = fully accurate.',
+  consistency:'How stable the answer to the same prompt is when re-asked over time.',
+  narrative:'Whether a candidate\u2019s intended themes show up in association with their name — plus what topics show up regardless of what we specified.'
+};
+function buildDimensionPage(key){
+  const el = document.getElementById('page-'+key);
+  el.innerHTML = `
+    <div class="page-head"><div><div class="page-title">${DIM_LABELS[key]}</div><div class="page-desc">${DIM_DESC[key]}</div></div></div>
+    ${insightSummaryHtml(key)}
+    <div class="filterbar">
+      <div class="fitem"><label>Party</label><select id="${key}-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
+      <div class="fitem"><label>State</label><select id="${key}-state">${selectOptions(ALL_STATES,'All')}</select></div>
+      <div class="fitem"><label>Race</label><select id="${key}-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
+      <div class="fitem"><label>Office</label><select id="${key}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+      ${IS_BUCKET3[key] ? `<div class="fitem"><label>Prompt type</label><select id="${key}-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
+      <div class="fitem"><label>Range start</label><input type="date" id="${key}-start"></div>
+      <div class="fitem"><label>Range end</label><input type="date" id="${key}-end"></div>
+    </div>
+    <div class="row2">
+      <div class="card">
+        <div class="card-title">${DIM_LABELS[key]} — comparison</div>
+        <div class="card-caption">${IS_BUCKET3[key] ? 'Share of scored responses by outcome. Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.' : 'Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.'}</div>
+        ${IS_BUCKET3[key] ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="fitem"><label>Prompt category</label><select id="${key}-cmp-cat">${selectOptions(ALL_CATEGORIES,'All categories')}</select></div>
+          <div class="fitem" id="${key}-cmp-topic-wrap" style="display:none;"><label>Issue</label><select id="${key}-cmp-topic"><option value="all">All issues</option></select></div>
+        </div>${bucket3Legend(key)}` : ''}
+        <div id="${key}-cmp"></div>
+      </div>
+      <div class="card"><div class="card-title">${DIM_LABELS[key]} over time</div><div class="card-caption">${IS_BUCKET3[key] ? `Daily share of ${[...bucket3Order(key)].reverse().map(b=>bucket3Label(key,b).toLowerCase()).join(' vs. ')} responses for whichever group is selected above.` : 'Daily data; range fields above control the window shown.'}</div>
+        ${IS_BUCKET3[key] ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
+        <div id="${key}-trend"></div></div>
+    </div>
+    ${key==='narrative' ? narrativeExtraHtml() : ''}
+    ${HAS_ROOT_CAUSE_SECTION[key] ? dimSourceHtml(key) : ''}
+    <div class="card section-gap" id="${key}-racetable-card">
+      <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
+      <div class="card-caption">${key==='favorability' ? 'Sorted by highest % negative sentiment first.' : 'Sorted by biggest gap first.'} Click a race to see the prompt-level fanout (latest day in range).</div>
+      <div class="filterbar" style="margin-bottom:10px;">
+        <div class="fitem"><label>State</label><select id="${key}-tbl-state">${selectOptions(ALL_STATES,'All')}</select></div>
+        <div class="fitem"><label>Office</label><select id="${key}-tbl-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+        <div class="fitem"><label>Race level</label><select id="${key}-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+      </div>
+      <div class="scroll-table" id="${key}-table"></div>
+      <div class="section-gap" id="${key}-table-more"></div>
+    </div>`;
+  document.getElementById(key+'-start').value = DATES[0];
+  document.getElementById(key+'-end').value = DATES[DATES.length-1];
+  ['party','state','race','office','start','end'].forEach(f=>document.getElementById(`${key}-${f}`).addEventListener('change', ()=>renderDimensionPage(key)));
+  if(IS_BUCKET3[key]) document.getElementById(key+'-blind').addEventListener('change', ()=>renderDimensionPage(key));
+  ['tbl-state','tbl-office','tbl-level'].forEach(f=>document.getElementById(`${key}-${f}`).addEventListener('change', ()=>renderDimTable(key)));
+  if(IS_BUCKET3[key]){
+    const catSel=document.getElementById(key+'-cmp-cat'); catSel.dataset.xselDone='1'; buildXSel(catSel);
+    const topicSel=document.getElementById(key+'-cmp-topic'); topicSel.dataset.xselDone='1'; buildXSel(topicSel);
+    catSel.addEventListener('change', ()=>{ syncIssueFilter(key); renderDimensionPage(key); });
+    topicSel.addEventListener('change', ()=>renderDimensionPage(key));
+    document.getElementById(key+'-trend-compare').addEventListener('change', ()=>renderDimensionPage(key));
+  }
+  if(key==='narrative') wireNarrativeExtra();
+  if(HAS_ROOT_CAUSE_SECTION[key]) wireDimSource(key);
+  renderDimensionPage(key);
+}
+/* TOPIC_COLORS / topicColor() now defined once in section 3 (real 14-category taxonomy). */
+function narrativeExtraHtml(){
+  return `<div class="card section-gap">
+    <div class="card-title">Key topics explorer</div>
+    <div class="card-caption" id="na-caption">Every topic detected in a candidate's responses, ranked by frequency — not just the topics we specified. Solid bars are specified core topics; faded bars are emergent/unplanned. Each topic keeps the same color everywhere, including its granular breakdown.</div>
+    <div class="filterbar" style="margin:10px 0;">
+      <div class="fitem"><label>Candidate</label><select id="na-cand">${ROSTER.map((r,i)=>opt(i,r.name)).join('')}</select></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);align-self:center;"><input type="checkbox" id="na-compare" checked> Compare with opponent</label>
+      <button type="button" class="btn ghost sm" id="na-view-toggle" style="align-self:center;" onclick="toggleNaView()">Explore sub-topics →</button>
+    </div>
+    <div class="two-col-panels">
+      <div><div class="card-title" id="na-cand-label" style="color:var(--dem);"></div><div id="na-cand-topics"></div></div>
+      <div id="na-opp-panel"><div class="card-title" id="na-opp-label" style="color:var(--rep);"></div><div id="na-opp-topics"></div></div>
+    </div>
+    <div class="legend-row" id="na-legend"><span><span class="legend-dot" style="background:#8B93A1"></span>Solid = specified core topic</span><span><span class="legend-dot" style="background:#8B93A1;opacity:.5;"></span>Faded = emergent/unplanned</span></div>
+  </div>`;
+}
+function wireNarrativeExtra(){
+  window.__naView = 'rolled-up';
+  document.getElementById('na-cand').addEventListener('change', renderNarrativeTopics);
+  document.getElementById('na-compare').addEventListener('change', renderNarrativeTopics);
+  renderNarrativeTopics();
+}
+function toggleNaView(){
+  window.__naView = window.__naView==='rolled-up' ? 'granular' : 'rolled-up';
+  renderNarrativeTopics();
+}
+function granularBreakdown(entityId, topic, totalCount){
+  const subs = GRANULAR_TOPICS[topic] || ['General'];
+  const rng = seededRng('gran|'+entityId+'|'+topic);
+  const weights = subs.map(()=>0.4+rng());
+  const wsum = weights.reduce((a,b)=>a+b,0);
+  const counts = weights.map(w=>Math.max(1,Math.round(totalCount*w/wsum)));
+  const diff = totalCount - counts.reduce((a,b)=>a+b,0);
+  counts[0] = Math.max(1, counts[0]+diff);
+  return subs.map((s,i)=>({sub:s,count:counts[i]})).sort((a,b)=>b.count-a.count);
+}
+function topicBars(entityId){
+  const list = METRICS[entityId].topics.slice(0,9);
+  const max = Math.max(1,...list.map(t=>t.count));
+  return list.map(t=>{
+    const color = topicColor(t.topic);
+    return `<div class="topic-row">
+      <div class="topic-name">${t.core?'<b>'+escXHtml(t.topic)+'</b>':escXHtml(t.topic)}</div>
+      <div class="topic-track"><div class="topic-fill" style="width:${clamp(100*t.count/max,4,100)}%;background:${color};opacity:${t.core?1:0.5};"></div></div>
+      <div class="topic-pct">${t.count}</div>
+    </div>`;
+  }).join('');
+}
+function granularFlatList(entityId){
+  const list = METRICS[entityId].topics;
+  const flat = [];
+  list.forEach(t=>{
+    granularBreakdown(entityId, t.topic, t.count).forEach(g=>flat.push({sub:g.sub, count:g.count, parent:t.topic, core:t.core}));
+  });
+  return flat.sort((a,b)=>b.count-a.count).slice(0,15);
+}
+function granularBars(entityId){
+  const flat = granularFlatList(entityId);
+  const max = Math.max(1,...flat.map(g=>g.count));
+  return flat.map(g=>{
+    const color = topicColor(g.parent);
+    return `<div class="topic-row">
+      <div class="topic-name" style="width:190px;">${escXHtml(g.sub)}<br><span class="small-muted" style="font-weight:400;">${escXHtml(g.parent)}</span></div>
+      <div class="topic-track"><div class="topic-fill" style="width:${clamp(100*g.count/max,4,100)}%;background:${color};opacity:${g.core?1:0.5};"></div></div>
+      <div class="topic-pct">${g.count}</div>
+    </div>`;
+  }).join('') || '<div class="small-muted" style="padding:10px 0;">No granular data available.</div>';
+}
+function renderNarrativeTopics(){
+  const idx = parseInt(document.getElementById('na-cand').value,10);
+  const e = ourEntity(idx), opp = oppEntity(idx);
+  const view = window.__naView || 'rolled-up';
+  const isGranular = view==='granular';
+  document.getElementById('na-view-toggle').textContent = isGranular ? '← Back to key topics' : 'Explore sub-topics →';
+  document.getElementById('na-caption').textContent = isGranular
+    ? 'Every granular sub-topic across all key topics, ranked together by its own frequency — a topic’s overall rank doesn’t guarantee its sub-topics outrank another topic’s. Color still matches the parent topic; faded = emergent.'
+    : 'Every topic detected in a candidate’s responses, ranked by frequency — not just the topics we specified. Solid bars are specified core topics; faded bars are emergent/unplanned. Each topic keeps the same color everywhere, including its granular breakdown.';
+  document.getElementById('na-cand-label').textContent = e.name+(isGranular?' — sub-topics':' — key topics');
+  document.getElementById('na-cand-topics').innerHTML = isGranular ? granularBars(e.id) : topicBars(e.id);
+  const compare = document.getElementById('na-compare').checked;
+  if(compare && opp){
+    document.getElementById('na-opp-panel').style.display='';
+    document.getElementById('na-opp-label').textContent = opp.name+(isGranular?' — sub-topics':' — key topics');
+    document.getElementById('na-opp-topics').innerHTML = isGranular ? granularBars(opp.id) : topicBars(opp.id);
+  } else document.getElementById('na-opp-panel').style.display='none';
+}
+/* ============================================================================
+   8.5 DIMENSION ROOT-CAUSE BREAKDOWN (Favorability & Depth "where is it falling short")
+   ============================================================================ */
+function sampleDateRange(i0, i1, maxSamples){
+  const span = i1-i0+1;
+  if(span<=maxSamples) return Array.from({length:span}, (_,k)=>i0+k);
+  const stride = span/maxSamples;
+  const out = []; for(let k=0;k<maxSamples;k++) out.push(i0+Math.round(k*stride));
+  return [...new Set(out)];
+}
+function scoresByCategoryForEntity(ent, key, topicFilter){
+  const [i0,i1] = dateRangeIdx(key);
+  const dateIdxs = sampleDateRange(i0,i1,9);
+  let prompts = (PROMPTS_BY_RACE[ent.raceIdx]||[]).filter(p=>p.dims.includes(key));
+  if(topicFilter) prompts = prompts.filter(p=>p.topic===topicFilter);
+  const blindEl = document.getElementById(key+'-blind');
+  if(blindEl && blindEl.value!=='all') prompts = prompts.filter(p=>p.is_blind===blindEl.value);
+  const side = ent.role==='ours' ? 'ours' : 'opp';
+  const byCategory = {};
+  prompts.forEach(p=>{
+    MODELS.forEach(m=>{ dateIdxs.forEach(di=>{
+      const dateStr = DATES[di];
+      const run = getRun(p,m,dateStr);
+      if(!run) return;
+      const v = run.scores[side][key];
+      if(v===null||v===undefined) return;
+      const cat = p.category;
+      if(!byCategory[cat]) byCategory[cat] = {buckets:{}, total:0, items:[]};
+      const b = bucketOf(key, v);
+      byCategory[cat].buckets[b] = (byCategory[cat].buckets[b]||0)+1;
+      byCategory[cat].total++;
+      byCategory[cat].items.push({prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response});
+    }); });
+  });
+  const byBucket = {bio:{buckets:{},total:0}, policy:{buckets:{},total:0}, other:{buckets:{},total:0}};
+  Object.keys(byCategory).forEach(cat=>{
+    const bkt = categoryBucket(cat); const c=byCategory[cat];
+    byBucket[bkt].total += c.total;
+    Object.entries(c.buckets).forEach(([b,n])=>{ byBucket[bkt].buckets[b]=(byBucket[bkt].buckets[b]||0)+n; });
+  });
+  return {byCategory, byBucket};
+}
+function mergeBucketTotals(list){
+  const out = {buckets:{}, total:0};
+  list.forEach(d=>{ if(!d) return; out.total += d.total; Object.entries(d.buckets||{}).forEach(([b,n])=>{ out.buckets[b]=(out.buckets[b]||0)+n; }); });
+  return out;
+}
+function entityBucketTotals(ent, key){
+  const data = scoresByCategoryForEntity(ent, key);
+  return mergeBucketTotals(Object.values(data.byCategory));
+}
+function bucketScoresAcrossEntities(entities, key){
+  const acc = {bio:{buckets:{},total:0}, policy:{buckets:{},total:0}, other:{buckets:{},total:0}};
+  entities.forEach(e=>{
+    const d = scoresByCategoryForEntity(e, key);
+    Object.keys(acc).forEach(b=>{ acc[b] = mergeBucketTotals([acc[b], d.byBucket[b]]); });
+  });
+  return acc;
+}
+function categoryScoresAcrossEntities(entities, key){
+  const acc = {};
+  entities.forEach(e=>{
+    const d = scoresByCategoryForEntity(e, key);
+    Object.entries(d.byCategory).forEach(([cat,c])=>{ acc[cat] = mergeBucketTotals([acc[cat], c]); });
+  });
+  return acc;
+}
+function worstShare(key, t){
+  if(!t || !t.total) return null;
+  const worstBucket = key==='favorability' ? 'neg' : '0';
+  return 100*(t.buckets[worstBucket]||0)/t.total;
+}
+function dimSourceHtml(key){
+  const noun = {favorability:'sentiment', depth:'depth', accuracy:'accuracy', visibility:'visibility', consistency:'consistency'}[key] || key;
+  return `<div class="card section-gap">
+    <div class="card-title">Where ${DIM_LABELS[key].toLowerCase()} is falling short</div>
+    <div class="card-caption">Breaks down ${noun} by what kind of question is driving it — bio &amp; credentials vs. issue &amp; policy vs. process. Click a row to see the specific responses in detail.</div>
+    ${bucket3Legend(key)}
+    <div class="filterbar" style="margin:10px 0;">
+      <div class="fitem"><label>Candidate</label><select id="${key}src-cand">${ROSTER.map((r,i)=>opt(i,r.name)).join('')}</select></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);align-self:center;"><input type="checkbox" id="${key}src-compare" checked> Compare with opponent</label>
+    </div>
+    <div id="${key}src-crumb" class="small-muted" style="margin-bottom:8px;"></div>
+    <div id="${key}src-body"></div>
+  </div>`;
+}
+function wireDimSource(key){
+  window['__srcDrill_'+key] = {level:'bucket', bucket:null};
+  window['__srcIssue_'+key] = 'all';
+  document.getElementById(key+'src-cand').addEventListener('change', ()=>{ window['__srcDrill_'+key]={level:'bucket',bucket:null}; window['__srcIssue_'+key]='all'; renderDimSource(key); });
+  document.getElementById(key+'src-compare').addEventListener('change', ()=>renderDimSource(key));
+  renderDimSource(key);
+}
+function setSrcIssue(key, val){ window['__srcIssue_'+key] = val; renderDimSource(key); }
+function renderDimSource(key){
+  const candEl = document.getElementById(key+'src-cand');
+  if(!candEl) return;
+  const idx = parseInt(candEl.value,10);
+  const ent = ourEntity(idx), opp = oppEntity(idx);
+  const compare = document.getElementById(key+'src-compare').checked;
+  const issueFilter = window['__srcIssue_'+key] && window['__srcIssue_'+key]!=='all' ? window['__srcIssue_'+key] : null;
+  const drill = window['__srcDrill_'+key] || {level:'bucket'};
+  const showIssueFilter = drill.level==='category' && drill.bucket==='policy';
+  const data = scoresByCategoryForEntity(ent, key, showIssueFilter?issueFilter:null);
+  const oppData = (compare && opp) ? scoresByCategoryForEntity(opp, key, showIssueFilter?issueFilter:null) : null;
+  const crumbEl = document.getElementById(key+'src-crumb');
+  const bodyEl = document.getElementById(key+'src-body');
+  const worstLabel = bucket3Label(key, key==='favorability'?'neg':'0');
+  const hint = `<div class="drill-hint">Click to see responses <span class="drill-chevron"></span></div>`;
+
+  if(drill.level==='bucket'){
+    crumbEl.innerHTML = `<span style="font-weight:600;color:var(--ink);">All categories</span>`;
+    const rows = ['bio','policy','other'].map(b=>{
+      const t = data.byBucket[b];
+      const ot = oppData ? oppData.byBucket[b] : null;
+      return {b, t, ot};
+    });
+    bodyEl.innerHTML = rows.map(r=>{
+      const oppBadge = (compare && r.ot && r.ot.total) ? `<span class="small-muted" style="margin-left:8px;">opp ${worstLabel.toLowerCase()}: ${fmt1(worstShare(key,r.ot))}%</span>` : '';
+      return `<div class="drillable-row" onclick="drillSrcBucket('${key}','${r.b}')">
+        <div class="topic-row" style="margin-bottom:2px;">
+          <div class="topic-name" style="width:190px;">${BUCKET_LABELS[r.b]}${oppBadge}</div>
+          ${stackedRowHtml(key, r.t.buckets, r.t.total)}
+          <div class="drill-hint">See categories <span class="drill-chevron"></span></div>
+        </div>
+      </div>`;
+    }).join('') || '<div class="small-muted" style="padding:10px;">No data for this candidate/dimension in range.</div>';
+  } else if(drill.level==='category'){
+    crumbEl.innerHTML = `<span class="cb-crumb-link" onclick="drillSrcReset('${key}')">All categories</span> / <span style="font-weight:600;color:var(--ink);">${BUCKET_LABELS[drill.bucket]}</span>`;
+    const cats = Object.keys(CATEGORY_BUCKET).filter(c=>categoryBucket(c)===drill.bucket);
+    let issueFilterHtml = '';
+    if(showIssueFilter){
+      const topics = [...new Set(cats.flatMap(c=>topicsForCategory(c)))].sort();
+      issueFilterHtml = `<div class="fitem" style="margin-bottom:10px;max-width:220px;"><label>Issue</label><select id="${key}src-issue" onchange="setSrcIssue('${key}', this.value)">
+        <option value="all">All issues</option>${topics.map(t=>`<option value="${escXAttr(t)}" ${issueFilter===t?'selected':''}>${escXHtml(t)}</option>`).join('')}
+      </select></div>`;
+    }
+    const rows = cats.map(cat=>{
+      const t = data.byCategory[cat] || {buckets:{},total:0};
+      const ot = oppData ? oppData.byCategory[cat] : null;
+      return {cat, t, ot};
+    }).sort((a,b)=> (worstShare(key,b.t)||0) - (worstShare(key,a.t)||0));
+    bodyEl.innerHTML = issueFilterHtml + rows.map(r=>{
+      const oppBadge = (compare && r.ot && r.ot.total) ? `<span class="small-muted" style="margin-left:8px;">opp ${worstLabel.toLowerCase()}: ${fmt1(worstShare(key,r.ot))}%</span>` : '';
+      return `<div class="drillable-row" onclick="openDimSourceSidebar('${key}','${escXAttr(r.cat)}')">
+        <div class="topic-row" style="margin-bottom:2px;">
+          <div class="topic-name" style="width:190px;">${escXHtml(r.cat)}${oppBadge}</div>
+          ${stackedRowHtml(key, r.t.buckets, r.t.total)}
+          ${hint}
+        </div>
+      </div>`;
+    }).join('');
+    if(showIssueFilter){ const sel=document.getElementById(key+'src-issue'); if(sel){ sel.dataset.xselDone='1'; buildXSel(sel); } }
+  }
+}
+function drillSrcBucket(key,b){ window['__srcDrill_'+key] = {level:'category', bucket:b}; window['__srcIssue_'+key]='all'; renderDimSource(key); }
+function drillSrcReset(key){ window['__srcDrill_'+key] = {level:'bucket', bucket:null}; window['__srcIssue_'+key]='all'; renderDimSource(key); }
+function openDimSourceSidebar(key, category, entIdOverride){
+  let ent;
+  if(entIdOverride){ ent = entityById(entIdOverride); }
+  else { const candEl = document.getElementById(key+'src-cand'); const idx = parseInt(candEl.value,10); ent = ourEntity(idx); }
+  const issueFilter = window['__srcIssue_'+key] && window['__srcIssue_'+key]!=='all' ? window['__srcIssue_'+key] : null;
+  const data = scoresByCategoryForEntity(ent, key, categoryBucket(category)==='policy'?issueFilter:null);
+  const d = data.byCategory[category];
+  const order = bucket3Order(key);
+  const items = d ? [...d.items].sort((a,b)=>order.indexOf(a.bucket)-order.indexOf(b.bucket)).slice(0,12) : [];
+  const levers = (LEVERS_BY_DIM[key] && LEVERS_BY_DIM[key][category]) || LEVERS_BY_DIM[key]?.__default || [];
+  const html = `
+    <div style="margin-bottom:14px;">
+      <div class="card-title" style="font-size:16px;margin-bottom:2px;">${escXHtml(category)}</div>
+      <div class="small-muted">${escXHtml(ent.name)} — ${items.length} response${items.length===1?'':'s'} shown, ${DIM_LABELS[key].toLowerCase()}${issueFilter?` · ${escXHtml(issueFilter)}`:''}</div>
+    </div>
+    <div class="callout" style="margin-bottom:14px;">
+      <div style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Recommended levers</div>
+      ${levers.length? `<ul style="margin:0 0 0 16px;padding:0;line-height:1.6;">${levers.map(l=>`<li>${l}</li>`).join('')}</ul>` : 'No specific playbook for this category yet.'}
+    </div>
+    <div class="card-title" style="font-size:12.5px;margin-bottom:6px;">Specific responses</div>
+    ${items.map(it=>`
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px;">
+          <span style="font-weight:600;color:${bucket3Color(key,it.bucket)};font-size:12px;">${bucket3Label(key,it.bucket)}</span>
+          <span class="small-muted">${escXHtml(it.model)} · ${escXHtml(it.date)}</span>
+        </div>
+        <div style="font-size:12.5px;margin-bottom:8px;"><strong>Prompt:</strong> ${escapeXml(it.prompt.text)}</div>
+        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(it.response)}</div></details>
+      </div>`).join('') || '<div class="small-muted">No scored responses for this category in range.</div>'}
+  `;
+  openSidePanel(html);
+}
+
+/* ============================================================================
+   8.6 KEY ISSUES & OPPORTUNITIES — dynamic per-dimension insight summary
+   ============================================================================ */
+function insightSummaryHtml(key){
+  return `<div class="callout insight" id="${key}-insight">
+    <div class="insight-head"><span class="insight-spark">✦</span> Key issues &amp; opportunities</div>
+    <div id="${key}-insight-body"></div>
+  </div>`;
+}
+function computeInsightEntities(key){
+  const f = dimFilters(key);
+  let idxs = ROSTER.map((r,i)=>i);
+  if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
+  if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+  return idxs;
+}
+function renderInsightSummary(key){
+  const body = document.getElementById(key+'-insight-body');
+  if(!body) return;
+  let bullets = [];
+  try{ bullets = INSIGHT_BUILDERS[key](key) || []; }catch(err){ bullets = []; }
+  body.innerHTML = bullets.length? `<ul class="insight-list">${bullets.map(b=>`<li>${b}</li>`).join('')}</ul>` : `<div class="small-muted">Not enough data in the current filter to generate insights.</div>`;
+}
+function bucketAndCategoryInsights(key){
+  const f = dimFilters(key);
+  const bullets = [];
+  let entities;
+  if(f.race!=='all'){ entities = [ourEntity(parseInt(f.race,10))]; }
+  else { const idxs = computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat'); }
+  if(!entities.length) return bullets;
+  const worstLabel = bucket3Label(key, key==='favorability'?'neg':'0').toLowerCase();
+  const overall = mergeBucketTotals(entities.map(e=>entityBucketTotals(e,key)));
+  const overallWorst = worstShare(key, overall);
+  if(overallWorst!==null) bullets.push(`${fmt1(overallWorst)}% of scored responses for ${entities.length===1?entities[0].name:entities.length+' candidates in view'} are ${worstLabel}.`);
+  const buckets = bucketScoresAcrossEntities(entities, key);
+  const bucketRows = Object.keys(buckets).map(b=>({b, share: worstShare(key,buckets[b])})).filter(x=>x.share!==null).sort((a,b)=>b.share-a.share);
+  if(bucketRows.length){
+    const worst=bucketRows[0], best=bucketRows[bucketRows.length-1];
+    bullets.push(`${BUCKET_LABELS[worst.b]} content has the highest ${worstLabel} share (${fmt1(worst.share)}%)${bucketRows.length>1?`, vs. ${fmt1(best.share)}% on ${BUCKET_LABELS[best.b]}`:''} — see the breakdown below for specific categories and fixes.`);
+  }
+  const catAcc = categoryScoresAcrossEntities(entities, key);
+  const catRows = Object.entries(catAcc).map(([cat,c])=>({cat,share:worstShare(key,c)})).filter(x=>x.share!==null).sort((a,b)=>b.share-a.share);
+  if(catRows.length) bullets.push(`Worst-performing prompt type: ${categoryPlain(catRows[0].cat)} (${fmt1(catRows[0].share)}% ${worstLabel}).`);
+  return bullets;
+}
+function computeAccuracyIssueRows(){
+  const f = dimFilters('accuracy');
+  let idxs = ROSTER.map((r,i)=>i);
+  if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
+  if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+  if(f.race!=='all') idxs = idxs.filter(i=>i===parseInt(f.race,10));
+  const latestDate = DATES[DATES.length-1];
+  let rows=[];
+  idxs.forEach(idx=>{
+    (PROMPTS_BY_RACE[idx]||[]).forEach(p=>{
+      MODELS.forEach(m=>{
+        const run = getRun(p,m,latestDate);
+        if(!run) return;
+        [['ours', ourEntity(idx)], ['opp', oppEntity(idx)]].forEach(([side,ent])=>{
+          const issue = run.accIssue[side];
+          if(issue && ent) rows.push({ent, p, m, issue, score:run.scores[side].accuracy, response:run.response, date:latestDate});
+        });
+      });
+    });
+  });
+  return rows;
+}
+function buildAccuracyInsights(){
+  const rows = computeAccuracyIssueRows();
+  if(!rows.length) return ['No flagged inaccuracies in the current filter — accuracy looks clean.'];
+  const bullets = [];
+  const byCat={}; rows.forEach(r=>{ byCat[r.issue.category]=(byCat[r.issue.category]||0)+1; });
+  const topCat = Object.entries(byCat).sort((a,b)=>b[1]-a[1])[0];
+  bullets.push(`"${ACCURACY_CATEGORIES.find(c=>c.key===topCat[0])?.label||topCat[0]}" is the most common inaccuracy type (${topCat[1]} of ${rows.length} flagged statements).`);
+  const byEnt={}; rows.forEach(r=>{ byEnt[r.ent.name]=(byEnt[r.ent.name]||0)+1; });
+  const topEnt = Object.entries(byEnt).sort((a,b)=>b[1]-a[1])[0];
+  bullets.push(`${topEnt[0]} has the most flagged statements in view (${topEnt[1]}) — see the prioritized breakdown below.`);
+  bullets.push(`${rows.length} statements flagged across ${new Set(rows.map(r=>r.p.id)).size} prompts in the current filter.`);
+  return bullets;
+}
+function buildConsistencyInsights(key){
+  const bullets = bucketAndCategoryInsights(key);
+  const f = dimFilters(key);
+  const [i0,i1]=dateRangeIdx(key);
+  let entities;
+  if(f.race!=='all'){ entities=[ourEntity(parseInt(f.race,10))]; }
+  else { const idxs=computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)); }
+  entities = entities.filter(Boolean);
+  if(!entities.length) return bullets;
+  let worst=null;
+  entities.forEach(e=>{ const vol = stddev(METRICS[e.id].history.consistency.slice(i0,i1+1)); if(!worst||vol>worst.vol) worst={e,vol}; });
+  if(worst) bullets.push(`${worst.e.name} shows the most day-to-day volatility in this dimension (σ ≈ ${fmt1(worst.vol)}) — worth a closer look at what's driving unstable answers.`);
+  return bullets;
+}
+function buildNarrativeInsights(key){
+  const f = dimFilters(key);
+  let entities;
+  if(f.race!=='all'){ entities=[ourEntity(parseInt(f.race,10))]; }
+  else { const idxs=computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat'); }
+  if(!entities.length) return [];
+  const bullets=[];
+  const avgScore = avg(entities.map(e=>METRICS[e.id].base.narrative));
+  bullets.push(`Average narrative alignment across candidates in view is ${fmt1(avgScore)} out of 100.`);
+  let bestGapTopic=null;
+  entities.forEach(e=>{ (METRICS[e.id].gaps||[]).forEach(g=>{ if(!bestGapTopic||g.pctMissing>bestGapTopic.pctMissing) bestGapTopic={topic:g.topic,pctMissing:g.pctMissing,name:e.name}; }); });
+  if(bestGapTopic) bullets.push(`"${bestGapTopic.topic}" is the most frequently missing intended theme (missing in ${bestGapTopic.pctMissing}% of ${bestGapTopic.name}'s responses that should include it).`);
+  const emergentAcc={};
+  entities.forEach(e=>{ METRICS[e.id].topics.filter(t=>!t.core).forEach(t=>{ emergentAcc[t.topic]=(emergentAcc[t.topic]||0)+t.count; }); });
+  const topEmergent = Object.entries(emergentAcc).sort((a,b)=>b[1]-a[1])[0];
+  if(topEmergent) bullets.push(`"${topEmergent[0]}" is the most common emergent topic showing up that wasn’t part of the intended theme set — worth deciding whether to formally track it.`);
+  return bullets;
+}
+const INSIGHT_BUILDERS = {
+  visibility: bucketAndCategoryInsights,
+  favorability: bucketAndCategoryInsights,
+  depth: bucketAndCategoryInsights,
+  accuracy: buildAccuracyInsights,
+  consistency: buildConsistencyInsights,
+  narrative: buildNarrativeInsights
+};
+
+function dimFilters(key){ return {state:document.getElementById(key+'-state').value, race:document.getElementById(key+'-race').value, office:document.getElementById(key+'-office').value, party:document.getElementById(key+'-party').value}; }
+function dateRangeIdx(key){ const startEl=document.getElementById(key+'-start'), endEl=document.getElementById(key+'-end'); if(!startEl||!endEl) return [0,DATES.length-1]; const s=startEl.value, en=endEl.value; let i0=DATES.indexOf(s), i1=DATES.indexOf(en); if(i0<0)i0=0; if(i1<0)i1=DATES.length-1; return [Math.min(i0,i1),Math.max(i0,i1)]; }
+
+function renderDimensionPage(key){
+  const f = dimFilters(key);
+  const range = DIM_RANGE[key];
+  if(IS_BUCKET3[key]){
+    renderBucket3Charts(key, f);
+  } else if(f.race!=='all'){
+    const idx = parseInt(f.race,10); const o=ourEntity(idx), p=oppEntity(idx);
+    const series=[{name:o.name,color:'#2E5EAA',values:[METRICS[o.id].base[key]]}];
+    if(p) series.push({name:p.name,color:'#B23B3B',values:[METRICS[p.id].base[key]]});
+    barChart(key+'-cmp', [o.race], series, {min:range[0],max:range[1],height:220});
+    const [i0,i1]=dateRangeIdx(key); const labels=DATES.slice(i0,i1+1);
+    const lseries=[{name:o.name,color:'#2E5EAA',values:labels.map((d,ix)=>METRICS[o.id].history[key][i0+ix])}];
+    if(p) lseries.push({name:p.name,color:'#B23B3B',values:labels.map((d,ix)=>METRICS[p.id].history[key][i0+ix])});
+    lineChart(key+'-trend', labels, lseries, {min:range[0],max:range[1],height:220});
+  } else {
+    let idxs = ROSTER.map((r,i)=>i);
+    if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
+    if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
+    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
+    barChart(key+'-cmp', [DIM_LABELS[key]], [{name:'Democrats',color:'#2E5EAA',values:[avg(demE.map(e=>METRICS[e.id].base[key]))]},{name:'Republicans',color:'#B23B3B',values:[avg(repE.map(e=>METRICS[e.id].base[key]))]}], {min:range[0],max:range[1],height:220});
+    const [i0,i1]=dateRangeIdx(key); const labels=DATES.slice(i0,i1+1);
+    lineChart(key+'-trend', labels, [
+      {name:'Democrats',color:'#2E5EAA',values:labels.map((d,ix)=>avg(demE.map(e=>METRICS[e.id].history[key][i0+ix])))},
+      {name:'Republicans',color:'#B23B3B',values:labels.map((d,ix)=>avg(repE.map(e=>METRICS[e.id].history[key][i0+ix])))}
+    ], {min:range[0],max:range[1],height:220});
+  }
+  renderInsightSummary(key);
+  renderDimTable(key);
+}
+function syncIssueFilter(key){
+  const catSel = document.getElementById(key+'-cmp-cat');
+  const wrap = document.getElementById(key+'-cmp-topic-wrap');
+  const topicSel = document.getElementById(key+'-cmp-topic');
+  const cat = catSel.value;
+  if(categoryBucket(cat)==='policy'){
+    const topics = topicsForCategory(cat);
+    topicSel.innerHTML = `<option value="all">All issues</option>${topics.map(t=>opt(t,t)).join('')}`;
+    topicSel.value = 'all';
+    refreshXSel(topicSel);
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+    topicSel.value = 'all';
+    refreshXSel(topicSel);
+  }
+}
+function renderBucket3Charts(key, f){
+  const catSelEl = document.getElementById(key+'-cmp-cat');
+  const catOpt = (catSelEl && catSelEl.value!=='all') ? catSelEl.value : null;
+  const topicSelEl = document.getElementById(key+'-cmp-topic');
+  const topicOpt = (catOpt && topicSelEl && topicSelEl.value!=='all') ? topicSelEl.value : null;
+  const order = bucket3Order(key);
+  function bucketsFor(ent){
+    if(!ent) return {buckets:{},total:0};
+    if(catOpt){ const d = scoresByCategoryForEntity(ent,key,topicOpt); return d.byCategory[catOpt] || {buckets:{},total:0}; }
+    return entityBucketTotals(ent, key);
+  }
+  function groupBuckets(entities){
+    if(catOpt) return mergeBucketTotals(entities.map(e=>scoresByCategoryForEntity(e,key,topicOpt).byCategory[catOpt]));
+    return mergeBucketTotals(entities.map(e=>entityBucketTotals(e,key)));
+  }
+  function segmentsFor(t){ return order.map(b=>({name:bucket3Label(key,b), value:(t.buckets[b]||0), color:bucket3Color(key,b)})); }
+  const [i0,i1] = dateRangeIdx(key); const labels = DATES.slice(i0,i1+1);
+  function groupDailyShare(entities, dayIdx, b){ return avg(entities.map(e=>dailyBucketShare(e.id,key,dayIdx)[b])); }
+  const trendCompareEl = document.getElementById(key+'-trend-compare');
+  const trendCompareLabelEl = document.getElementById(key+'-trend-compare-label');
+  const trendCompare = trendCompareEl ? trendCompareEl.checked : false;
+
+  if(f.race!=='all'){
+    const idx = parseInt(f.race,10); const o=ourEntity(idx), p=oppEntity(idx);
+    const rows = [{label:o.name, segments:segmentsFor(bucketsFor(o))}];
+    if(p) rows.push({label:p.name, segments:segmentsFor(bucketsFor(p))});
+    stackedBarChart(key+'-cmp', rows, {width:520, barH:36, rowGap:16, labelW:130, height:rows.length*52});
+    if(trendCompareLabelEl) trendCompareLabelEl.textContent = 'Compare with opponent';
+    if(trendCompareEl) trendCompareEl.disabled = !p;
+    const lseries = order.map(b=>({name:o.name+' — '+bucket3Label(key,b), color:bucket3Color(key,b), values:labels.map((d,ix)=>dailyBucketShare(o.id,key,i0+ix)[b])}));
+    if(p && trendCompare) order.forEach(b=>lseries.push({name:p.name+' — '+bucket3Label(key,b), color:bucket3Color(key,b), dash:'4,3', values:labels.map((d,ix)=>dailyBucketShare(p.id,key,i0+ix)[b])}));
+    lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
+  } else {
+    let idxs = ROSTER.map((r,i)=>i);
+    if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
+    if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
+    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
+    stackedBarChart(key+'-cmp', [{label:'Democrats', segments:segmentsFor(groupBuckets(demE))},{label:'Republicans', segments:segmentsFor(groupBuckets(repE))}], {width:520, barH:36, rowGap:16, labelW:110, height:2*52});
+    if(trendCompareLabelEl) trendCompareLabelEl.textContent = 'Compare with Republicans';
+    if(trendCompareEl) trendCompareEl.disabled = false;
+    const lseries = order.map(b=>({name:(trendCompare?'Dem — ':'')+bucket3Label(key,b), color:bucket3Color(key,b), values:labels.map((d,ix)=>groupDailyShare(demE,i0+ix,b))}));
+    if(trendCompare) order.forEach(b=>lseries.push({name:'Rep — '+bucket3Label(key,b), color:bucket3Color(key,b), dash:'4,3', values:labels.map((d,ix)=>groupDailyShare(repE,i0+ix,b))}));
+    lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
+  }
+}
+function renderDimTable(key){
+  const filters = {state:document.getElementById(key+'-tbl-state').value, office:document.getElementById(key+'-tbl-office').value, level:document.getElementById(key+'-tbl-level').value};
+  renderRaceTable(key+'-table', key, filters);
+}
+
+/* ============================================================================
+   9. ACCURACY PAGE (extends the generic dimension page with extra sections)
+   ============================================================================ */
+function buildAccuracyPage(){
+  buildDimensionPage('accuracy');
+  const el = document.getElementById('page-accuracy');
+  const priorityHtml = `<div class="card section-gap" id="acc-priority-card">
+      <div class="card-title">Accuracy issues — prioritized by candidate</div>
+      <div class="card-caption">Ranked by flagged-statement volume, respecting the filters above. Click a candidate, then a category, to see the full statement history in detail.</div>
+      <div id="acc-priority-crumb" class="small-muted" style="margin-bottom:8px;"></div>
+      <div id="acc-priority-body"></div>
+    </div>`;
+  document.getElementById('accuracy-racetable-card').insertAdjacentHTML('beforebegin', priorityHtml);
+  window.__accPriorityDrill = {level:'candidate'};
+  window.__accGroupBy = 'inaccuracy';
+  window.__srcIssue_accuracy = 'all';
+  renderAccuracyPriority();
+  document.getElementById('accuracy-party').closest('.filterbar').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', ()=>{
+    window.__accPriorityDrill = {level:'candidate'};
+    window.__accGroupBy = 'inaccuracy';
+    window.__srcIssue_accuracy = 'all';
+    renderAccuracyPriority();
+  }));
+}
+function renderAccuracyPriority(){
+  const rows = computeAccuracyIssueRows();
+  const drill = window.__accPriorityDrill || {level:'candidate'};
+  const crumbEl = document.getElementById('acc-priority-crumb');
+  const bodyEl = document.getElementById('acc-priority-body');
+  if(!crumbEl || !bodyEl) return;
+  if(!rows.length){ crumbEl.innerHTML=''; bodyEl.innerHTML = `<div class="small-muted" style="padding:10px;">No flagged inaccuracies in the current filter.</div>`; return; }
+  const hint = `<div class="drill-hint">Click to break down <span class="drill-chevron"></span></div>`;
+  if(drill.level==='candidate'){
+    crumbEl.innerHTML = `<span style="font-weight:600;color:var(--ink);">All candidates</span>`;
+    const byEnt={};
+    rows.forEach(r=>{ const k=r.ent.id; if(!byEnt[k]) byEnt[k]={ent:r.ent,count:0}; byEnt[k].count++; });
+    const list = Object.values(byEnt).sort((a,b)=>b.count-a.count);
+    const max = Math.max(1,...list.map(x=>x.count));
+    bodyEl.innerHTML = list.map(x=>`
+      <div class="drillable-row" onclick="window.__accPriorityDrill={level:'category',ent:'${x.ent.id}'};window.__accGroupBy='inaccuracy';window.__srcIssue_accuracy='all';renderAccuracyPriority();">
+        <div class="topic-row" style="margin-bottom:0;">
+          <div class="topic-name" style="width:190px;">${escXHtml(x.ent.name)} <span class="badge ${x.ent.party==='Democrat'?'dem':x.ent.party==='Republican'?'rep':'np'}" style="margin-left:4px;">${x.ent.party[0]}</span></div>
+          <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*x.count/max,3,100)}%;background:var(--bad);"></div></div>
+          <div class="topic-pct" style="width:32px;">${x.count}</div>
+          ${hint}
+        </div>
+      </div>`).join('');
+  } else if(drill.level==='category'){
+    const ent = entityById(drill.ent);
+    const groupBy = window.__accGroupBy || 'inaccuracy';
+    crumbEl.innerHTML = `<span class="cb-crumb-link" onclick="window.__accPriorityDrill={level:'candidate'};renderAccuracyPriority();">All candidates</span> / <span style="font-weight:600;color:var(--ink);">${escXHtml(ent.name)}</span>`;
+    const toggleHtml = `<div style="display:flex;gap:6px;margin-bottom:12px;">
+      <button type="button" class="btn ${groupBy==='inaccuracy'?'':'ghost'} sm" onclick="window.__accGroupBy='inaccuracy';renderAccuracyPriority();">By inaccuracy type</button>
+      <button type="button" class="btn ${groupBy==='prompttype'?'':'ghost'} sm" onclick="window.__accGroupBy='prompttype';renderAccuracyPriority();">By prompt type (bio/issue/process)</button>
+    </div>`;
+    if(groupBy==='inaccuracy'){
+      const entRows = rows.filter(r=>r.ent.id===ent.id);
+      const byCat={};
+      entRows.forEach(r=>{ const k=r.issue.category; if(!byCat[k]) byCat[k]={count:0,items:[]}; byCat[k].count++; byCat[k].items.push(r); });
+      const list = Object.entries(byCat).map(([cat,d])=>({cat,...d})).sort((a,b)=>b.count-a.count);
+      const max = Math.max(1,...list.map(x=>x.count));
+      bodyEl.innerHTML = toggleHtml + list.map(x=>{
+        const label = ACCURACY_CATEGORIES.find(c=>c.key===x.cat)?.label || x.cat;
+        return `<div class="drillable-row" onclick='openAccuracyCategorySidebar("${ent.id}","${x.cat}")'>
+          <div class="topic-row" style="margin-bottom:0;">
+            <div class="topic-name" style="width:190px;">${escXHtml(label)}</div>
+            <div class="topic-track"><div class="topic-fill emergent" style="width:${clamp(100*x.count/max,3,100)}%;"></div></div>
+            <div class="topic-pct" style="width:32px;">${x.count}</div>
+            ${hint}
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      const issueVal = window.__srcIssue_accuracy && window.__srcIssue_accuracy!=='all' ? window.__srcIssue_accuracy : null;
+      const data = scoresByCategoryForEntity(ent, 'accuracy', issueVal);
+      const cats = Object.keys(CATEGORY_BUCKET);
+      let issueFilterHtml = '';
+      const policyCats = cats.filter(c=>categoryBucket(c)==='policy');
+      const topics = [...new Set(policyCats.flatMap(c=>topicsForCategory(c)))].sort();
+      if(topics.length){
+        issueFilterHtml = `<div class="fitem" style="margin-bottom:10px;max-width:220px;"><label>Issue</label><select id="accsrc-issue" onchange="window.__srcIssue_accuracy=this.value;renderAccuracyPriority();">
+          <option value="all">All issues</option>${topics.map(t=>`<option value="${escXAttr(t)}" ${issueVal===t?'selected':''}>${escXHtml(t)}</option>`).join('')}
+        </select></div>`;
+      }
+      const list = cats.map(cat=>{
+        const t = data.byCategory[cat] || {buckets:{},total:0};
+        return {cat, t};
+      }).sort((a,b)=>(worstShare('accuracy',b.t)||0)-(worstShare('accuracy',a.t)||0));
+      bodyEl.innerHTML = toggleHtml + issueFilterHtml + list.map(x=>`
+        <div class="drillable-row" onclick="openDimSourceSidebar('accuracy','${escXAttr(x.cat)}','${ent.id}')">
+          <div class="topic-row" style="margin-bottom:2px;">
+            <div class="topic-name" style="width:190px;">${escXHtml(x.cat)}</div>
+            ${stackedRowHtml('accuracy', x.t.buckets, x.t.total)}
+            ${hint}
+          </div>
+        </div>`).join('');
+      if(topics.length){ const sel=document.getElementById('accsrc-issue'); if(sel){ sel.dataset.xselDone='1'; buildXSel(sel); } }
+    }
+  }
+}
+function openAccuracyCategorySidebar(entId, catKey){
+  const ent = entityById(entId);
+  const rows = computeAccuracyIssueRows().filter(r=>r.ent.id===entId && r.issue.category===catKey);
+  const label = ACCURACY_CATEGORIES.find(c=>c.key===catKey)?.label || catKey;
+  const levers = LEVERS_ACCURACY_BY_CAT[catKey]||[];
+  const sorted = [...rows].sort((a,b)=>a.score-b.score);
+  const html = `
+    <div style="margin-bottom:14px;">
+      <div class="card-title" style="font-size:16px;margin-bottom:2px;">${escXHtml(label)}</div>
+      <div class="small-muted">${escXHtml(ent.name)} — ${sorted.length} flagged statement${sorted.length===1?'':'s'} in this category, current filters</div>
+    </div>
+    <div class="callout" style="margin-bottom:14px;">
+      <div style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">How to address it</div>
+      ${levers.length? `<ul style="margin:0 0 0 16px;padding:0;line-height:1.6;">${levers.map(l=>`<li>${l}</li>`).join('')}</ul>` : 'No specific playbook for this category yet.'}
+    </div>
+    <div class="card-title" style="font-size:12.5px;margin-bottom:6px;">Statement history</div>
+    ${sorted.map(r=>`
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px;">
+          <span style="font-weight:600;color:${bucket3Color('accuracy',String(r.score))};font-size:12px;">${bucket3Label('accuracy',String(r.score))}</span>
+          <span class="small-muted">${escXHtml(r.m)} · ${escXHtml(r.date)}</span>
+        </div>
+        <div style="font-size:12.5px;margin-bottom:4px;"><strong>Statement:</strong> ${escapeXml(r.issue.statement)}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><strong>Why:</strong> ${escapeXml(r.issue.description)}</div>
+        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full prompt response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(r.response)}</div></details>
+      </div>`).join('') || '<div class="small-muted">No statements found.</div>'}
+  `;
+  openSidePanel(html);
+}
+
+/* ============================================================================
+   10. PROMPT FANOUT PAGE
+   ============================================================================ */
+function buildFanoutPage(){
+  document.getElementById('page-fanout').innerHTML = `
+    <div class="page-head"><div><div class="page-title">Prompt Fanout</div><div class="page-desc">Every sampled prompt × model run. Click a row to see its full run history; click a column header to sort.</div></div></div>
+    <div class="filterbar">
+      <div class="fitem"><label>Party</label><select id="pf-party" multiple>${ALL_PARTIES.map(p=>`<option>${p}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Candidate</label><select id="pf-cand" multiple>${ROSTER.map((r,i)=>`<option value="${r.name}">${r.name}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Race</label><select id="pf-race" multiple>${ALL_RACES.map(r=>`<option value="${r.idx}">${r.label}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Office</label><select id="pf-office" multiple>${ALL_OFFICES.map(o=>`<option>${o}</option>`).join('')}</select></div>
+      <div class="fitem"><label>State</label><select id="pf-state" multiple>${ALL_STATES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Category</label><select id="pf-cat" multiple>${ALL_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Named/Blind</label><select id="pf-type" multiple><option value="Y">Blind</option><option value="N">Named</option></select></div>
+      <div class="fitem"><label>Model</label><select id="pf-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Range start</label><input type="date" id="pf-start"></div>
+      <div class="fitem"><label>Range end</label><input type="date" id="pf-end"></div>
+    </div>
+    <div class="small-muted section-gap">Tip: ctrl/cmd-click (or shift-click) to select multiple values in any filter above. Leave a filter empty to include everything.</div>
+    <div class="card section-gap">
+      <div class="card-title">Prompt runs</div>
+      <div class="card-caption" id="pf-count"></div>
+      <div class="scroll-table" style="max-height:560px;" id="pf-table"></div>
+    </div>`;
+  document.getElementById('pf-start').value = DATES[0];
+  document.getElementById('pf-end').value = DATES[DATES.length-1];
+  document.getElementById('page-fanout').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', renderFanoutTable));
+  window.__pfSort = {key:'accuracy_ours', dir:-1};
+  renderFanoutTable();
+}
+function multiVals(id){ return Array.from(document.getElementById(id).selectedOptions).map(o=>o.value); }
+function renderFanoutTable(){
+  const parties = multiVals('pf-party'), cands = multiVals('pf-cand'), races = multiVals('pf-race').map(Number),
+        offices = multiVals('pf-office'), states = multiVals('pf-state'), cats = multiVals('pf-cat'),
+        types = multiVals('pf-type'), models = multiVals('pf-model').length? multiVals('pf-model') : MODELS;
+  const [i0,i1] = dateRangeIdx('pf'); const rangeDates = DATES.slice(i0,i1+1);
+  const latestInRange = rangeDates[rangeDates.length-1];
+
+  let prompts = PROMPTS.filter(p=>{
+    if(races.length && !races.includes(p.raceIdx)) return false;
+    if(cands.length && cands.indexOf(p.cand)===-1 && !(p.opp && cands.indexOf(p.opp)!==-1)) return false;
+    if(offices.length && offices.indexOf(p.office)===-1) return false;
+    if(states.length && states.indexOf(p.state)===-1) return false;
+    if(cats.length && cats.indexOf(p.category)===-1) return false;
+    if(types.length && types.indexOf(p.is_blind)===-1) return false;
+    if(parties.length){ const okCand = parties.indexOf(p.cand_party)!==-1; const okOpp = p.opp_party && parties.indexOf(p.opp_party)!==-1; if(!okCand && !okOpp) return false; }
+    return true;
+  });
+
+  let rows = [];
+  prompts.forEach(p=>{ models.forEach(m=>{ rows.push({p, m, run:getRun(p,m,latestInRange)}); }); });
+  rows = rows.filter(r=>r.run);
+
+  const sort = window.__pfSort;
+  rows.sort((a,b)=>{
+    const val = r => { if(sort.key==='prompt') return r.p.text; const [dim,side]=sort.key.split('_'); return r.run.scores[side][dim]; };
+    let av=val(a), bv=val(b);
+    if(av===null) av = sort.dir===1? Infinity : -Infinity;
+    if(bv===null) bv = sort.dir===1? Infinity : -Infinity;
+    if(typeof av==='string') return sort.dir*(av>bv?1:av<bv?-1:0);
+    return sort.dir*(av-bv);
+  });
+
+  document.getElementById('pf-count').textContent = `${rows.length} prompt × model runs (latest date in range: ${latestInRange})`;
+  const sortIcon = k => window.__pfSort.key===k ? (window.__pfSort.dir===1?' ▲':' ▼') : '';
+  let html = `<table><tr>
+    <th onclick="sortFanout('prompt')">Prompt${sortIcon('prompt')}</th><th>Category</th><th>Model</th>
+    <th onclick="sortFanout('visibility_ours')">Visibility${sortIcon('visibility_ours')}</th>
+    <th onclick="sortFanout('favorability_ours')">Favorability${sortIcon('favorability_ours')}</th>
+    <th onclick="sortFanout('depth_ours')">Depth${sortIcon('depth_ours')}</th>
+    <th onclick="sortFanout('accuracy_ours')">Accuracy${sortIcon('accuracy_ours')}</th>
+    <th onclick="sortFanout('consistency_ours')">Consistency${sortIcon('consistency_ours')}</th>
+    <th onclick="sortFanout('narrative_ours')">Narrative${sortIcon('narrative_ours')}</th></tr>`;
+  const heat=(v,rangeArr)=> v===null?'<span class="small-muted">—</span>':`<span class="heat" style="background:${heatColor(v,rangeArr[0],rangeArr[1])};color:${heatText(v,rangeArr[0],rangeArr[1])}">${fmt1(v)}</span>`;
+  rows.slice(0,400).forEach((r,ri)=>{
+    html += `<tr class="clickable" onclick='openPromptHistory(${ri})' data-ri="${ri}">
+      <td style="max-width:260px;white-space:normal;">${escapeXml(r.p.text)}</td>
+      <td class="small-muted">${r.p.category}</td><td class="small-muted">${r.m}</td>
+      <td>${heat(r.run.scores.ours.visibility,DIM_RANGE.visibility)}</td>
+      <td>${heat(r.run.scores.ours.favorability,DIM_RANGE.favorability)}</td>
+      <td>${heat(r.run.scores.ours.depth,DIM_RANGE.depth)}</td>
+      <td>${heat(r.run.scores.ours.accuracy,DIM_RANGE.accuracy)}</td>
+      <td>${heat(r.run.scores.ours.consistency,DIM_RANGE.consistency)}</td>
+      <td>${heat(r.run.scores.ours.narrative,DIM_RANGE.narrative)}</td></tr>`;
+  });
+  html += `</table>`;
+  document.getElementById('pf-table').innerHTML = html;
+  window.__pfRowsCache = rows.slice(0,400);
+}
+function sortFanout(key){ window.__pfSort.dir = (window.__pfSort.key===key)? -window.__pfSort.dir : -1; window.__pfSort.key=key; renderFanoutTable(); }
+function openPromptHistory(ri){
+  const row = window.__pfRowsCache[ri];
+  const p = row.p;
+  const history = [];
+  MODELS.forEach(m=>{ DATES.forEach(d=>{ const run=getRun(p,m,d); if(run) history.push({m,d,run}); }); });
+  history.sort((a,b)=> b.d.localeCompare(a.d));
+  const listHtml = history.slice(0,60).map((h,hi)=>`
+    <div class="hist-item" onclick='showRunDetail(${ri}, ${hi})'>
+      <b>${h.d}</b> · ${h.m}
+      <div class="small-muted">Vis ${fmt1(h.run.scores.ours.visibility)} · Fav ${fmt1(h.run.scores.ours.favorability)} · Depth ${fmt1(h.run.scores.ours.depth)} · Acc ${fmt1(h.run.scores.ours.accuracy)}</div>
+    </div>`).join('');
+  window.__pfHistoryCache = history;
+  openSidePanel(`
+    <h3 style="margin-top:6px;">Run history</h3>
+    <div class="small-muted" style="margin-bottom:6px;">${p.category} · ${p.race}</div>
+    <div class="run-detail" style="margin-bottom:12px;"><b>Prompt:</b> ${escapeXml(p.text)}</div>
+    <div class="small-muted" style="margin-bottom:8px;">${history.length} runs across ${MODELS.length} models × ${DATES.length} days. Showing most recent 60.</div>
+    <div id="hist-list">${listHtml}</div>`);
+}
+function showRunDetail(ri, hi){
+  const p = window.__pfRowsCache[ri].p;
+  const h = window.__pfHistoryCache[hi];
+  const run = h.run;
+  const ours = ourEntity(p.raceIdx), opp = oppEntity(p.raceIdx);
+  const scoreRow = (label,dim)=> `<div><span>${label}</span><span><b>${fmt1(run.scores.ours[dim])}</b>${opp?` / ${fmt1(run.scores.opp[dim])}`:''}</span></div>`;
+  openSidePanel(`
+    <button class="btn ghost sm" onclick='openPromptHistory(${ri})'>&larr; Back to history</button>
+    <h3 style="margin:10px 0 2px;">${h.d} · ${h.m}</h3>
+    <div class="small-muted" style="margin-bottom:10px;">${p.category} · ${p.race}</div>
+    <div class="run-detail"><b>Prompt:</b> ${escapeXml(p.text)}<br><br><b>Response:</b> ${escapeXml(run.response)}</div>
+    <div class="small-muted section-gap">Scores (${ours.name}${opp?' / '+opp.name:''})</div>
+    <div class="dimscore-grid">
+      ${scoreRow('Visibility','visibility')}${scoreRow('Favorability','favorability')}
+      ${scoreRow('Depth','depth')}${scoreRow('Accuracy','accuracy')}
+      ${scoreRow('Consistency','consistency')}${scoreRow('Narrative','narrative')}
+    </div>`);
+}
+
+/* ============================================================================
+   12. PROMPT LIBRARY HEALTH PAGE
+   ============================================================================ */
+function buildPromptHealthPage(){
+  document.getElementById('page-prompthealth').innerHTML = `
+    <div class="page-head"><div><div class="page-title">Prompt Library Health</div><div class="page-desc">Refusal rate and hypothesis-alignment (did the response actually engage with what the prompt was designed to test, or veer off) by prompt type — aggregated over time, to flag which prompts need to be replaced.</div></div></div>
+    <div class="filterbar">
+      <div class="fitem"><label>Category</label><select id="ph-cat" multiple>${ALL_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Office</label><select id="ph-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+      <div class="fitem"><label>State</label><select id="ph-state">${selectOptions(ALL_STATES,'All')}</select></div>
+      <div class="fitem"><label>Model</label><select id="ph-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Range start</label><input type="date" id="ph-start"></div>
+      <div class="fitem"><label>Range end</label><input type="date" id="ph-end"></div>
+    </div>
+    <div class="kpis" id="ph-kpis"></div>
+    <div class="row2">
+      <div class="card"><div class="card-title">Refusal rate by prompt category</div><div class="card-caption">Share of runs where the model declined to answer, by category.</div><div id="ph-refusal-chart"></div></div>
+      <div class="card"><div class="card-title">Refusal &amp; veer rate over time</div><div class="card-caption">Daily, across all categories in view.</div><div id="ph-trend"></div></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Hypothesis alignment by category</div>
+      <div class="card-caption">Of the responses that weren't refused: did they engage with the specific angle the prompt was built to test, or drift to something else?</div>
+      <div id="ph-align-chart"></div>
+      <div class="legend-row"><span><span class="legend-dot" style="background:var(--brand)"></span>On-hypothesis</span><span><span class="legend-dot" style="background:#D9B36C"></span>Veered off-topic</span></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Prompts flagged for review</div>
+      <div class="card-caption">Ranked by combined refusal + veer rate. These are the prompts most consistently failing to do their job — candidates for rewrite or retirement.</div>
+      <div class="scroll-table" id="ph-table"></div>
+    </div>`;
+  document.getElementById('ph-start').value = DATES[0];
+  document.getElementById('ph-end').value = DATES[DATES.length-1];
+  document.getElementById('page-prompthealth').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', renderPromptHealth));
+  renderPromptHealth();
+}
+function phFilters(){
+  return {
+    cats: multiVals('ph-cat'), office: document.getElementById('ph-office').value, state: document.getElementById('ph-state').value,
+    models: multiVals('ph-model').length? multiVals('ph-model') : MODELS,
+  };
+}
+function renderPromptHealth(){
+  const f = phFilters();
+  const [i0,i1] = dateRangeIdx('ph'); const rangeDates = DATES.slice(i0,i1+1);
+  let prompts = PROMPTS.filter(p=>{
+    if(f.cats.length && f.cats.indexOf(p.category)===-1) return false;
+    if(f.office!=='all' && p.office!==f.office) return false;
+    if(f.state!=='all' && p.state!==f.state) return false;
+    return true;
+  });
+  // gather all runs in scope
+  let total=0, refused=0, onTopic=0, veered=0;
+  const byCat = {}; // cat -> {total,refused,onTopic,veered}
+  const byDate = {}; // date -> {total,refused}
+  const byPrompt = {}; // p.id -> {p,total,refused,veered}
+  prompts.forEach(p=>{
+    if(!byCat[p.category]) byCat[p.category]={total:0,refused:0,onTopic:0,veered:0};
+    if(!byPrompt[p.id]) byPrompt[p.id]={p,total:0,refused:0,veered:0};
+    f.models.forEach(m=>{
+      rangeDates.forEach(d=>{
+        const run = getHealthRun(p,m,d);
+        if(!run) return;
+        total++; byCat[p.category].total++; byPrompt[p.id].total++;
+        if(!byDate[d]) byDate[d]={total:0,refused:0,veered:0,scored:0};
+        byDate[d].total++;
+        if(run.refused){ refused++; byCat[p.category].refused++; byPrompt[p.id].refused++; byDate[d].refused++; }
+        else{
+          byDate[d].scored++;
+          if(run.alignment==='on_topic'){ onTopic++; byCat[p.category].onTopic++; }
+          else { veered++; byCat[p.category].veered++; byPrompt[p.id].veered++; byDate[d].veered++; }
+        }
+      });
+    });
+  });
+  const scored = onTopic+veered;
+  document.getElementById('ph-kpis').innerHTML = `
+    <div class="kpi hi"><div class="kpi-label">Refusal rate</div><div class="kpi-value">${total? fmt1(100*refused/total):'—'}%</div><div class="kpi-sub">${refused} of ${total} runs</div></div>
+    <div class="kpi"><div class="kpi-label">On-hypothesis rate</div><div class="kpi-value">${scored? fmt1(100*onTopic/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
+    <div class="kpi"><div class="kpi-label">Veer rate</div><div class="kpi-value">${scored? fmt1(100*veered/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
+    <div class="kpi"><div class="kpi-label">Prompts in view</div><div class="kpi-value">${prompts.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Flagged for review</div><div class="kpi-value">${Object.values(byPrompt).filter(x=>x.total && (x.refused/x.total>0.22 || x.veered/Math.max(1,x.total-x.refused)>0.30)).length}</div><div class="kpi-sub">high refusal or veer rate</div></div>`;
+
+  const cats = Object.keys(byCat).sort();
+  barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>byCat[c].total? 100*byCat[c].refused/byCat[c].total : null)}], {min:0,max:60,height:Math.max(180,cats.length*0),width:560});
+  const alignRows = cats.map(c=>{ const b=byCat[c]; const s=b.onTopic+b.veered; return {label:c, segments:[{name:'On-hypothesis',value:s? b.onTopic:1, color:'var(--brand)'},{name:'Veered',value:s? b.veered:0, color:'#D9B36C'}]}; });
+  stackedBarChart('ph-align-chart', alignRows, {width:640, barH:22, rowGap:11, labelW:190});
+
+  const dLabels = rangeDates;
+  lineChart('ph-trend', dLabels, [
+    {name:'Refusal %', color:'var(--bad)', values: dLabels.map(d=> byDate[d] && byDate[d].total? 100*byDate[d].refused/byDate[d].total : null)},
+    {name:'Veer %', color:'#D9B36C', values: dLabels.map(d=> byDate[d] && byDate[d].scored? 100*byDate[d].veered/byDate[d].scored : null)},
+  ], {min:0,max:60,height:220});
+
+  const flagged = Object.values(byPrompt).map(x=>{
+    const refRate = x.total? x.refused/x.total : 0;
+    const nonRef = x.total-x.refused;
+    const veerRate = nonRef? x.veered/nonRef : 0;
+    return {...x, refRate, veerRate, healthScore: refRate*0.55+veerRate*0.45};
+  }).sort((a,b)=>b.healthScore-a.healthScore).slice(0,30);
+  let html = `<table><tr><th>Prompt</th><th>Category</th><th>Refusal rate</th><th>Veer rate</th><th>Runs</th><th>Flag</th></tr>`;
+  flagged.forEach(x=>{
+    const flag = x.refRate>0.22 && x.veerRate>0.30 ? '<span class="tag recur">high refusal + veer</span>' : x.refRate>0.22 ? '<span class="tag recur">high refusal</span>' : x.veerRate>0.30 ? '<span class="tag recur">high veer</span>' : '<span class="small-muted">within norms</span>';
+    html += `<tr><td style="max-width:280px;white-space:normal;">${escapeXml(x.p.text)}</td><td class="small-muted">${x.p.category}</td>
+      <td>${fmt1(100*x.refRate)}%</td><td>${fmt1(100*x.veerRate)}%</td><td class="small-muted">${x.total}</td><td>${flag}</td></tr>`;
+  });
+  html += `</table>`;
+  document.getElementById('ph-table').innerHTML = html;
+}
+
+/* ============================================================================
+   13. CITATION BREAKOUT PAGE
+   ============================================================================ */
+function buildCitationsPage(){
+  document.getElementById('page-citations').innerHTML = `
+    <div class="page-head"><div><div class="page-title">Citation Breakout</div><div class="page-desc">What kinds of sources AI responses cite, across every sampled prompt response. Click a category to see its top domains, then a domain to see its top-cited URLs.</div></div></div>
+    <div class="filterbar">
+      <div class="fitem"><label>Office</label><select id="cb-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+      <div class="fitem"><label>State</label><select id="cb-state">${selectOptions(ALL_STATES,'All')}</select></div>
+      <div class="fitem"><label>Race</label><select id="cb-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx,r.label)).join('')}</select></div>
+      <div class="fitem"><label>Range start</label><input type="date" id="cb-start"></div>
+      <div class="fitem"><label>Range end</label><input type="date" id="cb-end"></div>
+    </div>
+    <div class="kpis" id="cb-kpis"></div>
+    <div class="card">
+      <div class="card-title">Citation mix</div>
+      <div class="card-caption">Every citation across responses in view, by category.</div>
+      <div id="cb-stackbar"></div>
+    </div>
+    <div class="card section-gap">
+      <div class="breadcrumbs" id="cb-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
+      <div id="cb-drill"></div>
+    </div>`;
+  // Citations have their own date range (Evertune's sample dates), not DATES (prompt_results').
+  const citationDates = [...new Set(CITATION_EVENTS.map(e=>e.date))].sort();
+  document.getElementById('cb-start').value = citationDates[0] || '';
+  document.getElementById('cb-end').value = citationDates[citationDates.length-1] || '';
+  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; renderCitations(); }));
+  window.__cbDrill = {level:'category'};
+  renderCitations();
+}
+function cbFilteredEvents(){
+  const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
+  // NOT dateRangeIdx('cb')/DATES here — citations have their own date range (Evertune's sample
+  // dates), which don't overlap with prompt_results' dates (CampSight's) at all; indexing into
+  // DATES would silently match zero citations. Compare date strings directly instead.
+  const startVal = document.getElementById('cb-start').value, endVal = document.getElementById('cb-end').value;
+  return CITATION_EVENTS.filter(e=>{
+    if(office!=='all' && e.office!==office) return false;
+    if(state!=='all' && e.state!==state) return false;
+    if(race!=='all' && String(e.raceIdx)!==race) return false;
+    if(startVal && e.date<startVal) return false;
+    if(endVal && e.date>endVal) return false;
+    return true;
+  });
+}
+function cbCrumb(label, onClick, isLast){
+  return `<span style="${isLast?'font-weight:700;color:var(--ink);':'cursor:pointer;color:var(--brand);'}" ${onClick?`onclick="${onClick}"`:''}>${escXHtml(label)}</span>`;
+}
+function renderCitations(){
+  const events = cbFilteredEvents();
+  const domainKey = e => e.catKey+'||'+e.domain;
+  const total = events.length;
+  const byCat = {};
+  events.forEach(e=>{ byCat[e.catKey] = (byCat[e.catKey]||0)+1; });
+  document.getElementById('cb-kpis').innerHTML = `
+    <div class="kpi hi"><div class="kpi-label">Total citations</div><div class="kpi-value">${total}</div><div class="kpi-sub">in current filter view</div></div>
+    <div class="kpi"><div class="kpi-label">Unique domains</div><div class="kpi-value">${new Set(events.map(e=>e.domain)).size}</div></div>
+    <div class="kpi"><div class="kpi-label">Candidate-owned share</div><div class="kpi-value">${total? fmt1(100*(byCat['Candidate/Officeholder-Owned Content']||0)/total):'—'}%</div></div>
+    <div class="kpi"><div class="kpi-label">Local + national news share</div><div class="kpi-value">${total? fmt1(100*((byCat['Local/Regional News']||0)+(byCat['National News']||0))/total):'—'}%</div></div>`;
+
+  const segs = CITATION_CATEGORIES.map(c=>({name:c.label, value:byCat[c.key]||0, color:c.color})).filter(s=>s.value>0);
+  stackedBarChart('cb-stackbar', [{label:'All citations', segments:segs.length?segs:[{name:'None',value:1,color:'#EEF1F4'}]}], {width:700, barH:30, rowGap:0, labelW:0});
+
+  const drill = window.__cbDrill || {level:'category'};
+  const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
+  if(drill.level==='domain'||drill.level==='url'){
+    const catInfo = CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
+    crumbs.push(' / '+cbCrumb(catInfo.label, `window.__cbDrill={level:'domain',catKey:'${drill.catKey}'};renderCitations();`, drill.level==='domain'));
+  }
+  if(drill.level==='url'){
+    crumbs.push(' / '+cbCrumb(drill.domain, null, true));
+  }
+  document.getElementById('cb-crumbs').innerHTML = crumbs.join('');
+
+  const drillEl = document.getElementById('cb-drill');
+  if(drill.level==='category'){
+    const rows = CITATION_CATEGORIES.map(c=>({key:c.key,label:c.label,color:c.color,count:byCat[c.key]||0})).sort((a,b)=>b.count-a.count);
+    const max = Math.max(1,...rows.map(r=>r.count));
+    drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top categories by citation frequency</div>` + rows.map(r=>`
+      <div class="topic-row" style="cursor:pointer;" onclick="window.__cbDrill={level:'domain',catKey:'${r.key}'};renderCitations();">
+        <div class="topic-name" style="width:190px;">${escXHtml(r.label)}</div>
+        <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
+        <div class="topic-pct" style="width:54px;">${r.count}</div>
+      </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
+  } else if(drill.level==='domain'){
+    const catEvents = events.filter(e=>e.catKey===drill.catKey);
+    const byDom = {};
+    catEvents.forEach(e=>{ byDom[e.domain]=(byDom[e.domain]||0)+1; });
+    const rows = Object.entries(byDom).map(([domain,count])=>({domain,count})).sort((a,b)=>b.count-a.count);
+    const max = Math.max(1,...rows.map(r=>r.count));
+    const catInfo = CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
+    drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top domains in "${escXHtml(catInfo.label)}"</div>` + (rows.length? rows.map(r=>`
+      <div class="topic-row" style="cursor:pointer;" onclick="window.__cbDrill={level:'url',catKey:'${drill.catKey}',domain:'${escXAttr(r.domain)}'};renderCitations();">
+        <div class="topic-name" style="width:190px;">${escXHtml(r.domain)}</div>
+        <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${catInfo.color};"></div></div>
+        <div class="topic-pct" style="width:54px;">${r.count}</div>
+      </div>`).join('') : `<div class="small-muted">No domains in this category for the current filters.</div>`);
+  } else if(drill.level==='url'){
+    const domEvents = events.filter(e=>e.catKey===drill.catKey && e.domain===drill.domain);
+    const byUrl = {};
+    domEvents.forEach(e=>{ byUrl[e.url]=(byUrl[e.url]||0)+1; });
+    const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
+    drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drill.domain)}</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
+      rows.map(r=>`<tr><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') + `</table></div>`;
+  }
+}
+
+/* ============================================================================
+   11. INIT — waits for real data (loadAllData + buildFromFetchedData) before
+   building any page, since every buildXPage() reads ROSTER/PROMPTS/METRICS.
+   ============================================================================ */
+async function initDashboard(){
+  const loadingEl = document.getElementById('data-loading');
+  try {
+    await loadAllData();
+    buildFromFetchedData();
+  } catch(err) {
+    if(loadingEl) loadingEl.innerHTML = '<div style="padding:40px;text-align:center;color:#B23B3B;">Failed to load dashboard data: '+escXHtml(String(err))+'<br><br>Check that dashboard_data/dist/*.json exist and this page is served over http(s), not file://.</div>';
+    console.error('Dashboard data load failed', err);
+    return;
+  }
+  safe('overview', buildOverviewPage);
+  safe('fanout', buildFanoutPage);
+  safe('visibility', ()=>buildDimensionPage('visibility'));
+  safe('favorability', ()=>buildDimensionPage('favorability'));
+  safe('depth', ()=>buildDimensionPage('depth'));
+  safe('accuracy', buildAccuracyPage);
+  safe('consistency', ()=>buildDimensionPage('consistency'));
+  safe('narrative', ()=>buildDimensionPage('narrative'));
+  safe('prompthealth', buildPromptHealthPage);
+  safe('citations', buildCitationsPage);
+  enhanceSelects();
+  collapseAllFilterbars();
+  if(loadingEl) loadingEl.remove();
+}
+initDashboard();
+</script>
+</body>
+</html>

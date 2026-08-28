@@ -344,10 +344,15 @@ function lineChart(containerId, labels, series, opts){
   const tickEvery = Math.max(1, Math.floor(labels.length/6));
   labels.forEach((l,i)=>{ if(i%tickEvery===0) svg += `<text x="${xScale(i).toFixed(1)}" y="${H-8}" font-size="9" text-anchor="middle" fill="#8B93A1">${l.slice(5)}</text>`; });
   series.forEach(s=>{
-    const pts = s.values.map((v,i)=> v===null? null : `${xScale(i).toFixed(1)},${yScale(v).toFixed(1)}`).filter(Boolean).join(' ');
+    const defined = s.values.map((v,i)=>({v,i})).filter(p=>p.v!==null);
+    const pts = defined.map(p=>`${xScale(p.i).toFixed(1)},${yScale(p.v).toFixed(1)}`).join(' ');
     const attrs = {points:pts,fill:'none',stroke:s.color,'stroke-width':2,'stroke-linejoin':'round'};
     if(s.dash) attrs['stroke-dasharray']=s.dash;
     svg += svgEl('polyline',attrs);
+    // A single-point (or otherwise sparse) series draws no visible segment as a bare polyline —
+    // a narrowed-to-one-day range used to render as a blank chart because of this. Explicit dot
+    // markers at every defined point keep single/sparse selections visible.
+    defined.forEach(p=>{ svg += svgEl('circle',{cx:xScale(p.i).toFixed(1),cy:yScale(p.v).toFixed(1),r:defined.length>1?2.5:3.5,fill:s.color}); });
   });
   svg += `</svg>`;
   document.getElementById(containerId).innerHTML = svg;
@@ -436,35 +441,52 @@ function buildXSel(sel){
     renderAll();
     if(!multiple) close();
   }
-  function renderPanel(){
+  /* Header (search box + select-all/clear) is built once and reused across re-renders — only the
+     option list underneath gets its innerHTML replaced on each keystroke. Rebuilding the whole
+     panel (search input included) on every keystroke used to destroy and recreate the focused
+     <input> each time, which silently dropped keyboard focus after every character typed — a real
+     bug reported 2026-08-28 ("can only type one letter at a time" in the candidate search). */
+  function renderList(){
     const term = searchTerm.trim().toLowerCase();
     const all = opts();
     const filtered = term? all.filter(o=>o.label.toLowerCase().includes(term)) : all;
-    let inner = '';
-    if(all.length>7) inner += `<div class="xsel-search"><input type="text" placeholder="Search…" value="${escXAttr(searchTerm)}"></div>`;
-    if(multiple) inner += `<div class="xsel-actions"><button data-act="all">Select all</button><button data-act="clear">Clear</button></div>`;
-    if(!filtered.length) inner += `<div class="xsel-empty">No matches</div>`;
-    else inner += `<div class="xsel-list">` + filtered.map(o=>`
+    const body = panel.querySelector('.xsel-body');
+    if(!body) return;
+    body.innerHTML = !filtered.length ? `<div class="xsel-empty">No matches</div>`
+      : `<div class="xsel-list">` + filtered.map(o=>`
         <div class="xsel-opt ${o.selected?'selected':''}" data-val="${escXAttr(o.value)}">
           ${multiple? `<span class="xsel-check"><svg viewBox="0 0 10 10"><path d="M1 5l2.7 2.7L9 2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` : ''}
           <span class="xsel-opt-label">${escXHtml(o.label)}</span>
         </div>`).join('') + `</div>`;
-    panel.innerHTML = inner;
-    const inp = panel.querySelector('.xsel-search input');
-    if(inp){ inp.addEventListener('input', e=>{ searchTerm=e.target.value; renderPanel(); }); inp.addEventListener('click', e=>e.stopPropagation()); }
-    const allBtn = panel.querySelector('[data-act="all"]');
-    if(allBtn) allBtn.addEventListener('click', e=>{ e.stopPropagation(); filtered.forEach(o=>{ const oo=Array.from(sel.options).find(x=>x.value===o.value); if(oo) oo.selected=true; }); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
-    const clearBtn = panel.querySelector('[data-act="clear"]');
-    if(clearBtn) clearBtn.addEventListener('click', e=>{ e.stopPropagation(); Array.from(sel.options).forEach(oo=>oo.selected=false); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
-    panel.querySelectorAll('.xsel-opt').forEach(row=>row.addEventListener('click', e=>{ e.stopPropagation(); toggleVal(row.dataset.val); }));
+    body.querySelectorAll('.xsel-opt').forEach(row=>row.addEventListener('click', e=>{ e.stopPropagation(); toggleVal(row.dataset.val); }));
+  }
+  function renderPanel(){
+    const all = opts();
+    const hasSearch = all.length>7;
+    if(!panel.querySelector('.xsel-body') || panel.dataset.hasSearch!==String(hasSearch)){
+      panel.dataset.hasSearch = String(hasSearch);
+      let header = '';
+      if(hasSearch) header += `<div class="xsel-search"><input type="text" placeholder="Search…"></div>`;
+      if(multiple) header += `<div class="xsel-actions"><button data-act="all">Select all</button><button data-act="clear">Clear</button></div>`;
+      panel.innerHTML = header + `<div class="xsel-body"></div>`;
+      const inp = panel.querySelector('.xsel-search input');
+      if(inp){ inp.value = searchTerm; inp.addEventListener('input', e=>{ searchTerm=e.target.value; renderList(); }); inp.addEventListener('click', e=>e.stopPropagation()); }
+      const allBtn = panel.querySelector('[data-act="all"]');
+      if(allBtn) allBtn.addEventListener('click', e=>{ e.stopPropagation(); const term=searchTerm.trim().toLowerCase(); const filtered = term? opts().filter(o=>o.label.toLowerCase().includes(term)) : opts(); filtered.forEach(o=>{ const oo=Array.from(sel.options).find(x=>x.value===o.value); if(oo) oo.selected=true; }); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
+      const clearBtn = panel.querySelector('[data-act="clear"]');
+      if(clearBtn) clearBtn.addEventListener('click', e=>{ e.stopPropagation(); Array.from(sel.options).forEach(oo=>oo.selected=false); sel.dispatchEvent(new Event('change',{bubbles:true})); renderAll(); });
+    }
+    renderList();
   }
   function renderAll(){ renderTrigger(); renderChips(); if(wrap.classList.contains('open')) renderPanel(); }
   function open(){
     document.querySelectorAll('.xsel.open').forEach(o=>{ if(o!==wrap) o.classList.remove('open'); });
     wrap.classList.add('open'); searchTerm=''; renderPanel();
+    const inp = panel.querySelector('.xsel-search input');
+    if(inp) inp.value = '';
     const r = wrap.getBoundingClientRect();
     wrap.classList.toggle('panel-right', r.left > window.innerWidth - 300);
-    setTimeout(()=>{ const inp=panel.querySelector('.xsel-search input'); if(inp) inp.focus(); },0);
+    setTimeout(()=>{ if(inp) inp.focus(); },0);
   }
   function close(){ wrap.classList.remove('open'); }
   trigger.addEventListener('click', e=>{ e.stopPropagation(); wrap.classList.contains('open')? close() : open(); });
@@ -896,6 +918,12 @@ function buildFromFetchedData(){
 function topicsForCategory(cat){ return [...new Set(PROMPTS.filter(p=>p.category===cat && p.topic).map(p=>p.topic))].sort(); }
 
 function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
+/* Average of an entity's per-day history values within [i0,i1] — the date-range-scoped analog of
+   METRICS[id].base[dim] (which is all-history) — used by Narrative's comparison chart so it can
+   respect its own date-range filter instead of always aggregating the full history regardless of
+   what range is picked (2026-08-28 feedback: comparison and over-time charts showed different
+   numbers for the same race because only the trend chart's aggregate was date-scoped). */
+function rangeAvg(entityId, dim, i0, i1){ return avg(METRICS[entityId].history[dim].slice(i0,i1+1)); }
 function stddev(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); if(v.length<2) return 0; const m=avg(v); return Math.sqrt(avg(v.map(x=>(x-m)*(x-m)))); }
 function pctScored2(rows, field){
   const vals = rows.map(r=>r[field]).filter(v=>v!==''&&v!==null&&v!==undefined);
@@ -959,14 +987,43 @@ function buildMetrics(){
   });
 }
 const WEIGHTS = {visibility:0.40,favorability:0.15,depth:0.15,accuracy:0.15,narrative:0.15};
-function composite(e){
-  const m=METRICS[e.id].base;
-  const favN = m.favorability!=null? (m.favorability+100)/2 : null;
-  const parts=[[m.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]];
+function weightedAvgKnown(parts){
   const known = parts.filter(([v])=>v!=null);
   if(!known.length) return null;
   const wsum = known.reduce((a,[,w])=>a+w,0);
   return known.reduce((a,[v,w])=>a+v*w,0)/wsum;
+}
+function composite(e){
+  const m=METRICS[e.id].base;
+  const favN = m.favorability!=null? (m.favorability+100)/2 : null;
+  return weightedAvgKnown([[m.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]]);
+}
+/* Date-scoped analog of composite() — sourced from one day's slice of the entity's history arrays
+   instead of the all-history .base — used by the "All races" tables' Composite column so it
+   reflects only the most recent day, same reasoning as computeRaceRows below. */
+function compositeAtDay(e, dayIdx){
+  const h = METRICS[e.id].history;
+  const fav = h.favorability[dayIdx];
+  const favN = fav!=null? (fav+100)/2 : null;
+  return weightedAvgKnown([[h.visibility[dayIdx],WEIGHTS.visibility],[favN,WEIGHTS.favorability],[h.depth[dayIdx],WEIGHTS.depth],[h.accuracy[dayIdx],WEIGHTS.accuracy],[h.narrative[dayIdx],WEIGHTS.narrative]]);
+}
+/* Same weights/formula as the candidate-level composite() above, applied to a single prompt×model
+   run's own scores instead of an aggregate — used by Prompt Fanout's per-row Composite column.
+   0/1/2 dims scale to 0/50/100 (the single-run analog of composite()'s "% scored 2" share);
+   Visibility's 0/1 mention flag scales to 0/100; Favorability rescales from its native -100..100
+   net range, identically to the aggregate version. Dims this particular prompt doesn't test are
+   null and drop out of the weighted average (renormalized over whichever dims are present), same
+   renormalize-over-known-parts behavior as composite(). */
+function runComposite(scores){
+  const favN = scores.favorability!=null? (scores.favorability+100)/2 : null;
+  const scale2 = v => v!=null? v*50 : null;
+  return weightedAvgKnown([
+    [scores.visibility!=null?scores.visibility*100:null, WEIGHTS.visibility],
+    [favN, WEIGHTS.favorability],
+    [scale2(scores.depth), WEIGHTS.depth],
+    [scale2(scores.accuracy), WEIGHTS.accuracy],
+    [scale2(scores.narrative), WEIGHTS.narrative],
+  ]);
 }
 
 /* ---- real per-run lookup, replacing the old RNG-based getRun() — same output shape.
@@ -1117,7 +1174,7 @@ const PAGE_RERENDER = {
   accuracy: ()=>{ renderDimensionPage('accuracy'); renderAccuracyPriority(); },
   consistency: ()=>renderDimensionPage('consistency'),
   narrative: ()=>{ renderDimensionPage('narrative'); renderNarrativeTopics(); },
-  prompthealth: ()=>renderPromptHealth(),
+  prompthealth: ()=>{ renderPhRefusal(); renderPhTrend(); renderPhAlign(); renderPhFlagged(); },
   citations: ()=>renderCitations()
 };
 document.querySelectorAll('.nav-item').forEach(item=>{
@@ -1171,23 +1228,24 @@ function computeRaceRows(dimKey, filters){
   if(filters.state && filters.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===filters.state);
   if(filters.office && filters.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===filters.office);
   if(filters.level && filters.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===filters.level);
-  if(filters.search && filters.search.trim()){
-    const q = filters.search.trim().toLowerCase();
-    idxs = idxs.filter(i=>{ const r=ROSTER[i]; return r.name.toLowerCase().includes(q) || (r.opponent&&r.opponent.toLowerCase().includes(q)) || r.race.toLowerCase().includes(q); });
-  }
+  if(filters.race && filters.race!=='all') idxs = idxs.filter(i=>i===parseInt(filters.race,10));
+  // "All races" tables show only the most recent day we have data for, not an all-history average
+  // — averaging over the whole history muddled the numbers with stale data (2026-08-28 feedback).
+  // A race with no run on that exact latest day correctly shows "—" rather than falling back to an
+  // older day, so this stays an honest "most recent data" snapshot, not a padded one.
+  const dayIdx = DATES.length-1;
   return idxs.map(i=>{
     const ours = ourEntity(i), opp = oppEntity(i);
     let ourVal, oppVal, gap;
     if(dimKey==='favorability'){
       // Net favorability (% positive − % negative), not % negative alone — higher is better,
       // same convention as every other dimension.
-      ourVal = METRICS[ours.id].base.favorability;
-      oppVal = opp? METRICS[opp.id].base.favorability : null;
+      ourVal = METRICS[ours.id].history.favorability[dayIdx];
+      oppVal = opp? METRICS[opp.id].history.favorability[dayIdx] : null;
       gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null; // positive = opponent's net favorability ahead of ours
     } else {
-      if(dimKey==='accuracy'){ ourVal = METRICS[ours.id].accCounts.total? 100*METRICS[ours.id].accCounts[2]/METRICS[ours.id].accCounts.total : null; oppVal = opp? (METRICS[opp.id].accCounts.total? 100*METRICS[opp.id].accCounts[2]/METRICS[opp.id].accCounts.total : null) : null; }
-      else if(dimKey==='composite'){ ourVal = composite(ours); oppVal = opp? composite(opp): null; }
-      else { ourVal = METRICS[ours.id].base[dimKey]; oppVal = opp? METRICS[opp.id].base[dimKey] : null; }
+      if(dimKey==='composite'){ ourVal = compositeAtDay(ours, dayIdx); oppVal = opp? compositeAtDay(opp, dayIdx): null; }
+      else { ourVal = METRICS[ours.id].history[dimKey][dayIdx]; oppVal = opp? METRICS[opp.id].history[dimKey][dayIdx] : null; }
       gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null;
     }
     return {raceIdx:i, ours, opp, ourVal, oppVal, gap};
@@ -1296,7 +1354,7 @@ function buildOverviewPage(){
     </div>
     <div class="card">
       <div class="card-title">Score by dimension</div>
-      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race, or search for a candidate.</div>
+      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
       ${chartFilterBarHtml('ov-cmp', {})}
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div class="fitem"><label>Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1307,9 +1365,10 @@ function buildOverviewPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">All races</div>
-      <div class="card-caption">Click a race to expand candidate vs. opponent detail across all dimensions. Sorted by biggest gap first.</div>
+      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Click a race to expand candidate vs. opponent detail across all dimensions. Sorted by biggest gap first.</div>
       <div class="filterbar" style="margin-bottom:10px;">
-        <div class="fitem"><label>Search candidate or race</label><input type="text" id="ov-tbl-search" placeholder="Type a name or race…" style="min-width:170px;"></div>
+        <div class="fitem"><label>Race</label><select id="ov-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
+        <div class="fitem"><label>Candidate</label><select id="ov-tbl-cand"><option value="all">All</option></select></div>
         <div class="fitem"><label>State</label><select id="ov-tbl-state">${selectOptions(ALL_STATES,'All')}</select></div>
         <div class="fitem"><label>Office</label><select id="ov-tbl-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
         <div class="fitem"><label>Race level</label><select id="ov-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1322,7 +1381,9 @@ function buildOverviewPage(){
   document.getElementById('ov-cmp-location').addEventListener('change', renderOverview);
   document.getElementById('ov-cmp-state').addEventListener('change', ()=>{ populateLocationSelect('ov-cmp-location','ov-cmp-state','ov-cmp-level'); renderOverview(); });
   document.getElementById('ov-cmp-level').addEventListener('change', ()=>{ populateLocationSelect('ov-cmp-location','ov-cmp-state','ov-cmp-level'); renderOverview(); });
-  document.getElementById('ov-tbl-search').addEventListener('input', renderOverviewTable);
+  document.getElementById('ov-tbl-race').dataset.xselDone='1'; buildXSel(document.getElementById('ov-tbl-race'));
+  wireCandidateSelect('ov-tbl', renderOverviewTable);
+  document.getElementById('ov-tbl-race').addEventListener('change', renderOverviewTable);
   ['tbl-state','tbl-office','tbl-level'].forEach(f=>document.getElementById(`ov-${f}`).addEventListener('change', renderOverviewTable));
   renderOverview();
   renderOverviewTable();
@@ -1348,10 +1409,6 @@ function resolveEntitiesForFilters(f){
   if(f.level && f.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===f.level);
   if(f.location && f.location!=='all') idxs = idxs.filter(i=>ROSTER[i].location===f.location);
   if(f.party && f.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===f.party);
-  if(f.search && f.search.trim()){
-    const q = f.search.trim().toLowerCase();
-    idxs = idxs.filter(i=>{ const r=ROSTER[i]; return r.name.toLowerCase().includes(q) || (r.opponent&&r.opponent.toLowerCase().includes(q)) || r.race.toLowerCase().includes(q); });
-  }
   return idxs;
 }
 function renderOverviewInsight(ours){
@@ -1414,10 +1471,12 @@ function renderOverviewTable(){
   // Independent filter bar from the chart above (same "one bar per chart" pattern used on the
   // dimension pages) — lets you browse the full race table regardless of what the chart is
   // currently narrowed to.
-  const f = {state:document.getElementById('ov-tbl-state').value, office:document.getElementById('ov-tbl-office').value, level:document.getElementById('ov-tbl-level').value, search:document.getElementById('ov-tbl-search').value};
+  const f = {state:document.getElementById('ov-tbl-state').value, office:document.getElementById('ov-tbl-office').value, level:document.getElementById('ov-tbl-level').value, race:document.getElementById('ov-tbl-race').value};
   const idxs = resolveEntitiesForFilters(f);
-  // race table: composite, one row per race, expand -> candidate + opponent sub-rows
-  const rows = idxs.map(i=>{ const o=ourEntity(i), p=oppEntity(i); const ov=composite(o), pv=p?composite(p):null; return {raceIdx:i,o,p,ov,pv,gap:(pv!==null?pv-ov:null)}; })
+  // race table: composite, one row per race, expand -> candidate + opponent sub-rows. Most recent
+  // day only (see computeRaceRows' comment) so this doesn't muddle the numbers with older history.
+  const dayIdx = DATES.length-1;
+  const rows = idxs.map(i=>{ const o=ourEntity(i), p=oppEntity(i); const ov=compositeAtDay(o,dayIdx), pv=p?compositeAtDay(p,dayIdx):null; return {raceIdx:i,o,p,ov,pv,gap:(pv!==null?pv-ov:null)}; })
     .sort((a,b)=>{ const av=a.gap===null?-9999:a.gap, bv=b.gap===null?-9999:b.gap; return bv-av; });
   const showAll = window.__showAllState['ov-table'];
   const shown = showAll? rows: rows.slice(0,15);
@@ -1438,8 +1497,9 @@ function toggleOvExpand(raceIdx){
   if(open) return;
   const o=ourEntity(raceIdx), p=oppEntity(raceIdx);
   const dims=['visibility','favorability','depth','accuracy','narrative'];
+  const dayIdx = DATES.length-1;
   const heat=(v)=>`<span class="heat" style="background:${heatColor(v)};color:${heatText(v)}">${fmt1(v)}</span>`;
-  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td><span class="badge ${e.party==='Democrat'?'dem':e.party==='Republican'?'rep':'np'}">${e.party==='Democrat'?'D':e.party==='Republican'?'R':'NP'}</span></td>${dims.map(d=>`<td>${heat(d==='favorability'?(METRICS[e.id].base[d]+100)/2:METRICS[e.id].base[d])}</td>`).join('')}<td><b>${fmt1(composite(e))}</b></td></tr>`:'';
+  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td><span class="badge ${e.party==='Democrat'?'dem':e.party==='Republican'?'rep':'np'}">${e.party==='Democrat'?'D':e.party==='Republican'?'R':'NP'}</span></td>${dims.map(d=>{ const raw=METRICS[e.id].history[d][dayIdx]; return `<td>${heat(d==='favorability'&&raw!=null?(raw+100)/2:raw)}</td>`; }).join('')}<td><b>${fmt1(compositeAtDay(e,dayIdx))}</b></td></tr>`:'';
   document.getElementById('ov-expand-body-'+raceIdx).innerHTML = `<table style="margin-top:4px;"><tr><th style="padding-left:24px;">Name</th><th>Party</th><th>Vis.</th><th>Fav.</th><th>Depth</th><th>Acc.</th><th>Narr.</th><th>Composite</th></tr>${subRow(o)}${subRow(p)}</table>`;
   document.getElementById('ov-expand-'+raceIdx).style.display='';
 }
@@ -1455,83 +1515,56 @@ const DIM_DESC = {
   consistency:'How stable the answer to the same prompt is when re-asked over time.',
   narrative:'Whether a candidate\u2019s intended themes show up in association with their name — plus what topics show up regardless of what we specified.'
 };
-/* Reusable per-chart filter bar: candidate search (free-text, resolves to a race) + party/state/
-   race/office/blind, namespaced under `prefix` so each chart owns independent filter state — not
-   one page-level bar shared (and visually disconnected from) multiple charts. */
+/* Reusable per-chart filter bar: Race (main) + Candidate (sub-filter, options narrow to that
+   race's two entities once a race is picked) + party/state/office/blind, namespaced under
+   `prefix` so each chart owns independent filter state — not one page-level bar shared (and
+   visually disconnected from) multiple charts. Race and Candidate used to be one free-text
+   "search candidate or race" box that fuzzy-resolved to a race; split into two real dropdowns
+   per 2026-08-28 feedback so users can drive either one directly instead of typing a guess. */
 function chartFilterBarHtml(prefix, opts){
   opts = opts||{};
   return `<div class="filterbar" style="margin-bottom:10px;">
-    <div class="fitem"><label>Search candidate or race</label><input type="text" id="${prefix}-search" list="${prefix}-search-list" placeholder="Type a name or race…" style="min-width:200px;"><datalist id="${prefix}-search-list">${ALL_RACES.flatMap(r=>{ const ros=ROSTER[r.idx]; const names=[ros.name]; if(ros.opponent) names.push(ros.opponent); names.push(r.label); return names.map(n=>`<option value="${escXHtml(n)}">`); }).join('')}</datalist><div id="${prefix}-search-err" class="small-muted" style="color:var(--bad);display:none;margin-top:3px;">No match found — try a different name or race.</div></div>
+    <div class="fitem"><label>Race</label><select id="${prefix}-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
+    <div class="fitem"><label>Candidate</label><select id="${prefix}-cand"><option value="all">All</option></select></div>
     <div class="fitem"><label>Party</label><select id="${prefix}-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
     <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
-    <div class="fitem"><label>Race</label><select id="${prefix}-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
     <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
     ${opts.blind ? `<div class="fitem"><label>Prompt type</label><select id="${prefix}-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
     ${opts.dateRange ? `<div class="fitem"><label>Range start</label><input type="date" id="${prefix}-start"></div><div class="fitem"><label>Range end</label><input type="date" id="${prefix}-end"></div>` : ''}
   </div>`;
 }
-function levenshtein(a, b){
-  a=a.toLowerCase(); b=b.toLowerCase();
-  const m=a.length, n=b.length;
-  if(!m) return n; if(!n) return m;
-  let prev = Array.from({length:n+1},(_, j)=>j);
-  for(let i=1;i<=m;i++){
-    const cur=[i];
-    for(let j=1;j<=n;j++){
-      cur[j] = a[i-1]===b[j-1] ? prev[j-1] : 1+Math.min(prev[j-1],prev[j],cur[j-1]);
-    }
-    prev = cur;
-  }
-  return prev[n];
+/* All candidate+opponent entities for one race (or every race, when raceIdx is null/undefined),
+   sorted by name — shared by every Race+Candidate filter pair (chart bars and race-table bars
+   alike) so "Candidate" always means "either side of whichever race(s) are in scope." */
+function candidateEntitiesForRace(raceIdx){
+  let ents = raceIdx==null ? ENTITIES : ENTITIES.filter(e=>e.raceIdx===raceIdx);
+  return ents.slice().sort((a,b)=>a.name.localeCompare(b.name));
 }
-/* Candidate/opponent-name OR race-label search, resolves to a race (setting the Race select) so
-   the rest of the filter/render logic — already keyed on "is a single race selected?" — needs no
-   separate code path. Tolerant of small typos (edit distance) since an exact-match-only search
-   silently fails on any typo and leaves whatever race was previously selected showing, with no
-   indication the search didn't do anything (a real bug reported 2026-08-27: searching "John
-   LeSeur" — missing a letter from the real "John LeSueur" — silently left Jorge Lozano's race,
-   LeSueur's own opponent, on screen from an earlier selection). */
-function resolveSearchToRaceIdx(query){
-  const q = query.trim();
-  if(!q) return null;
-  const qLower = q.toLowerCase();
-  const candidates = ALL_RACES.flatMap(r=>{
-    const ros = ROSTER[r.idx];
-    const names = [ros.name];
-    if(ros.opponent) names.push(ros.opponent);
-    names.push(r.label);
-    return names.map(name=>({name, raceIdx:r.idx}));
-  });
-  const exact = candidates.find(c=>c.name.toLowerCase()===qLower);
-  if(exact) return exact.raceIdx;
-  // Fuzzy fallback: smallest edit distance, only accepted if "close enough" relative to length
-  // (avoids matching two totally different short names to each other).
-  let best=null, bestDist=Infinity;
-  candidates.forEach(c=>{
-    const d = levenshtein(qLower, c.name.toLowerCase());
-    if(d<bestDist){ bestDist=d; best=c; }
-  });
-  const threshold = Math.max(1, Math.floor(qLower.length*0.2));
-  return (best && bestDist<=threshold) ? best.raceIdx : null;
-}
-function wireCandidateSearch(prefix, onChange){
-  const input = document.getElementById(prefix+'-search');
+/* Wires a Race select + its Candidate sub-filter: picking a Race narrows Candidate's option list
+   to just that race's two entities; picking a Candidate sets Race to match (so all the existing
+   render logic, already keyed on "is a single race selected?", needs no separate code path) and
+   re-narrows the list around it. Reused for chart filter bars and the "All races" table bars. */
+function wireCandidateSelect(prefix, onChange){
   const raceSel = document.getElementById(prefix+'-race');
-  const errEl = document.getElementById(prefix+'-search-err');
-  input.addEventListener('change', ()=>{
-    if(errEl) errEl.style.display='none';
-    if(!input.value.trim()) return;
-    const raceIdx = resolveSearchToRaceIdx(input.value);
-    if(raceIdx!=null){
-      raceSel.value = String(raceIdx); refreshXSel(raceSel); onChange();
-    } else {
-      // No match at all (even fuzzy) — reset to "all" rather than silently leaving a stale
-      // previous selection on screen looking like it's the search result.
-      raceSel.value = 'all'; refreshXSel(raceSel); onChange();
-      if(errEl) errEl.style.display='';
+  const candSel = document.getElementById(prefix+'-cand');
+  function repopulate(){
+    const prevId = candSel.value;
+    const raceIdx = raceSel.value!=='all' ? parseInt(raceSel.value,10) : null;
+    candSel.innerHTML = `<option value="all">All</option>` + candidateEntitiesForRace(raceIdx).map(e=>opt(e.id,e.name)).join('');
+    const stillValid = raceIdx!=null && Array.from(candSel.options).some(o=>o.value===prevId);
+    candSel.value = stillValid ? prevId : 'all';
+    refreshXSel(candSel);
+  }
+  repopulate();
+  raceSel.addEventListener('change', repopulate);
+  candSel.dataset.xselDone='1'; buildXSel(candSel);
+  candSel.addEventListener('change', ()=>{
+    if(candSel.value!=='all'){
+      const ent = entityById(candSel.value);
+      if(ent && raceSel.value!==String(ent.raceIdx)){ raceSel.value = String(ent.raceIdx); refreshXSel(raceSel); repopulate(); }
     }
+    onChange();
   });
-  raceSel.addEventListener('change', ()=>{ if(raceSel.value==='all') input.value=''; if(errEl) errEl.style.display='none'; });
 }
 function wireChartFilterBar(prefix, opts, onChange){
   opts = opts||{};
@@ -1543,7 +1576,7 @@ function wireChartFilterBar(prefix, opts, onChange){
     document.getElementById(prefix+'-start').addEventListener('change', onChange);
     document.getElementById(prefix+'-end').addEventListener('change', onChange);
   }
-  wireCandidateSearch(prefix, onChange);
+  wireCandidateSelect(prefix, onChange);
 }
 function buildDimensionPage(key){
   const el = document.getElementById('page-'+key);
@@ -1554,8 +1587,8 @@ function buildDimensionPage(key){
     <div class="row2${key==='narrative'?' row2-stretch':''}">
       <div class="card">
         <div class="card-title">${DIM_LABELS[key]} — comparison</div>
-        <div class="card-caption">${key==='consistency' ? 'Share of same-day-stability outcomes by AI provider — a model\'s own answer stability, not a candidate comparison. Population still respects race/state/office filters.' : IS_BUCKET3[key] ? 'Share of scored responses by outcome. Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected (or a candidate is searched).' : 'Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.'}</div>
-        ${chartFilterBarHtml(key+'-cmp', {blind:IS_BUCKET3[key]})}
+        <div class="card-caption">${key==='consistency' ? 'Share of same-day-stability outcomes by AI provider — a model\'s own answer stability, not a candidate comparison. Population still respects race/state/office filters.' : IS_BUCKET3[key] ? 'Share of scored responses by outcome. Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race or candidate is selected.' : 'Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.'}</div>
+        ${chartFilterBarHtml(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true})}
         ${IS_BUCKET3[key] ? `<div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="fitem"><label>Prompt category</label><select id="${key}-cmp-cat">${selectOptions(ALL_CATEGORIES,'All categories')}</select></div>
           <div class="fitem" id="${key}-cmp-topic-wrap" style="display:none;"><label>Issue</label><select id="${key}-cmp-topic"><option value="all">All issues</option></select></div>
@@ -1572,9 +1605,10 @@ function buildDimensionPage(key){
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
       <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
-      <div class="card-caption">${key==='favorability' ? 'Sorted by highest net favorability gap (opponent minus ours) first.' : 'Sorted by biggest gap first.'} Click a race to see every prompt run for it, sorted lowest to highest.</div>
+      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. ${key==='favorability' ? 'Sorted by highest net favorability gap (opponent minus ours) first.' : 'Sorted by biggest gap first.'} Click a race to see every prompt run for it, sorted lowest to highest.</div>
       <div class="filterbar" style="margin-bottom:10px;">
-        <div class="fitem"><label>Search candidate or race</label><input type="text" id="${key}-tbl-search" placeholder="Type a name or race…" style="min-width:170px;"></div>
+        <div class="fitem"><label>Race</label><select id="${key}-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
+        <div class="fitem"><label>Candidate</label><select id="${key}-tbl-cand"><option value="all">All</option></select></div>
         <div class="fitem"><label>State</label><select id="${key}-tbl-state">${selectOptions(ALL_STATES,'All')}</select></div>
         <div class="fitem"><label>Office</label><select id="${key}-tbl-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
         <div class="fitem"><label>Race level</label><select id="${key}-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1582,10 +1616,12 @@ function buildDimensionPage(key){
       <div class="scroll-table" id="${key}-table"></div>
       <div class="section-gap" id="${key}-table-more"></div>
     </div>` : ''}`;
-  wireChartFilterBar(key+'-cmp', {blind:IS_BUCKET3[key]}, ()=>renderDimensionPage(key));
+  wireChartFilterBar(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true}, ()=>renderDimensionPage(key));
   wireChartFilterBar(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true}, ()=>renderDimensionPage(key));
   if(key!=='consistency'){
-    document.getElementById(`${key}-tbl-search`).addEventListener('input', ()=>renderDimTable(key));
+    document.getElementById(`${key}-tbl-race`).dataset.xselDone='1'; buildXSel(document.getElementById(`${key}-tbl-race`));
+    wireCandidateSelect(key+'-tbl', ()=>renderDimTable(key));
+    document.getElementById(`${key}-tbl-race`).addEventListener('change', ()=>renderDimTable(key));
     ['tbl-state','tbl-office','tbl-level'].forEach(f=>document.getElementById(`${key}-${f}`).addEventListener('change', ()=>renderDimTable(key)));
   }
   if(IS_BUCKET3[key]){
@@ -1605,7 +1641,7 @@ function buildDimensionPage(key){
 function narrativeExtraHtml(){
   return `<div class="card section-gap">
     <div class="card-title">Key topics explorer</div>
-    <div class="card-caption" id="na-caption">Every topic detected in responses, ranked by frequency — not just the topics we specified. Pick a race (or search a candidate) to compare one candidate vs. their opponent, or leave it on "All" to aggregate every matching candidate by party — e.g. all Democrats vs. all Republicans in a state.</div>
+    <div class="card-caption" id="na-caption">Every topic detected in responses, ranked by frequency — not just the topics we specified. Pick a race or a candidate to compare one candidate vs. their opponent, or leave it on "All" to aggregate every matching candidate by party — e.g. all Democrats vs. all Republicans in a state.</div>
     ${chartFilterBarHtml('na', {})}
     <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
       <div class="fitem"><label>Race level</label><select id="na-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1649,10 +1685,9 @@ function topicBarsFromCounts(countByTopic, party){
   const max = Math.max(1, ...Object.values(countByTopic));
   return NARRATIVE_TOPIC_ORDER.map(topic=>{
     const count = countByTopic[topic] || 0;
-    const isCore = coreTopicsForParty(party).includes(topic);
     const color = topicColor(topic, party);
     return `<div class="topic-row">
-      <div class="topic-name">${isCore?'<b>'+escXHtml(topic)+'</b>':escXHtml(topic)}</div>
+      <div class="topic-name">${escXHtml(topic)}</div>
       <div class="topic-track"><div class="topic-fill" style="width:${count?clamp(100*count/max,4,100):0}%;background:${color};"></div></div>
       <div class="topic-pct">${count}</div>
     </div>`;
@@ -2103,10 +2138,12 @@ function renderDimensionPage(key){
     renderBucket3Charts(key, dimFilters(key+'-cmp'), dimFilters(key+'-trend'));
   } else {
     const fCmp = dimFilters(key+'-cmp'), fTrend = dimFilters(key+'-trend');
+    const [ci0,ci1] = dateRangeIdx(key+'-cmp');
+    const cmpVal = id => rangeAvg(id, key, ci0, ci1);
     if(fCmp.race!=='all'){
       const idx = parseInt(fCmp.race,10); const o=ourEntity(idx), p=oppEntity(idx);
-      const series=[{name:o.name,color:'#2E5EAA',values:[METRICS[o.id].base[key]]}];
-      if(p) series.push({name:p.name,color:'#B23B3B',values:[METRICS[p.id].base[key]]});
+      const series=[{name:o.name,color:'#2E5EAA',values:[cmpVal(o.id)]}];
+      if(p) series.push({name:p.name,color:'#B23B3B',values:[cmpVal(p.id)]});
       barChart(key+'-cmp', [o.race], series, {min:range[0],max:range[1],height:220});
     } else {
       let idxs = ROSTER.map((r,i)=>i);
@@ -2114,7 +2151,7 @@ function renderDimensionPage(key){
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
       const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
       const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-      barChart(key+'-cmp', [DIM_LABELS[key]], [{name:'Democrats',color:'#2E5EAA',values:[avg(demE.map(e=>METRICS[e.id].base[key]))]},{name:'Republicans',color:'#B23B3B',values:[avg(repE.map(e=>METRICS[e.id].base[key]))]}], {min:range[0],max:range[1],height:220});
+      barChart(key+'-cmp', [DIM_LABELS[key]], [{name:'Democrats',color:'#2E5EAA',values:[avg(demE.map(e=>cmpVal(e.id)))]},{name:'Republicans',color:'#B23B3B',values:[avg(repE.map(e=>cmpVal(e.id)))]}], {min:range[0],max:range[1],height:220});
     }
     const [i0,i1]=dateRangeIdx(key+'-trend'); const labels=DATES.slice(i0,i1+1);
     if(fTrend.race!=='all'){
@@ -2285,7 +2322,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
   }
 }
 function renderDimTable(key){
-  const filters = {state:document.getElementById(key+'-tbl-state').value, office:document.getElementById(key+'-tbl-office').value, level:document.getElementById(key+'-tbl-level').value, search:document.getElementById(key+'-tbl-search').value};
+  const filters = {state:document.getElementById(key+'-tbl-state').value, office:document.getElementById(key+'-tbl-office').value, level:document.getElementById(key+'-tbl-level').value, race:document.getElementById(key+'-tbl-race').value};
   renderRaceTable(key+'-table', key, filters);
 }
 
@@ -2556,9 +2593,10 @@ function buildFanoutPage(){
   document.getElementById('page-fanout').innerHTML = `
     <div class="page-head"><div><div class="page-title">Prompt Fanout</div></div></div>
     <div class="filterbar">
+      <div class="fitem"><label>Search prompt</label><input type="text" id="pf-search" placeholder="Type to search prompt text…" style="min-width:200px;"></div>
       <div class="fitem"><label>Party</label><select id="pf-party" multiple>${ALL_PARTIES.map(p=>`<option>${p}</option>`).join('')}</select></div>
-      <div class="fitem"><label>Candidate</label><select id="pf-cand" multiple>${ROSTER.map((r,i)=>`<option value="${r.name}">${r.name}</option>`).join('')}</select></div>
       <div class="fitem"><label>Race</label><select id="pf-race" multiple>${ALL_RACES.map(r=>`<option value="${r.idx}">${r.label}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Candidate</label><select id="pf-cand" multiple>${pfCandidateOptionsHtml([])}</select></div>
       <div class="fitem"><label>Office</label><select id="pf-office" multiple>${ALL_OFFICES.map(o=>`<option>${o}</option>`).join('')}</select></div>
       <div class="fitem"><label>State</label><select id="pf-state" multiple>${ALL_STATES.map(s=>`<option>${s}</option>`).join('')}</select></div>
       <div class="fitem"><label>Category</label><select id="pf-cat" multiple>${ALL_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
@@ -2567,26 +2605,65 @@ function buildFanoutPage(){
       <div class="fitem"><label>Range start</label><input type="date" id="pf-start"></div>
       <div class="fitem"><label>Range end</label><input type="date" id="pf-end"></div>
     </div>
-    <div class="small-muted section-gap">Tip: ctrl/cmd-click (or shift-click) to select multiple values in any filter above. Leave a filter empty to include everything.</div>
+    <div class="small-muted section-gap">Tip: ctrl/cmd-click (or shift-click) to select multiple values in any filter above. Leave a filter empty to include everything. Picking one or more races narrows the Candidate list to just those races' candidates and opponents.</div>
     <div class="card section-gap">
-      <div class="card-title">Prompt runs</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
+        <div class="card-title" style="margin-bottom:0;">Prompt runs</div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="btn sm" id="pf-view-runs" onclick="setFanoutView('runs')">Individual runs</button>
+          <button type="button" class="btn ghost sm" id="pf-view-rollup" onclick="setFanoutView('rollup')">Rollup by prompt</button>
+        </div>
+      </div>
       <div class="card-caption" id="pf-count"></div>
       <div class="scroll-table" style="max-height:560px;" id="pf-table"></div>
     </div>`;
   document.getElementById('pf-start').value = DATES[0];
   document.getElementById('pf-end').value = DATES[DATES.length-1];
   document.getElementById('page-fanout').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', renderFanoutTable));
-  window.__pfSort = {key:'accuracy_ours', dir:-1};
+  document.getElementById('pf-race').addEventListener('change', pfRepopulateCand);
+  document.getElementById('pf-search').addEventListener('input', renderFanoutTable);
+  window.__pfSort = {key:'composite', dir:1};
+  window.__pfRollupSort = {key:'composite', dir:1};
+  window.__pfView = 'runs';
   renderFanoutTable();
 }
+/* Rollup by prompt / Individual runs toggle — see renderFanoutRollup() below for why this view
+   exists (2026-08-28 feedback: no easy way to see how a prompt is scoring on average across
+   models for a given day, since Evertune only gives Favorability at the prompt level per model
+   per day, not per individual response — the individual-runs table can't answer that question). */
+function setFanoutView(view){
+  window.__pfView = view;
+  document.getElementById('pf-view-runs').className = 'btn sm' + (view==='runs'?'':' ghost');
+  document.getElementById('pf-view-rollup').className = 'btn sm' + (view==='rollup'?'':' ghost');
+  renderFanoutTable();
+}
+/* Candidate options for Prompt Fanout's multi-select, narrowed to the given race indices (empty
+   = every race) — includes opponents, which the old ROSTER-only option list left out entirely
+   (2026-08-28 bug: an opponent like "Jay Feely" was never a selectable option, full stop). */
+function pfCandidateOptionsHtml(raceIdxs){
+  const ents = raceIdxs.length ? ENTITIES.filter(e=>raceIdxs.includes(e.raceIdx)) : ENTITIES;
+  const names = [...new Set(ents.map(e=>e.name))].sort();
+  return names.map(n=>`<option value="${escXAttr(n)}">${escXHtml(n)}</option>`).join('');
+}
+function pfRepopulateCand(){
+  const raceSel = document.getElementById('pf-race');
+  const candSel = document.getElementById('pf-cand');
+  const raceIdxs = Array.from(raceSel.selectedOptions).map(o=>parseInt(o.value,10));
+  const prevSelected = new Set(Array.from(candSel.selectedOptions).map(o=>o.value));
+  candSel.innerHTML = pfCandidateOptionsHtml(raceIdxs);
+  Array.from(candSel.options).forEach(o=>{ if(prevSelected.has(o.value)) o.selected=true; });
+  refreshXSel(candSel);
+}
 function multiVals(id){ return Array.from(document.getElementById(id).selectedOptions).map(o=>o.value); }
-function renderFanoutTable(){
+/* Shared filter read + prompt scoping for both Prompt Fanout views (individual runs and rollup). */
+function pfScoped(){
   const parties = multiVals('pf-party'), cands = multiVals('pf-cand'), races = multiVals('pf-race').map(Number),
         offices = multiVals('pf-office'), states = multiVals('pf-state'), cats = multiVals('pf-cat'),
         types = multiVals('pf-type'), models = multiVals('pf-model').length? multiVals('pf-model') : MODELS;
   const [i0,i1] = dateRangeIdx('pf');
-
-  let prompts = PROMPTS.filter(p=>{
+  const q = (document.getElementById('pf-search').value||'').trim().toLowerCase();
+  const prompts = PROMPTS.filter(p=>{
+    if(q && !p.text.toLowerCase().includes(q)) return false;
     if(races.length && !races.includes(p.raceIdx)) return false;
     if(cands.length && cands.indexOf(p.cand)===-1 && !(p.opp && cands.indexOf(p.opp)!==-1)) return false;
     if(offices.length && offices.indexOf(p.office)===-1) return false;
@@ -2596,13 +2673,20 @@ function renderFanoutTable(){
     if(parties.length){ const okCand = parties.indexOf(p.cand_party)!==-1; const okOpp = p.opp_party && parties.indexOf(p.opp_party)!==-1; if(!okCand && !okOpp) return false; }
     return true;
   });
+  return {prompts, models, i0, i1};
+}
+function renderFanoutTable(){
+  if(window.__pfView==='rollup') renderFanoutRollup(); else renderFanoutRuns();
+}
+function renderFanoutRuns(){
+  const {prompts, models, i0, i1} = pfScoped();
 
   let rows = [];
-  prompts.forEach(p=>{ models.forEach(m=>{ const run=getRunInRange(p,m,i0,i1); if(run) rows.push({p, m, run}); }); });
+  prompts.forEach(p=>{ models.forEach(m=>{ const run=getRunInRange(p,m,i0,i1); if(run) rows.push({p, m, run, composite: runComposite(run.scores.ours)}); }); });
 
   const sort = window.__pfSort;
   rows.sort((a,b)=>{
-    const val = r => { if(sort.key==='prompt') return r.p.text; const [dim,side]=sort.key.split('_'); return r.run.scores[side][dim]; };
+    const val = r => { if(sort.key==='prompt') return r.p.text; if(sort.key==='composite') return r.composite; const [dim,side]=sort.key.split('_'); return r.run.scores[side][dim]; };
     let av=val(a), bv=val(b);
     if(av===null) av = sort.dir===1? Infinity : -Infinity;
     if(bv===null) bv = sort.dir===1? Infinity : -Infinity;
@@ -2610,10 +2694,11 @@ function renderFanoutTable(){
     return sort.dir*(av-bv);
   });
 
-  document.getElementById('pf-count').textContent = `${rows.length} prompt × model runs in range`;
+  document.getElementById('pf-count').textContent = `${rows.length} prompt × model runs in range, sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':(sort.dir===1?'lowest':'highest')+' '+sort.key.replace('_ours','')+' first'}.`;
   const sortIcon = k => window.__pfSort.key===k ? (window.__pfSort.dir===1?' ▲':' ▼') : '';
   let html = `<table><tr>
     <th onclick="sortFanout('prompt')">Prompt${sortIcon('prompt')}</th><th>Race</th><th>Category</th><th>Named/Blind</th><th>Model</th>
+    <th onclick="sortFanout('composite')">Composite${sortIcon('composite')}</th>
     <th onclick="sortFanout('visibility_ours')">Visibility${sortIcon('visibility_ours')}</th>
     <th onclick="sortFanout('favorability_ours')">Favorability${sortIcon('favorability_ours')}</th>
     <th onclick="sortFanout('depth_ours')">Depth${sortIcon('depth_ours')}</th>
@@ -2628,6 +2713,7 @@ function renderFanoutTable(){
       <td class="small-muted">${r.p.category}</td>
       <td class="small-muted">${r.p.is_blind==='Y'?'Blind':'Named'}</td>
       <td class="small-muted">${r.m}</td>
+      <td><b>${heat(r.composite,[0,100])}</b></td>
       <td>${heat(r.run.scores.ours.visibility,DIM_RANGE.visibility)}</td>
       <td>${heat(r.run.scores.ours.favorability,DIM_RANGE.favorability)}</td>
       <td>${heat(r.run.scores.ours.depth,DIM_RANGE.depth)}</td>
@@ -2640,6 +2726,95 @@ function renderFanoutTable(){
   window.__pfRowsCache = rows.slice(0,400);
 }
 function sortFanout(key){ window.__pfSort.dir = (window.__pfSort.key===key)? -window.__pfSort.dir : -1; window.__pfSort.key=key; renderFanoutTable(); }
+
+/* ---- Rollup by prompt: one row per (prompt, day), averaged across whatever models have a run
+   that day — answers "how is this prompt doing on average across models today", which the
+   individual-runs table (one row per prompt×model) can't show at a glance. Visibility and
+   Favorability are read directly off the vendor's own prompt-level field (Evertune scores those
+   two dimensions once per prompt per model per day, never per individual response — averaging our
+   per-response visibility_score/favorability_pct fields here would just be averaging N copies of
+   the same number). Depth/Accuracy/Consistency/Narrative genuinely are scored per response by our
+   own pipeline, so those are real averages across however many responses landed that day. ---- */
+function rollupValueForPromptDay(p, models, d){
+  const contributingModels = models.filter(m=>RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d]);
+  if(!contributingModels.length) return null;
+  const visVals=[], favVals=[];
+  contributingModels.forEach(m=>{
+    const row = RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d];
+    const vis = row['prompt_level_visibility_score_candidate'];
+    if(vis!=='' && vis!=null) visVals.push(+vis);
+    const pos = row['prompt_level_favorability_pct_positive_candidate'], neg = row['prompt_level_favorability_pct_negative_candidate'];
+    if(pos!=='' && pos!=null) favVals.push((+pos)-(+neg));
+  });
+  const runs = contributingModels.map(m=>getRun(p,m,d)).filter(Boolean);
+  const dimAvg = dim => avg(runs.map(r=>r.scores.ours[dim]));
+  const scores = {
+    visibility: avg(visVals), favorability: avg(favVals),
+    depth: dimAvg('depth'), accuracy: dimAvg('accuracy'),
+    consistency: dimAvg('consistency'), narrative: dimAvg('narrative'),
+  };
+  const favN = scores.favorability!=null? (scores.favorability+100)/2 : null;
+  const scale2 = v => v!=null? v*50 : null;
+  const composite = weightedAvgKnown([
+    [scores.visibility, WEIGHTS.visibility], [favN, WEIGHTS.favorability],
+    [scale2(scores.depth), WEIGHTS.depth], [scale2(scores.accuracy), WEIGHTS.accuracy], [scale2(scores.narrative), WEIGHTS.narrative],
+  ]);
+  return {modelsWithData: contributingModels.length, totalModels: models.length, scores, composite};
+}
+function renderFanoutRollup(){
+  const {prompts, models, i0, i1} = pfScoped();
+  let rows = [];
+  prompts.forEach(p=>{
+    for(let di=i0; di<=i1; di++){
+      const d = DATES[di];
+      const v = rollupValueForPromptDay(p, models, d);
+      if(v) rows.push({p, date:d, ...v});
+    }
+  });
+
+  const sort = window.__pfRollupSort;
+  rows.sort((a,b)=>{
+    const val = r => { if(sort.key==='prompt') return r.p.text; if(sort.key==='date') return r.date; if(sort.key==='composite') return r.composite; return r.scores[sort.key]; };
+    let av=val(a), bv=val(b);
+    if(av===null) av = sort.dir===1? Infinity : -Infinity;
+    if(bv===null) bv = sort.dir===1? Infinity : -Infinity;
+    if(typeof av==='string') return sort.dir*(av>bv?1:av<bv?-1:0);
+    return sort.dir*(av-bv);
+  });
+
+  document.getElementById('pf-count').textContent = `${rows.length} prompt × day rollups in range, each averaged across whichever models ran that day — sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':sort.key==='date'?(sort.dir===1?'earliest':'latest')+' first':(sort.dir===1?'lowest':'highest')+' '+sort.key+' first'}.`;
+  const sortIcon = k => window.__pfRollupSort.key===k ? (window.__pfRollupSort.dir===1?' ▲':' ▼') : '';
+  let html = `<table><tr>
+    <th onclick="sortFanoutRollup('prompt')">Prompt${sortIcon('prompt')}</th><th>Race</th><th>Category</th><th>Named/Blind</th>
+    <th onclick="sortFanoutRollup('date')">Date${sortIcon('date')}</th><th title="How many of the models in your Model filter (or all 3, if none picked) actually ran this prompt that day">Models</th>
+    <th onclick="sortFanoutRollup('composite')">Composite${sortIcon('composite')}</th>
+    <th onclick="sortFanoutRollup('visibility')">Visibility${sortIcon('visibility')}</th>
+    <th onclick="sortFanoutRollup('favorability')">Favorability${sortIcon('favorability')}</th>
+    <th onclick="sortFanoutRollup('depth')">Depth${sortIcon('depth')}</th>
+    <th onclick="sortFanoutRollup('accuracy')">Accuracy${sortIcon('accuracy')}</th>
+    <th onclick="sortFanoutRollup('consistency')">Consistency${sortIcon('consistency')}</th>
+    <th onclick="sortFanoutRollup('narrative')">Narrative${sortIcon('narrative')}</th></tr>`;
+  const heat=(v,rangeArr)=> v===null?'<span class="small-muted">—</span>':`<span class="heat" style="background:${heatColor(v,rangeArr[0],rangeArr[1])};color:${heatText(v,rangeArr[0],rangeArr[1])}">${fmt1(v)}</span>`;
+  rows.slice(0,400).forEach(r=>{
+    html += `<tr>
+      <td style="max-width:340px;white-space:normal;">${escapeXml(r.p.text)}</td>
+      <td class="small-muted" style="max-width:150px;white-space:normal;">${escapeXml(r.p.race)}</td>
+      <td class="small-muted">${r.p.category}</td>
+      <td class="small-muted">${r.p.is_blind==='Y'?'Blind':'Named'}</td>
+      <td class="small-muted">${r.date}</td>
+      <td class="small-muted">${r.modelsWithData} of ${r.totalModels}</td>
+      <td><b>${heat(r.composite,[0,100])}</b></td>
+      <td>${heat(r.scores.visibility,DIM_RANGE.visibility)}</td>
+      <td>${heat(r.scores.favorability,DIM_RANGE.favorability)}</td>
+      <td>${heat(r.scores.depth,DIM_RANGE.depth)}</td>
+      <td>${heat(r.scores.accuracy,DIM_RANGE.accuracy)}</td>
+      <td>${heat(r.scores.consistency,DIM_RANGE.consistency)}</td>
+      <td>${heat(r.scores.narrative,DIM_RANGE.narrative)}</td></tr>`;
+  });
+  html += `</table>`;
+  document.getElementById('pf-table').innerHTML = html;
+}
+function sortFanoutRollup(key){ window.__pfRollupSort.dir = (window.__pfRollupSort.key===key)? -window.__pfRollupSort.dir : -1; window.__pfRollupSort.key=key; renderFanoutRollup(); }
 function openPromptHistory(ri){
   const row = window.__pfRowsCache[ri];
   const p = row.p;
@@ -2681,51 +2856,47 @@ function showRunDetail(ri, hi){
 /* ============================================================================
    12. PROMPT LIBRARY HEALTH PAGE
    ============================================================================ */
-function buildPromptHealthPage(){
-  document.getElementById('page-prompthealth').innerHTML = `
-    <div class="page-head"><div><div class="page-title">Prompt Diagnostics</div></div></div>
-    <div class="filterbar">
-      <div class="fitem"><label>Category</label><select id="ph-cat" multiple>${ALL_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div class="fitem"><label>Party</label><select id="ph-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
-      <div class="fitem"><label>Race</label><select id="ph-race"><option value="all">All</option>${ALL_RACES.map(r=>`<option value="${r.idx}">${escXHtml(r.label)}</option>`).join('')}</select></div>
-      <div class="fitem"><label>Office</label><select id="ph-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
-      <div class="fitem"><label>State</label><select id="ph-state">${selectOptions(ALL_STATES,'All')}</select></div>
-      <div class="fitem"><label>Model</label><select id="ph-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
-      <div class="fitem"><label>Range start</label><input type="date" id="ph-start"></div>
-      <div class="fitem"><label>Range end</label><input type="date" id="ph-end"></div>
-    </div>
-    <div class="kpis" id="ph-kpis"></div>
-    <div class="row2">
-      <div class="card"><div class="card-title">Refusal rate by prompt category</div><div class="card-caption">Share of runs where the model declined to answer, by category.</div><div id="ph-refusal-chart"></div></div>
-      <div class="card"><div class="card-title">Refusal &amp; veer rate over time</div><div class="card-caption">Daily, across all categories in view.</div><div id="ph-trend"></div></div>
-    </div>
-    <div class="card section-gap">
-      <div class="card-title">Hypothesis alignment by category</div>
-      <div class="card-caption">Of the responses that weren't refused: did they engage with the specific angle the prompt was built to test, or drift to something else?</div>
-      <div id="ph-align-chart"></div>
-      <div class="legend-row"><span><span class="legend-dot" style="background:var(--brand)"></span>On-hypothesis</span><span><span class="legend-dot" style="background:#D9B36C"></span>Veered off-topic</span></div>
-    </div>
-    <div class="card section-gap">
-      <div class="card-title">Prompts flagged for review</div>
-      <div class="card-caption">Ranked by combined refusal + veer rate. These are the prompts most consistently failing to do their job — candidates for rewrite or retirement.</div>
-      <div class="scroll-table" id="ph-table"></div>
-    </div>`;
-  document.getElementById('ph-start').value = DATES[0];
-  document.getElementById('ph-end').value = DATES[DATES.length-1];
-  document.getElementById('page-prompthealth').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', renderPromptHealth));
-  renderPromptHealth();
+/* Each section below owns its own independent filter bar (party/state/race/candidate/office/
+   category/model/date-range), namespaced under its own prefix — replacing the single page-level
+   bar that used to drive all four sections at once, so e.g. the flagged-prompt table can be
+   narrowed to a different date range than the refusal-rate chart (2026-08-28 feedback). */
+function phFilterBarHtml(prefix, opts){
+  opts = opts||{};
+  return `<div class="filterbar" style="margin-bottom:10px;">
+    <div class="fitem"><label>Category</label><select id="${prefix}-cat" multiple>${ALL_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
+    <div class="fitem"><label>Race</label><select id="${prefix}-race"><option value="all">All</option>${ALL_RACES.map(r=>`<option value="${r.idx}">${escXHtml(r.label)}</option>`).join('')}</select></div>
+    <div class="fitem"><label>Candidate</label><select id="${prefix}-cand"><option value="all">All</option></select></div>
+    <div class="fitem"><label>Party</label><select id="${prefix}-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
+    <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+    <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
+    <div class="fitem"><label>Model</label><select id="${prefix}-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+    <div class="fitem"><label>Range start</label><input type="date" id="${prefix}-start"></div>
+    <div class="fitem"><label>Range end</label><input type="date" id="${prefix}-end"></div>
+    ${opts.search ? `<div class="fitem"><label>Search prompt</label><input type="text" id="${prefix}-search" placeholder="Type to search…" style="min-width:200px;"></div>` : ''}
+  </div>`;
 }
-function phFilters(){
+function wirePhFilterBar(prefix, onChange){
+  ['cat','model'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  ['party','office','state'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  document.getElementById(`${prefix}-race`).dataset.xselDone='1'; buildXSel(document.getElementById(`${prefix}-race`));
+  document.getElementById(`${prefix}-race`).addEventListener('change', onChange);
+  wireCandidateSelect(prefix, onChange);
+  document.getElementById(`${prefix}-start`).value = DATES[0];
+  document.getElementById(`${prefix}-end`).value = DATES[DATES.length-1];
+  document.getElementById(`${prefix}-start`).addEventListener('change', onChange);
+  document.getElementById(`${prefix}-end`).addEventListener('change', onChange);
+  const searchEl = document.getElementById(`${prefix}-search`);
+  if(searchEl) searchEl.addEventListener('input', onChange);
+}
+function phSectionFilters(prefix){
   return {
-    cats: multiVals('ph-cat'), office: document.getElementById('ph-office').value, state: document.getElementById('ph-state').value,
-    party: document.getElementById('ph-party').value, race: document.getElementById('ph-race').value,
-    models: multiVals('ph-model').length? multiVals('ph-model') : MODELS,
+    cats: multiVals(prefix+'-cat'), office: document.getElementById(prefix+'-office').value, state: document.getElementById(prefix+'-state').value,
+    party: document.getElementById(prefix+'-party').value, race: document.getElementById(prefix+'-race').value,
+    models: multiVals(prefix+'-model').length? multiVals(prefix+'-model') : MODELS,
   };
 }
-function renderPromptHealth(){
-  const f = phFilters();
-  const [i0,i1] = dateRangeIdx('ph'); const rangeDates = DATES.slice(i0,i1+1);
-  let prompts = PROMPTS.filter(p=>{
+function phFilterPrompts(f){
+  return PROMPTS.filter(p=>{
     if(f.cats.length && f.cats.indexOf(p.category)===-1) return false;
     if(f.office!=='all' && p.office!==f.office) return false;
     if(f.state!=='all' && p.state!==f.state) return false;
@@ -2733,16 +2904,18 @@ function renderPromptHealth(){
     if(f.party!=='all' && p.cand_party!==f.party && p.opp_party!==f.party) return false;
     return true;
   });
-  // gather all runs in scope
+}
+/* Shared aggregation core — gathers refusal/on-topic/veer counts across every (prompt, model, day)
+   run in scope, broken out by category, by date, and by individual prompt. Every section below
+   calls this with its own filtered prompt set / model list / date range. */
+function phCollectStats(prompts, models, rangeDates){
   let total=0, refused=0, onTopic=0, veered=0;
-  const byCat = {}; // cat -> {total,refused,onTopic,veered}
-  const byDate = {}; // date -> {total,refused}
-  const byPrompt = {}; // p.id -> {p,total,refused,veered}
+  const byCat={}, byDate={}, byPrompt={};
   prompts.forEach(p=>{
     const cCat = consolidatedCategory(p.category);
     if(!byCat[cCat]) byCat[cCat]={total:0,refused:0,onTopic:0,veered:0};
     if(!byPrompt[p.id]) byPrompt[p.id]={p,total:0,refused:0,veered:0};
-    f.models.forEach(m=>{
+    models.forEach(m=>{
       rangeDates.forEach(d=>{
         const run = getHealthRun(p,m,d);
         if(!run) return;
@@ -2758,39 +2931,99 @@ function renderPromptHealth(){
       });
     });
   });
-  const scored = onTopic+veered;
+  return {total,refused,onTopic,veered,byCat,byDate,byPrompt};
+}
+function buildPromptHealthPage(){
+  document.getElementById('page-prompthealth').innerHTML = `
+    <div class="page-head"><div><div class="page-title">Prompt Diagnostics</div></div></div>
+    <div class="card">
+      <div class="card-title">Refusal rate by prompt category</div>
+      <div class="card-caption">Share of runs where the model declined to answer, by category. KPIs above summarize this section's filtered view.</div>
+      ${phFilterBarHtml('ph-ref')}
+      <div class="kpis" id="ph-kpis"></div>
+      <div id="ph-refusal-chart"></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Refusal &amp; veer rate over time</div>
+      <div class="card-caption">Daily, across whatever's in this section's own filtered view.</div>
+      ${phFilterBarHtml('ph-trend')}
+      <div id="ph-trend-chart"></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Hypothesis alignment by category</div>
+      <div class="card-caption">Of the responses that weren't refused: did they engage with the specific angle the prompt was built to test, or drift to something else?</div>
+      ${phFilterBarHtml('ph-align')}
+      <div id="ph-align-chart"></div>
+      <div class="legend-row"><span><span class="legend-dot" style="background:var(--brand)"></span>On-hypothesis</span><span><span class="legend-dot" style="background:#D9B36C"></span>Veered off-topic</span></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Prompts flagged for review</div>
+      <div class="card-caption">Ranked by combined refusal + veer rate. These are the prompts most consistently failing to do their job — candidates for rewrite or retirement.</div>
+      ${phFilterBarHtml('ph-flag', {search:true})}
+      <div class="scroll-table" id="ph-table"></div>
+    </div>`;
+  wirePhFilterBar('ph-ref', renderPhRefusal);
+  wirePhFilterBar('ph-trend', renderPhTrend);
+  wirePhFilterBar('ph-align', renderPhAlign);
+  wirePhFilterBar('ph-flag', renderPhFlagged);
+  renderPhRefusal(); renderPhTrend(); renderPhAlign(); renderPhFlagged();
+}
+function renderPhRefusal(){
+  const f = phSectionFilters('ph-ref');
+  const prompts = phFilterPrompts(f);
+  const [i0,i1] = dateRangeIdx('ph-ref'); const rangeDates = DATES.slice(i0,i1+1);
+  const s = phCollectStats(prompts, f.models, rangeDates);
+  const scored = s.onTopic+s.veered;
   document.getElementById('ph-kpis').innerHTML = `
-    <div class="kpi hi"><div class="kpi-label">Refusal rate</div><div class="kpi-value">${total? fmt1(100*refused/total):'—'}%</div><div class="kpi-sub">${refused} of ${total} runs</div></div>
-    <div class="kpi"><div class="kpi-label">On-hypothesis rate</div><div class="kpi-value">${scored? fmt1(100*onTopic/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
-    <div class="kpi"><div class="kpi-label">Veer rate</div><div class="kpi-value">${scored? fmt1(100*veered/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
+    <div class="kpi hi"><div class="kpi-label">Refusal rate</div><div class="kpi-value">${s.total? fmt1(100*s.refused/s.total):'—'}%</div><div class="kpi-sub">${s.refused} of ${s.total} runs</div></div>
+    <div class="kpi"><div class="kpi-label">On-hypothesis rate</div><div class="kpi-value">${scored? fmt1(100*s.onTopic/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
+    <div class="kpi"><div class="kpi-label">Veer rate</div><div class="kpi-value">${scored? fmt1(100*s.veered/scored):'—'}%</div><div class="kpi-sub">of non-refused runs</div></div>
     <div class="kpi"><div class="kpi-label">Prompts in view</div><div class="kpi-value">${prompts.length}</div></div>
-    <div class="kpi"><div class="kpi-label">Flagged for review</div><div class="kpi-value">${Object.values(byPrompt).filter(x=>x.total && (x.refused/x.total>0.22 || x.veered/Math.max(1,x.total-x.refused)>0.30)).length}</div><div class="kpi-sub">high refusal or veer rate</div></div>`;
-
-  const cats = Object.keys(byCat).sort();
-  barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>byCat[c].total? 100*byCat[c].refused/byCat[c].total : null)}], {min:0,max:60,height:280,width:560,rotateLabels:true});
-  const alignRows = cats.map(c=>{ const b=byCat[c]; const s=b.onTopic+b.veered; return {label:c, segments:[{name:'On-hypothesis',value:s? b.onTopic:1, color:'var(--brand)'},{name:'Veered',value:s? b.veered:0, color:'#D9B36C'}]}; });
-  stackedBarChart('ph-align-chart', alignRows, {width:640, barH:22, rowGap:11, labelW:190});
-
-  const dLabels = rangeDates;
-  lineChart('ph-trend', dLabels, [
-    {name:'Refusal %', color:'var(--bad)', values: dLabels.map(d=> byDate[d] && byDate[d].total? 100*byDate[d].refused/byDate[d].total : null)},
-    {name:'Veer %', color:'#D9B36C', values: dLabels.map(d=> byDate[d] && byDate[d].scored? 100*byDate[d].veered/byDate[d].scored : null)},
+    <div class="kpi"><div class="kpi-label">Flagged for review</div><div class="kpi-value">${Object.values(s.byPrompt).filter(x=>x.total && (x.refused/x.total>0.22 || x.veered/Math.max(1,x.total-x.refused)>0.30)).length}</div><div class="kpi-sub">high refusal or veer rate</div></div>`;
+  const cats = Object.keys(s.byCat).sort();
+  barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>s.byCat[c].total? 100*s.byCat[c].refused/s.byCat[c].total : null)}], {min:0,max:60,height:280,width:560,rotateLabels:true});
+}
+function renderPhTrend(){
+  const f = phSectionFilters('ph-trend');
+  const prompts = phFilterPrompts(f);
+  const [i0,i1] = dateRangeIdx('ph-trend'); const rangeDates = DATES.slice(i0,i1+1);
+  const s = phCollectStats(prompts, f.models, rangeDates);
+  lineChart('ph-trend-chart', rangeDates, [
+    {name:'Refusal %', color:'var(--bad)', values: rangeDates.map(d=> s.byDate[d] && s.byDate[d].total? 100*s.byDate[d].refused/s.byDate[d].total : null)},
+    {name:'Veer %', color:'#D9B36C', values: rangeDates.map(d=> s.byDate[d] && s.byDate[d].scored? 100*s.byDate[d].veered/s.byDate[d].scored : null)},
   ], {min:0,max:60,height:220});
+}
+function renderPhAlign(){
+  const f = phSectionFilters('ph-align');
+  const prompts = phFilterPrompts(f);
+  const [i0,i1] = dateRangeIdx('ph-align'); const rangeDates = DATES.slice(i0,i1+1);
+  const s = phCollectStats(prompts, f.models, rangeDates);
+  const cats = Object.keys(s.byCat).sort();
+  const alignRows = cats.map(c=>{ const b=s.byCat[c]; const sc=b.onTopic+b.veered; return {label:c, segments:[{name:'On-hypothesis',value:sc? b.onTopic:1, color:'var(--brand)'},{name:'Veered',value:sc? b.veered:0, color:'#D9B36C'}]}; });
+  stackedBarChart('ph-align-chart', alignRows, {width:640, barH:22, rowGap:11, labelW:190});
+}
+function renderPhFlagged(){
+  const f = phSectionFilters('ph-flag');
+  const prompts = phFilterPrompts(f);
+  const [i0,i1] = dateRangeIdx('ph-flag'); const rangeDates = DATES.slice(i0,i1+1);
+  const s = phCollectStats(prompts, f.models, rangeDates);
+  const q = (document.getElementById('ph-flag-search').value||'').trim().toLowerCase();
 
   const sortKey = window.__phSort || 'health';
   const sortFns = {health:(a,b)=>b.healthScore-a.healthScore, refusal:(a,b)=>b.refRate-a.refRate, veer:(a,b)=>b.veerRate-a.veerRate};
-  const flagged = Object.values(byPrompt).map(x=>{
+  let flagged = Object.values(s.byPrompt).map(x=>{
     const refRate = x.total? x.refused/x.total : 0;
     const nonRef = x.total-x.refused;
     const veerRate = nonRef? x.veered/nonRef : 0;
     return {...x, refRate, veerRate, healthScore: refRate*0.55+veerRate*0.45};
   }).sort(sortFns[sortKey]);
+  if(q) flagged = flagged.filter(x=>x.p.text.toLowerCase().includes(q));
   const showAll = window.__showAllState && window.__showAllState['ph-table'];
   const shown = showAll ? flagged : flagged.slice(0,30);
   const sortToggle = `<div style="display:flex;gap:6px;margin-bottom:10px;">
-    <button type="button" class="btn ${sortKey==='health'?'':'ghost'} sm" onclick="window.__phSort='health';renderPromptHealth();">Combined score</button>
-    <button type="button" class="btn ${sortKey==='refusal'?'':'ghost'} sm" onclick="window.__phSort='refusal';renderPromptHealth();">Refusal rate</button>
-    <button type="button" class="btn ${sortKey==='veer'?'':'ghost'} sm" onclick="window.__phSort='veer';renderPromptHealth();">Veer rate</button>
+    <button type="button" class="btn ${sortKey==='health'?'':'ghost'} sm" onclick="window.__phSort='health';renderPhFlagged();">Combined score</button>
+    <button type="button" class="btn ${sortKey==='refusal'?'':'ghost'} sm" onclick="window.__phSort='refusal';renderPhFlagged();">Refusal rate</button>
+    <button type="button" class="btn ${sortKey==='veer'?'':'ghost'} sm" onclick="window.__phSort='veer';renderPhFlagged();">Veer rate</button>
   </div>`;
   let html = sortToggle + `<table><tr><th>Prompt</th><th>Category</th><th>Refusal rate</th><th>Veer rate</th><th>Runs</th><th>Flag</th></tr>`;
   shown.forEach(x=>{
@@ -2799,14 +3032,14 @@ function renderPromptHealth(){
       <td>${fmt1(100*x.refRate)}%</td><td>${fmt1(100*x.veerRate)}%</td><td class="small-muted">${x.total}</td><td>${flag}</td></tr>`;
   });
   html += `</table>`;
-  if(flagged.length>30) html += `<div style="margin-top:10px;"><button class="btn ghost sm" onclick="window.__showAllState=window.__showAllState||{};window.__showAllState['ph-table']=!window.__showAllState['ph-table'];renderPromptHealth();">${showAll?'Show top 30 only':'Show all '+flagged.length+' prompts'}</button><span class="small-muted"> &nbsp;${flagged.length} prompts in view.</span></div>`;
+  if(flagged.length>30) html += `<div style="margin-top:10px;"><button class="btn ghost sm" onclick="window.__showAllState=window.__showAllState||{};window.__showAllState['ph-table']=!window.__showAllState['ph-table'];renderPhFlagged();">${showAll?'Show top 30 only':'Show all '+flagged.length+' prompts'}</button><span class="small-muted"> &nbsp;${flagged.length} prompts match.</span></div>`;
   document.getElementById('ph-table').innerHTML = html;
 }
 function openPromptHealthDetail(promptId){
   const p = PROMPTS.find(x=>x.id===promptId);
   if(!p){ openSidePanel('<div class="small-muted">Prompt not found.</div>'); return; }
-  const f = phFilters();
-  const [i0,i1] = dateRangeIdx('ph');
+  const f = phSectionFilters('ph-flag');
+  const [i0,i1] = dateRangeIdx('ph-flag');
   const rangeDates = DATES.slice(i0,i1+1);
   const runs = [];
   f.models.forEach(m=>{ rangeDates.forEach(d=>{

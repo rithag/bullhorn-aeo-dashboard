@@ -806,17 +806,51 @@ const CORE_TOPICS_BY_PARTY = {
   'Republican': ['Border Security & Immigration','Public Safety & Crime']
 };
 function coreTopicsForParty(party){ return CORE_TOPICS_BY_PARTY[party] || []; }
+/* ---- Race-type-conditional topic list (added 2026-08-31 — Task 1(E), previously never actually
+   wired up despite the taxonomy itself already having judicial/SOS/Clerk categories): the Key
+   Topics Explorer shouldn't offer Judicial Experience & Track Record as an option for a House race,
+   or Business Licensing & Registration for a judicial one. `race_type` alone isn't fine-grained
+   enough — Secretary of State, County Clerk, and the TX County Judge executive role are ALL tagged
+   "Administrative" in the real data, but County Judge actually uses the same 7 policy pillars as
+   WS1/Template A, not the election-administration topics — so this keys off `office_name` too. ---- */
+const UNIVERSAL_TOPICS = ['Ideological & Partisan Attacks','Corruption & Ethics'];
+const POLICY_FAMILY_TOPICS = ['Affordability & Cost of Living','Public Safety & Crime','Border Security & Immigration','Education','Healthcare','Jobs & the Economy','Energy','Public Infrastructure','Climate & Natural Resources','Foreign Policy'];
+const SOS_FAMILY_TOPICS = ['Election Security','Voter Access','Election Integrity Disputes','Business Licensing & Registration'];
+const CLERK_FAMILY_TOPICS = ['Election Security','Voter Access','Election Integrity Disputes','Constituent Services & Records'];
+const JUDICIAL_FAMILY_TOPICS = ['Judicial Experience & Track Record','Judicial Temperament & Fairness','Sentencing','Criminal Justice Reform','Community Involvement'];
+function raceFamily(entOrRow){
+  if(entOrRow.race_type==='Judicial') return 'judicial';
+  if(entOrRow.office==='Secretary of State') return 'sos';
+  if(entOrRow.office==='County Clerk') return 'clerk';
+  return 'policy'; // Legislative (WS1 + Template A) and Administrative/County Judge (Template C)
+}
+function topicsForFamilies(families){
+  const set = new Set(UNIVERSAL_TOPICS);
+  families.forEach(f=>{
+    (f==='policy'?POLICY_FAMILY_TOPICS : f==='sos'?SOS_FAMILY_TOPICS : f==='clerk'?CLERK_FAMILY_TOPICS : JUDICIAL_FAMILY_TOPICS).forEach(t=>set.add(t));
+  });
+  set.add('Other');
+  return ROLLED_UP_TOPICS.filter(t=>set.has(t)); // preserve the taxonomy's declared order
+}
 /* Fixed display order shared by BOTH the candidate and opponent topic panels (2026-08-27 feedback:
    each panel used to sort independently by its own topic counts, which put different topics at
    the same row position for each side and made side-by-side comparison hard). Both parties' core
    topics first (Dem's 2, then Rep's 2 — a fixed union, not "whichever side you're looking at"),
    then the remaining rolled-up topics in their existing declared order, "Other" always last.
-   Every entity's panel lists topics in this exact sequence regardless of that entity's own counts. */
-const NARRATIVE_TOPIC_ORDER = [
-  ...CORE_TOPICS_BY_PARTY.Democrat, ...CORE_TOPICS_BY_PARTY.Republican,
-  ...ROLLED_UP_TOPICS.filter(t=>t!=='Other' && !CORE_TOPICS_BY_PARTY.Democrat.includes(t) && !CORE_TOPICS_BY_PARTY.Republican.includes(t)),
-  'Other'
-];
+   Every entity's panel lists topics in this exact sequence regardless of that entity's own counts.
+   Now scoped to whichever race families are actually present among the entities being shown — a
+   mixed "All offices" view unions every present family's topics, not the full global list. */
+function narrativeTopicOrderFor(entities){
+  const families = new Set((entities||[]).map(raceFamily));
+  if(!families.size) families.add('policy');
+  const topics = topicsForFamilies(families);
+  const core = [...CORE_TOPICS_BY_PARTY.Democrat, ...CORE_TOPICS_BY_PARTY.Republican].filter(t=>topics.includes(t));
+  return [
+    ...core,
+    ...topics.filter(t=>t!=='Other' && !core.includes(t)),
+    ...(topics.includes('Other') ? ['Other'] : [])
+  ];
+}
 /* Simplified 3-color palette (2026-08-27 feedback, replacing a 14-color palette that was "too many
    different colors"): gray for anything not core to the given party, blue/red for that party's own
    core topics. Needs the entity's party since "core" is party-relative (Dem core topics aren't Rep
@@ -921,7 +955,22 @@ function buildFromFetchedData(){
   buildFilterOptionLists();
   buildMetrics();
 }
-function topicsForCategory(cat){ return [...new Set(PROMPTS.filter(p=>p.category===cat && p.topic).map(p=>p.topic))].sort(); }
+// `opts.raceIdx` scopes to exactly one race's own real prompts — the right scope for a
+// single-candidate drill (renderDimSource/drillSrcBucket/Accuracy's "by prompt type"), since
+// issue_tag is real per-prompt ground truth, not response-extracted like the Key Topics Explorer's
+// taxonomy — a race with no "Foreign Policy" issue_tag prompt should never show that as an option,
+// not even an empty one. `opts.families` (Set of 'policy'/'sos'/'clerk'/'judicial') is the coarser
+// scope for a multi-race context (syncIssueFilter's Comparison-chart Issue sub-filter, which can
+// span every race matching the current state/office filter) — real per-family data, not a static
+// "plausible for this office type" list, since issue_tag has no "not yet triggered" concept the way
+// key-topics response-extraction does. Added 2026-08-31 — this affects every "where X is falling
+// short" issue breakdown, not just the Key Topics Explorer.
+function topicsForCategory(cat, opts){
+  let prompts = PROMPTS.filter(p=>p.category===cat && p.topic);
+  if(opts && opts.raceIdx!=null) prompts = prompts.filter(p=>p.raceIdx===opts.raceIdx);
+  else if(opts && opts.families && opts.families.size) prompts = prompts.filter(p=>opts.families.has(raceFamily(p)));
+  return [...new Set(prompts.map(p=>p.topic))].sort();
+}
 // Task 2's narrative_tested field — the vocabulary for the Topic Comparison chart. Distinct from
 // issue_tag (topicsForCategory above) and the key-topics rolled-up taxonomy (ROLLED_UP_TOPICS):
 // narrative_tested spans directional/comparative prompts AND Fair Rebuttal/Critique-Association,
@@ -1759,12 +1808,13 @@ function granularBreakdown(entityId, topic, totalCount){
   counts[0] = Math.max(1, counts[0]+diff);
   return subs.map((s,i)=>({sub:s,count:counts[i]})).sort((a,b)=>b.count-a.count);
 }
-function topicBarsFromCounts(countByTopic, party){
-  // Fixed NARRATIVE_TOPIC_ORDER, not count ranking — so every panel (single candidate or an
-  // aggregated party group) lists topics in the same row position for side-by-side comparison
-  // (2026-08-27 feedback). Topics never triggered still get an (empty) row.
+function topicBarsFromCounts(countByTopic, party, order){
+  // Fixed order (per narrativeTopicOrderFor, scoped to the entities in view — 2026-08-31), not
+  // count ranking — so every panel (single candidate or an aggregated party group) lists topics in
+  // the same row position for side-by-side comparison (2026-08-27 feedback). Topics never
+  // triggered still get an (empty) row.
   const max = Math.max(1, ...Object.values(countByTopic));
-  return NARRATIVE_TOPIC_ORDER.map(topic=>{
+  return order.map(topic=>{
     const count = countByTopic[topic] || 0;
     const color = topicColor(topic, party);
     return `<div class="topic-row">
@@ -1780,14 +1830,15 @@ function topicCountsForGroup(entities){
   entities.forEach(e=>{ METRICS[e.id].topics.forEach(t=>{ combined[t.topic] = (combined[t.topic]||0) + t.count; }); });
   return combined;
 }
-function topicBars(entityId){ return topicBarsFromCounts(topicCountsForEntity(entityId), entityById(entityId).party); }
-function topicBarsForGroup(entities, party){ return topicBarsFromCounts(topicCountsForGroup(entities), party); }
-function granularFlatListFromCounts(countByTopic, seedFn){
-  // Grouped by parent topic in NARRATIVE_TOPIC_ORDER (2026-08-27 feedback: "at least organized in
-  // the same order as their parent topics"), not a flat cross-topic sort — sub-topics within one
-  // parent still rank by their own count. Topics with zero occurrences contribute no sub-topic rows.
+function topicBars(entityId){ const ent=entityById(entityId); return topicBarsFromCounts(topicCountsForEntity(entityId), ent.party, narrativeTopicOrderFor([ent])); }
+function topicBarsForGroup(entities, party){ return topicBarsFromCounts(topicCountsForGroup(entities), party, narrativeTopicOrderFor(entities)); }
+function granularFlatListFromCounts(countByTopic, seedFn, order){
+  // Grouped by parent topic in the same order as topicBarsFromCounts (2026-08-27 feedback: "at
+  // least organized in the same order as their parent topics"), not a flat cross-topic sort —
+  // sub-topics within one parent still rank by their own count. Topics with zero occurrences
+  // contribute no sub-topic rows.
   const flat = [];
-  NARRATIVE_TOPIC_ORDER.forEach(topic=>{
+  order.forEach(topic=>{
     const count = countByTopic[topic] || 0;
     if(!count) return;
     seedFn(topic, count).forEach(g=>flat.push({sub:g.sub, count:g.count, parent:topic}));
@@ -1807,17 +1858,18 @@ function granularBarsFromFlat(flat, party){
 }
 function granularBars(entityId){
   const ent = entityById(entityId);
-  const flat = granularFlatListFromCounts(topicCountsForEntity(entityId), (topic,count)=>granularBreakdown(entityId, topic, count));
+  const flat = granularFlatListFromCounts(topicCountsForEntity(entityId), (topic,count)=>granularBreakdown(entityId, topic, count), narrativeTopicOrderFor([ent]));
   return granularBarsFromFlat(flat, ent.party);
 }
 function granularBarsForGroup(entities, party){
   // Sum each entity's own (seeded, deterministic) granular breakdown rather than re-deriving one
   // breakdown for the whole group — keeps each entity's sub-topic split internally consistent with
   // its single-candidate view.
+  const order = narrativeTopicOrderFor(entities);
   const combined = {}; // "parent|sub" -> count
   entities.forEach(e=>{
     const counts = topicCountsForEntity(e.id);
-    NARRATIVE_TOPIC_ORDER.forEach(topic=>{
+    order.forEach(topic=>{
       const count = counts[topic]||0;
       if(!count) return;
       granularBreakdown(e.id, topic, count).forEach(g=>{ const k=topic+'|'+g.sub; combined[k]=(combined[k]||0)+g.count; });
@@ -1827,7 +1879,7 @@ function granularBarsForGroup(entities, party){
   const flat = granularFlatListFromCounts(countByTopic, (topic)=>{
     const subs = GRANULAR_TOPICS[topic]||['General'];
     return subs.map(sub=>({sub, count: combined[topic+'|'+sub]||0})).filter(r=>r.count>0);
-  });
+  }, order);
   return granularBarsFromFlat(flat, party);
 }
 function renderNarrativeTopics(){
@@ -1980,12 +2032,16 @@ function renderDimSource(key){
   const ent = ourEntity(idx), opp = oppEntity(idx);
   const compare = document.getElementById(key+'src-compare').checked;
   const drill = window['__srcDrill_'+key] || {level:'bucket'};
+  const raceOpt = {raceIdx: ent.raceIdx};
   // A category drills into its real issue_tag topics when any exist for it (not hardcoded to
   // "Issue & Policy Positions" — Political Narratives & Attack Lines and Comparison rows can carry
   // an issue_tag too, per PROJECT_SPEC.md Part 2.1's 2026-08-30 extension); categories with no
   // topics at all (Background & Qualifications, Ballot & Voting Logistics) skip straight to the
   // side panel instead of showing a pointless single-row intermediate level — see drillSrcBucket.
-  const isPolicyDrill = drill.level==='category' && topicsForCategory(drill.bucket).length>0;
+  // Scoped to this candidate's own race (2026-08-31) — a WS1 House race shouldn't ever offer a
+  // Secretary-of-State-only topic just because it exists somewhere else in the dataset, and
+  // shouldn't offer another House race's flex-item topic either.
+  const isPolicyDrill = drill.level==='category' && topicsForCategory(drill.bucket, raceOpt).length>0;
   const data = scoresByCategoryForEntity(ent, key, null);
   const oppData = (compare && opp) ? scoresByCategoryForEntity(opp, key, null) : null;
   const crumbEl = document.getElementById(key+'src-crumb');
@@ -2014,7 +2070,7 @@ function renderDimSource(key){
     crumbEl.innerHTML = `<span class="cb-crumb-link" onclick="drillSrcReset('${key}')">All categories</span> / <span style="font-weight:600;color:var(--ink);">${escXHtml(BUCKET_LABELS[drill.bucket])}</span>`;
     const byMap = isPolicyDrill ? data.byIssueTag : data.byCategory;
     const oppByMap = oppData ? (isPolicyDrill ? oppData.byIssueTag : oppData.byCategory) : null;
-    const cats = isPolicyDrill ? topicsForCategory(drill.bucket) : [drill.bucket];
+    const cats = isPolicyDrill ? topicsForCategory(drill.bucket, raceOpt) : [drill.bucket];
     const rows = cats.map(cat=>{
       const t = byMap[cat] || {buckets:{},total:0};
       const ot = oppByMap ? oppByMap[cat] : null;
@@ -2035,7 +2091,10 @@ function renderDimSource(key){
 function drillSrcBucket(key,b){
   // Skip the pointless single-row intermediate level for a category with no issue_tag topics at
   // all (Background & Qualifications, Ballot & Voting Logistics) — go straight to the side panel.
-  if(topicsForCategory(b).length>0){ window['__srcDrill_'+key] = {level:'category', bucket:b}; renderDimSource(key); }
+  // Scoped to the currently-selected candidate's own race (2026-08-31).
+  const idx = parseInt(document.getElementById(key+'src-cand').value,10);
+  const raceOpt = {raceIdx: ourEntity(idx).raceIdx};
+  if(topicsForCategory(b, raceOpt).length>0){ window['__srcDrill_'+key] = {level:'category', bucket:b}; renderDimSource(key); }
   else { window['__srcDrill_'+key] = {level:'category', bucket:b}; openDimSourceSidebar(key, b); }
 }
 function drillSrcReset(key){ window['__srcDrill_'+key] = {level:'bucket', bucket:null}; renderDimSource(key); }
@@ -2259,12 +2318,28 @@ function renderDimensionPage(key){
   renderInsightSummary(key);
   if(key!=='consistency') renderDimTable(key);
 }
+// Resolves "which races are in scope for this chartFilterBarHtml instance" — a single selected
+// race/candidate, or every race matching the state/office filters otherwise. Used to scope the
+// Issue sub-filter's topic list to the race families actually present (2026-08-31).
+function entitiesForChartFilterBar(prefix){
+  const raceEl = document.getElementById(prefix+'-race');
+  if(raceEl && raceEl.value!=='all'){
+    const idx = parseInt(raceEl.value,10);
+    return [ourEntity(idx), oppEntity(idx)].filter(Boolean);
+  }
+  const stateEl = document.getElementById(prefix+'-state'), officeEl = document.getElementById(prefix+'-office');
+  let idxs = ROSTER.map((r,i)=>i);
+  if(stateEl && stateEl.value!=='all') idxs = idxs.filter(i=>ROSTER[i].state===stateEl.value);
+  if(officeEl && officeEl.value!=='all') idxs = idxs.filter(i=>ROSTER[i].office===officeEl.value);
+  return idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
+}
 function syncIssueFilter(key){
   const catSel = document.getElementById(key+'-cmp-cat');
   const wrap = document.getElementById(key+'-cmp-topic-wrap');
   const topicSel = document.getElementById(key+'-cmp-topic');
   const cat = catSel.value;
-  const topics = topicsForCategory(cat);
+  const fam = new Set(entitiesForChartFilterBar(key+'-cmp').map(raceFamily));
+  const topics = topicsForCategory(cat, {families: fam});
   if(topics.length){
     topicSel.innerHTML = `<option value="all">All issues</option>${topics.map(t=>opt(t,t)).join('')}`;
     topicSel.value = 'all';
@@ -2626,8 +2701,9 @@ function renderAccuracyPriority(){
       // — a Comparison/Political-Narratives prompt can carry an issue_tag too, so this isn't
       // hardcoded to just the Issue & Policy Positions category (2026-08-31).
       const data = scoresByCategoryForEntity(ent, 'accuracy', null);
+      const raceOpt = {raceIdx: ent.raceIdx};
       const list = Object.keys(BUCKET_LABELS).flatMap(cat=>{
-        const topics = topicsForCategory(cat);
+        const topics = topicsForCategory(cat, raceOpt);
         if(topics.length) return topics.map(tag=>({cat: tag, t: data.byIssueTag[tag] || {buckets:{},total:0}}));
         return [{cat: BUCKET_LABELS[cat], t: data.byBucket[cat]}];
       }).sort((a,b)=>(worstShare('accuracy',b.t)||0)-(worstShare('accuracy',a.t)||0));

@@ -69,6 +69,8 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
 .badge.dem{background:var(--dem-soft);color:var(--dem);}
 .badge.rep{background:var(--rep-soft);color:var(--rep);}
 .badge.np{background:#EEF0F3;color:var(--ink-soft);}
+.badge.inc{background:#E9EEF7;color:#3A5A87;}
+.badge.chal{background:#F3EEE3;color:#8A6A2E;}
 .heat{border-radius:5px;padding:2px 7px;font-weight:700;display:inline-block;min-width:34px;text-align:center;}
 .namecell{font-weight:600;cursor:pointer;color:var(--ink);}
 .namecell:hover{color:var(--brand);text-decoration:underline;}
@@ -621,6 +623,16 @@ const MODEL_TO_PROVIDER = {'ChatGPT Search':'chatgpt_search','Gemini Search':'ge
 const MODEL_COLORS = {'ChatGPT Search':'#3C8A5B','Gemini Search':'#6B8FC9','AI Overview':'#C9822E'};
 const PARTY_COLORS = {'Democrat':'#2E5EAA','Republican':'#B23B3B','NP':'#8B93A1'};
 function partyColor(party){ return PARTY_COLORS[party] || PARTY_COLORS.NP; }
+function partyBadgeHtml(party){ return `<span class="badge ${party==='Democrat'?'dem':party==='Republican'?'rep':'np'}">${party==='Democrat'?'D':party==='Republican'?'R':'NP'}</span>`; }
+// Task 3 (2026-08-31): INC/CH badge, shown alongside the party badge everywhere a candidate's
+// party is shown — user's explicit ask ("wherever we show D or R or NP... we should also show INC
+// and CHR"). "CH" chosen over "CHR" for readability; no collision risk with anything else in the
+// dashboard. Blank (no badge) when candidateType is null/undefined — the 5 no-opponent judicial
+// races' opponent slot.
+function candidateTypeBadgeHtml(candidateType){
+  if(!candidateType) return '';
+  return `<span class="badge ${candidateType==='Incumbent'?'inc':'chal'}" style="margin-left:3px;">${candidateType==='Incumbent'?'INC':'CH'}</span>`;
+}
 
 const DIM_KEYS = ['visibility','favorability','depth','accuracy','consistency','narrative'];
 const DIM_LABELS = {visibility:'Visibility',favorability:'Favorability',depth:'Depth',accuracy:'Accuracy',consistency:'Consistency',narrative:'Narrative Alignment'};
@@ -892,8 +904,8 @@ function oppEntity(raceIdx){ return entityById('o'+raceIdx); }
 
 function buildFromFetchedData(){
   ROSTER = ROSTER_RAW.map(r=>({
-    name: r.candidate_name, party: r.candidate_party_affiliation,
-    opponent: r.opponent_name || null, opponent_party: r.opponent_party_affiliation || null,
+    name: r.candidate_name, party: r.candidate_party_affiliation, candidateType: r.candidate_type,
+    opponent: r.opponent_name || null, opponent_party: r.opponent_party_affiliation || null, opponentType: r.opponent_type || null,
     state: r.state, location: r.location, office: r.office_name,
     race: r.race, race_level: r.race_level, race_type: r.race_type
   }));
@@ -901,8 +913,8 @@ function buildFromFetchedData(){
 
   ENTITIES = [];
   ROSTER.forEach((r,i)=>{
-    ENTITIES.push({id:'c'+i, raceIdx:i, role:'ours', name:r.name, party:r.party, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId: r.opponent? ('o'+i): null});
-    if(r.opponent){ ENTITIES.push({id:'o'+i, raceIdx:i, role:'opp', name:r.opponent, party:r.opponent_party, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId:'c'+i}); }
+    ENTITIES.push({id:'c'+i, raceIdx:i, role:'ours', name:r.name, party:r.party, candidateType:r.candidateType, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId: r.opponent? ('o'+i): null});
+    if(r.opponent){ ENTITIES.push({id:'o'+i, raceIdx:i, role:'opp', name:r.opponent, party:r.opponent_party, candidateType:r.opponentType, state:r.state, location:r.location, office:r.office, race:r.race, race_level:r.race_level, race_type:r.race_type, opponentId:'c'+i}); }
   });
 
   aggRowsCache = aggRows();
@@ -940,8 +952,8 @@ function buildFromFetchedData(){
     return {
       id: r.prompt_id, text: r.full_query, category: r.prompt_category,
       topic: r.issue_tag || null, narrativeTested: r.narrative_tested ? r.narrative_tested.split(', ') : [],
-      raceIdx, race: r.race, cand: r.candidate_name, cand_party: r.candidate_party_affiliation,
-      opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null,
+      raceIdx, race: r.race, cand: r.candidate_name, cand_party: r.candidate_party_affiliation, cand_type: r.candidate_type,
+      opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null, opp_type: r.opponent_type || null,
       state: r.state, location: r.location, office: r.office_name,
       race_level: r.race_level, race_type: r.race_type,
       is_blind: r.is_blind==='t' ? 'Y' : 'N', target: r.target_candidate, dims
@@ -1264,7 +1276,7 @@ function closeSidePanel(){ document.getElementById('overlay').classList.remove('
    `let`s, (re)computed by buildFilterOptionLists() inside buildFromFetchedData() once real data
    is in. Declared here (still empty) only so every function that references them by name works
    before that point without a ReferenceError. */
-let ALL_STATES = [], ALL_OFFICES = [], ALL_LEVELS = [], ALL_RACES = [], ALL_CATEGORIES = [], ALL_PARTIES = [];
+let ALL_STATES = [], ALL_OFFICES = [], ALL_LEVELS = [], ALL_RACES = [], ALL_CATEGORIES = [], ALL_PARTIES = [], ALL_CANDIDATE_TYPES = [];
 function buildFilterOptionLists(){
   ALL_STATES = [...new Set(ROSTER.map(r=>r.state))].sort();
   ALL_OFFICES = [...new Set(ROSTER.map(r=>r.office))].sort();
@@ -1275,6 +1287,9 @@ function buildFilterOptionLists(){
   // this project's convention; Republican only ever appears as opponent_party). See
   // DASHBOARD_DATA_SOURCES.md Section 4.
   ALL_PARTIES = [...new Set(ROSTER.flatMap(r=>[r.party, r.opponent_party]).filter(Boolean))].sort();
+  // Task 3 (2026-08-31): same both-sides logic as ALL_PARTIES — incumbent/challenger status is
+  // per-person, not per-role, so both roles need checking.
+  ALL_CANDIDATE_TYPES = [...new Set(ROSTER.flatMap(r=>[r.candidateType, r.opponentType]).filter(Boolean))].sort();
 }
 
 function opt(v,label){ return `<option value="${v}">${label}</option>`; }
@@ -1459,7 +1474,7 @@ function populateLocationSelect(selId, stateSelId, levelSelId){
   refreshXSel(selEl);
 }
 function ovFilters(){
-  return {party:document.getElementById('ov-cmp-party').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value};
+  return {party:document.getElementById('ov-cmp-party').value, candidateType:document.getElementById('ov-cmp-ctype').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value};
 }
 function resolveEntitiesForFilters(f){
   if(f.race && f.race!=='all') return [parseInt(f.race,10)];
@@ -1469,6 +1484,7 @@ function resolveEntitiesForFilters(f){
   if(f.level && f.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===f.level);
   if(f.location && f.location!=='all') idxs = idxs.filter(i=>ROSTER[i].location===f.location);
   if(f.party && f.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===f.party);
+  if(f.candidateType && f.candidateType!=='all') idxs = idxs.filter(i=>ROSTER[i].candidateType===f.candidateType);
   return idxs;
 }
 function renderOverviewInsight(ours){
@@ -1559,7 +1575,7 @@ function toggleOvExpand(raceIdx){
   const dims=['visibility','favorability','depth','accuracy','narrative'];
   const dayIdx = DATES.length-1;
   const heat=(v)=>`<span class="heat" style="background:${heatColor(v)};color:${heatText(v)}">${fmt1(v)}</span>`;
-  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td><span class="badge ${e.party==='Democrat'?'dem':e.party==='Republican'?'rep':'np'}">${e.party==='Democrat'?'D':e.party==='Republican'?'R':'NP'}</span></td>${dims.map(d=>{ const raw=METRICS[e.id].history[d][dayIdx]; return `<td>${heat(d==='favorability'&&raw!=null?(raw+100)/2:raw)}</td>`; }).join('')}<td><b>${fmt1(compositeAtDay(e,dayIdx))}</b></td></tr>`:'';
+  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td>${partyBadgeHtml(e.party)}${candidateTypeBadgeHtml(e.candidateType)}</td>${dims.map(d=>{ const raw=METRICS[e.id].history[d][dayIdx]; return `<td>${heat(d==='favorability'&&raw!=null?(raw+100)/2:raw)}</td>`; }).join('')}<td><b>${fmt1(compositeAtDay(e,dayIdx))}</b></td></tr>`:'';
   document.getElementById('ov-expand-body-'+raceIdx).innerHTML = `<table style="margin-top:4px;"><tr><th style="padding-left:24px;">Name</th><th>Party</th><th>Vis.</th><th>Fav.</th><th>Depth</th><th>Acc.</th><th>Narr.</th><th>Composite</th></tr>${subRow(o)}${subRow(p)}</table>`;
   document.getElementById('ov-expand-'+raceIdx).style.display='';
 }
@@ -1587,6 +1603,7 @@ function chartFilterBarHtml(prefix, opts){
     <div class="fitem"><label>Race</label><select id="${prefix}-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
     <div class="fitem"><label>Candidate</label><select id="${prefix}-cand"><option value="all">All</option></select></div>
     <div class="fitem"><label>Party</label><select id="${prefix}-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
+    <div class="fitem"><label>Candidate type</label><select id="${prefix}-ctype">${selectOptions(ALL_CANDIDATE_TYPES,'All')}</select></div>
     <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
     <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
     ${opts.blind ? `<div class="fitem"><label>Prompt type</label><select id="${prefix}-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
@@ -1628,7 +1645,7 @@ function wireCandidateSelect(prefix, onChange){
 }
 function wireChartFilterBar(prefix, opts, onChange){
   opts = opts||{};
-  ['party','state','race','office'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  ['party','ctype','state','race','office'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
   if(opts.blind) document.getElementById(prefix+'-blind').addEventListener('change', onChange);
   if(opts.dateRange){
     document.getElementById(prefix+'-start').value = DATES[0];
@@ -2258,7 +2275,7 @@ const INSIGHT_BUILDERS = {
   narrative: buildNarrativeInsights
 };
 
-function dimFilters(key){ return {state:document.getElementById(key+'-state').value, race:document.getElementById(key+'-race').value, office:document.getElementById(key+'-office').value, party:document.getElementById(key+'-party').value}; }
+function dimFilters(key){ return {state:document.getElementById(key+'-state').value, race:document.getElementById(key+'-race').value, office:document.getElementById(key+'-office').value, party:document.getElementById(key+'-party').value, candidateType:document.getElementById(key+'-ctype').value}; }
 function nearestDateIdx(dateStr, roundUp){
   // DATES is sparse (real report dates only) — a date picker lets the user choose any
   // calendar date, so an exact-match lookup would silently snap back to the full range
@@ -2394,6 +2411,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
       if(fCmp.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===fCmp.party || (oppEntity(i)&&oppEntity(i).party===fCmp.party));
+      if(fCmp.candidateType!=='all') idxs = idxs.filter(i=>ROSTER[i].candidateType===fCmp.candidateType || (oppEntity(i)&&oppEntity(i).candidateType===fCmp.candidateType));
       entities = idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
     }
     const rows = MODELS.map(m=>({label:m, segments: catOpt
@@ -2531,13 +2549,13 @@ function renderConsistencyCandidateSummary(){
         if(run && run.scores.ours.consistency!=null) scores.push(run.scores.ours.consistency);
       }); });
     });
-    return {raceIdx:i, name:r.name, party:r.party, avgScore: scores.length?avg(scores):null, n:scores.length};
+    return {raceIdx:i, name:r.name, party:r.party, candidateType:r.candidateType, avgScore: scores.length?avg(scores):null, n:scores.length};
   }).filter(x=>x.n>0).sort((a,b)=>a.avgScore-b.avgScore);
   let html = `<table><tr><th>Candidate</th><th>Party</th><th>Avg. consistency score</th><th>Scored runs</th></tr>`;
   rows.forEach(r=>{
     html += `<tr class="clickable" onclick="selectConsistencyCandidate(${r.raceIdx})">
       <td><b>${escXHtml(r.name)}</b></td>
-      <td><span class="badge ${r.party==='Democrat'?'dem':r.party==='Republican'?'rep':'np'}">${r.party==='Democrat'?'D':r.party==='Republican'?'R':'NP'}</span></td>
+      <td>${partyBadgeHtml(r.party)}${candidateTypeBadgeHtml(r.candidateType)}</td>
       <td><span class="heat" style="background:${heatColor(r.avgScore,0,2)};color:${heatText(r.avgScore,0,2)}">${fmt1(r.avgScore)}</span></td>
       <td class="small-muted">${r.n}</td>
     </tr>`;
@@ -2664,7 +2682,7 @@ function renderAccuracyPriority(){
     bodyEl.innerHTML = list.map(x=>`
       <div class="drillable-row" onclick="window.__accPriorityDrill={level:'category',ent:'${x.ent.id}'};window.__accGroupBy='inaccuracy';window.__srcIssue_accuracy='all';renderAccuracyPriority();">
         <div class="topic-row" style="margin-bottom:0;">
-          <div class="topic-name" style="width:190px;">${escXHtml(x.ent.name)} <span class="badge ${x.ent.party==='Democrat'?'dem':x.ent.party==='Republican'?'rep':'np'}" style="margin-left:4px;">${x.ent.party[0]}</span></div>
+          <div class="topic-name" style="width:190px;">${escXHtml(x.ent.name)} <span class="badge ${x.ent.party==='Democrat'?'dem':x.ent.party==='Republican'?'rep':'np'}" style="margin-left:4px;">${x.ent.party[0]}</span>${candidateTypeBadgeHtml(x.ent.candidateType)}</div>
           <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*x.count/max,3,100)}%;background:var(--bad);"></div></div>
           <div class="topic-pct" style="width:32px;">${x.count}</div>
           ${hint}
@@ -2757,6 +2775,7 @@ function buildFanoutPage(){
     <div class="filterbar">
       <div class="fitem"><label>Search prompt</label><input type="text" id="pf-search" placeholder="Type to search prompt text…" style="min-width:200px;"></div>
       <div class="fitem"><label>Party</label><select id="pf-party" multiple>${ALL_PARTIES.map(p=>`<option>${p}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Candidate type</label><select id="pf-ctype" multiple>${ALL_CANDIDATE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
       <div class="fitem"><label>Race</label><select id="pf-race" multiple>${ALL_RACES.map(r=>`<option value="${r.idx}">${r.label}</option>`).join('')}</select></div>
       <div class="fitem"><label>Candidate</label><select id="pf-cand" multiple>${pfCandidateOptionsHtml([])}</select></div>
       <div class="fitem"><label>Office</label><select id="pf-office" multiple>${ALL_OFFICES.map(o=>`<option>${o}</option>`).join('')}</select></div>
@@ -2819,7 +2838,7 @@ function pfRepopulateCand(){
 function multiVals(id){ return Array.from(document.getElementById(id).selectedOptions).map(o=>o.value); }
 /* Shared filter read + prompt scoping for both Prompt Fanout views (individual runs and rollup). */
 function pfScoped(){
-  const parties = multiVals('pf-party'), cands = multiVals('pf-cand'), races = multiVals('pf-race').map(Number),
+  const parties = multiVals('pf-party'), ctypes = multiVals('pf-ctype'), cands = multiVals('pf-cand'), races = multiVals('pf-race').map(Number),
         offices = multiVals('pf-office'), states = multiVals('pf-state'), cats = multiVals('pf-cat'),
         types = multiVals('pf-type'), models = multiVals('pf-model').length? multiVals('pf-model') : MODELS;
   const [i0,i1] = dateRangeIdx('pf');
@@ -2833,6 +2852,7 @@ function pfScoped(){
     if(cats.length && cats.indexOf(p.category)===-1) return false;
     if(types.length && types.indexOf(p.is_blind)===-1) return false;
     if(parties.length){ const okCand = parties.indexOf(p.cand_party)!==-1; const okOpp = p.opp_party && parties.indexOf(p.opp_party)!==-1; if(!okCand && !okOpp) return false; }
+    if(ctypes.length){ const okCand = ctypes.indexOf(p.cand_type)!==-1; const okOpp = p.opp_type && ctypes.indexOf(p.opp_type)!==-1; if(!okCand && !okOpp) return false; }
     return true;
   });
   return {prompts, models, i0, i1};
@@ -3029,6 +3049,7 @@ function phFilterBarHtml(prefix, opts){
     <div class="fitem"><label>Race</label><select id="${prefix}-race"><option value="all">All</option>${ALL_RACES.map(r=>`<option value="${r.idx}">${escXHtml(r.label)}</option>`).join('')}</select></div>
     <div class="fitem"><label>Candidate</label><select id="${prefix}-cand"><option value="all">All</option></select></div>
     <div class="fitem"><label>Party</label><select id="${prefix}-party">${selectOptions(ALL_PARTIES,'All')}</select></div>
+    <div class="fitem"><label>Candidate type</label><select id="${prefix}-ctype">${selectOptions(ALL_CANDIDATE_TYPES,'All')}</select></div>
     <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
     <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
     <div class="fitem"><label>Model</label><select id="${prefix}-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
@@ -3039,7 +3060,7 @@ function phFilterBarHtml(prefix, opts){
 }
 function wirePhFilterBar(prefix, onChange){
   ['cat','model'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
-  ['party','office','state'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  ['party','ctype','office','state'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
   document.getElementById(`${prefix}-race`).dataset.xselDone='1'; buildXSel(document.getElementById(`${prefix}-race`));
   document.getElementById(`${prefix}-race`).addEventListener('change', onChange);
   wireCandidateSelect(prefix, onChange);
@@ -3053,7 +3074,7 @@ function wirePhFilterBar(prefix, onChange){
 function phSectionFilters(prefix){
   return {
     cats: multiVals(prefix+'-cat'), office: document.getElementById(prefix+'-office').value, state: document.getElementById(prefix+'-state').value,
-    party: document.getElementById(prefix+'-party').value, race: document.getElementById(prefix+'-race').value,
+    party: document.getElementById(prefix+'-party').value, candidateType: document.getElementById(prefix+'-ctype').value, race: document.getElementById(prefix+'-race').value,
     models: multiVals(prefix+'-model').length? multiVals(prefix+'-model') : MODELS,
   };
 }
@@ -3064,6 +3085,7 @@ function phFilterPrompts(f){
     if(f.state!=='all' && p.state!==f.state) return false;
     if(f.race!=='all' && p.raceIdx!==parseInt(f.race,10)) return false;
     if(f.party!=='all' && p.cand_party!==f.party && p.opp_party!==f.party) return false;
+    if(f.candidateType!=='all' && p.cand_type!==f.candidateType && p.opp_type!==f.candidateType) return false;
     return true;
   });
 }

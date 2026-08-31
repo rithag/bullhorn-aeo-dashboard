@@ -698,7 +698,7 @@ const LEVERS_BY_DIM = {
 const CATEGORY_BUCKET = {
   'Background & Qualifications':'Background & Qualifications',
   'Political Narratives & Attack Lines':'Political Narratives & Attack Lines',
-  'Comparison':'Comparison',
+  'Head-to-Head Comparison':'Head-to-Head Comparison',
   'Issue & Policy Positions':'Issue & Policy Positions',
   'Ballot & Voting Logistics':'Ballot & Voting Logistics',
 };
@@ -713,7 +713,7 @@ function issueTagCategories(){ return [...new Set(PROMPTS.map(p=>p.topic).filter
 const CATEGORY_PLAIN_LABEL = {
   'Background & Qualifications': 'biography, credentials, and record questions',
   'Political Narratives & Attack Lines': 'attack-line and rebuttal questions',
-  'Comparison': 'candidate-comparison questions',
+  'Head-to-Head Comparison': 'candidate-comparison questions',
   'Issue & Policy Positions': 'policy & issue questions',
   'Ballot & Voting Logistics': 'basic ballot/voting-logistics questions',
 };
@@ -1125,18 +1125,20 @@ function getRun(prompt, model, dateStr){
            response: (TEXT[row.id] && TEXT[row.id].full_response) || '', _row: row };
 }
 
-/* Real data is sparse — a given (prompt, model) typically has a real run on exactly ONE date, not
-   every date in a range. Looking up only "the latest date in range" (the original mockup's
-   pattern, fine for its dense synthetic data) silently drops most real rows and makes the date
-   range filter look like it does nothing. This scans the whole range and returns whichever real
-   run exists (there's normally at most one) — the correct replacement for that pattern everywhere
-   a prompt-fanout-style table is built. */
-function getRunInRange(prompt, model, i0, i1){
-  for(let i=i1; i>=i0; i--){
+/* Real data is sparse and irregular about which dates have a run for a given (prompt, model) — but
+   NOT "at most one," as this function originally assumed (2026-08-31 correction): most (prompt,
+   model) pairs actually have 2-3 real dates of history in this dataset (checked directly against
+   prompt_results_final.csv — only ~22% of prompt×provider combos have exactly one date). Returning
+   only the latest silently dropped roughly half of every real row from every consumer — confirmed
+   on the Accuracy page's flagged-statement count, which undercounted by ~51% (2263 of a true 4620)
+   until this fix. Returns every real run in the date range, oldest to newest, not just one. */
+function getRunsInRange(prompt, model, i0, i1){
+  const out = [];
+  for(let i=i0; i<=i1; i++){
     const run = getRun(prompt, model, DATES[i]);
-    if(run) return run;
+    if(run) out.push(run);
   }
-  return null;
+  return out;
 }
 
 /* ---- refusal / hypothesis-alignment lookup, replacing getHealthRun() — real is_refusal /
@@ -1282,7 +1284,12 @@ function buildFilterOptionLists(){
   ALL_OFFICES = [...new Set(ROSTER.map(r=>r.office))].sort();
   ALL_LEVELS = [...new Set(ROSTER.map(r=>r.race_level))].sort();
   ALL_RACES = ROSTER.map((r,i)=>({idx:i,label:r.race}));
-  ALL_CATEGORIES = [...new Set(PROMPTS.map(p=>p.category))].sort();
+  // Restricted to the 5 canonical values (2026-08-31 fix) — a handful of catalog-orphaned rows
+  // (Fort Bend County Judge) carry stale pre-consolidation vendor labels ("Comparison",
+  // "Credential/Reputation", etc.) that would otherwise leak into every category filter dropdown
+  // as confusing, effectively-dead options. Those rows still display fine under categoryPlain()'s
+  // own fallback — they just aren't independently filterable to their stale raw label anymore.
+  ALL_CATEGORIES = Object.keys(CATEGORY_BUCKET);
   // both sides — candidate party alone misses Republican entirely (candidate is always Dem/NP by
   // this project's convention; Republican only ever appears as opponent_party). See
   // DASHBOARD_DATA_SOURCES.md Section 4.
@@ -1371,10 +1378,9 @@ function renderFanoutHtml(raceIdx, dimKey){
   const prompts = PROMPTS_BY_RACE[raceIdx]||[];
   const ours = ourEntity(raceIdx), opp = oppEntity(raceIdx);
   if(!prompts.length) return `<div class="fanout-wrap"><span class="small-muted">No sampled prompts available for this race.</span></div>`;
-  // All real dates, not just the latest — real data is sparse (typically one real run per
-  // prompt+model), so restricting to one date silently dropped almost everything.
+  // All real runs across all dates, not just the latest per prompt+model (2026-08-31 fix).
   let rows = [];
-  prompts.forEach(p=>{ MODELS.forEach(m=>{ const run=getRunInRange(p,m,0,DATES.length-1); if(run) rows.push({p, m, run}); }); });
+  prompts.forEach(p=>{ MODELS.forEach(m=>{ getRunsInRange(p,m,0,DATES.length-1).forEach(run=>rows.push({p, m, run})); }); });
   if(!rows.length) return `<div class="fanout-wrap"><span class="small-muted">No real runs found for this race.</span></div>`;
   // Sorted lowest to highest on "our" score for this dimension (worst-first, matches every other
   // "where is this falling short" framing in the dashboard).
@@ -1476,6 +1482,27 @@ function populateLocationSelect(selId, stateSelId, levelSelId){
 function ovFilters(){
   return {party:document.getElementById('ov-cmp-party').value, candidateType:document.getElementById('ov-cmp-ctype').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value};
 }
+/* Shared Dem/Rep/NP bar-group builder for every "Democrats vs. Republicans" chart (2026-08-31 fix —
+   see aeo_dashboard_party_ctype_filter_gap memory). Party picks which bar(s) appear — applied AFTER
+   the role/party split, never as a pre-filter on the race pool, because "our side" in this dataset
+   is always Democrat or NP (never Republican): pre-filtering idxs by our-side party before splitting
+   made "Party: Republican" permanently return zero races everywhere it was tried live. Candidate Type
+   narrows each bar independently by that entity's OWN type, so a race like Rob Zapple (Incumbent) vs.
+   Richard Collier (Challenger) correctly keeps Zapple in the Democrats bar and drops Collier from the
+   Republicans bar under an Incumbents-only filter, instead of an all-or-nothing per-race decision. */
+function partySplitGroups(idxs, filters){
+  filters = filters || {};
+  const ctypeOk = e => !filters.candidateType || filters.candidateType==='all' || e.candidateType===filters.candidateType;
+  const showParty = p => !filters.party || filters.party==='all' || filters.party===p;
+  const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat' && ctypeOk(e));
+  const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican' && ctypeOk(e));
+  const npE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='NP' && ctypeOk(e));
+  const groups = [];
+  if(showParty('Democrat')) groups.push({key:'Democrat', label:'Democrats', entities:demE});
+  if(showParty('Republican')) groups.push({key:'Republican', label:'Republicans', entities:repE});
+  if(showParty('NP') && npE.length) groups.push({key:'NP', label:'Non-Partisan', entities:npE});
+  return groups;
+}
 function resolveEntitiesForFilters(f){
   if(f.race && f.race!=='all') return [parseInt(f.race,10)];
   let idxs = ROSTER.map((r,i)=>i);
@@ -1529,15 +1556,23 @@ function renderOverview(){
   // chart: if exactly one race resolved, show candidate vs opponent; else Dem vs Rep (within filtered set)
   const dims=['visibility','favorability','depth','accuracy','narrative'];
   const dimLabels=['Visibility','Favorability','Depth','Accuracy','Narrative'];
-  const norm=(v,d)=> d==='favorability'? (v+100)/2 : v;
+  // v==null guard (2026-08-31 fix): avg([]) returns null, and "null+100" silently coerces to 100 in
+  // JS, so an empty group used to render a bogus flat "50.0" bar instead of going empty.
+  const norm=(v,d)=> v==null ? null : (d==='favorability'? (v+100)/2 : v);
   let series;
   if(idxs.length===1){
     const o=ourEntity(idxs[0]), p=oppEntity(idxs[0]);
     series=[{name:o.name,color:'#2E5EAA',values:dims.map(d=>norm(METRICS[o.id].base[d],d))}];
     if(p) series.push({name:p.name,color:'#B23B3B',values:dims.map(d=>norm(METRICS[p.id].base[d],d))});
   } else {
-    const demIdx = idxs.filter(i=>ROSTER[i].party==='Democrat').map(i=>ourEntity(i));
-    const repEntities = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
+    // Candidate Type narrows each bar by that entity's own type (2026-08-31 fix); Party's own
+    // narrowing already happened upstream in resolveEntitiesForFilters (idxs), which for this KPI
+    // section deliberately keeps its "our side's declared party" meaning — see
+    // aeo_dashboard_party_ctype_filter_gap memory for why that's fine here (not a Dem-vs-Rep bar
+    // picker) but wrong for the comparison charts on the dimension pages.
+    const ctypeOk = e => f.candidateType==='all' || !f.candidateType || e.candidateType===f.candidateType;
+    const demIdx = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat' && ctypeOk(e));
+    const repEntities = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican' && ctypeOk(e));
     series=[{name:'Democrats',color:'#2E5EAA',values:dims.map(d=>norm(avg(demIdx.map(e=>METRICS[e.id].base[d])),d))},
              {name:'Republicans',color:'#B23B3B',values:dims.map(d=>norm(avg(repEntities.map(e=>METRICS[e.id].base[d])),d))}];
   }
@@ -1798,15 +1833,14 @@ function renderTopicComparison(){
   } else {
     let idxs = ROSTER.map((r,i)=>i);
     const state=document.getElementById('tc-state').value, office=document.getElementById('tc-office').value,
-          level=document.getElementById('tc-level').value, party=document.getElementById('tc-party').value;
+          level=document.getElementById('tc-level').value, party=document.getElementById('tc-party').value,
+          ctype=document.getElementById('tc-ctype').value;
     if(state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===state);
     if(office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===office);
     if(level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===level);
-    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-    groups = [{label:`Democrats (${demE.length})`, entities:demE}, {label:`Republicans (${repE.length})`, entities:repE}];
-    if(party==='Democrat') groups = groups.slice(0,1);
-    if(party==='Republican') groups = groups.slice(1,2);
+    // Candidate Type now applies here too (2026-08-31 fix) — the select rendered and re-triggered
+    // this render already, but its value was never read.
+    groups = partySplitGroups(idxs, {party, candidateType:ctype}).map(g=>({label:`${g.label} (${g.entities.length})`, entities:g.entities}));
   }
   const rows = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic)}));
   bodyEl.innerHTML = rows.map(r=>`
@@ -1922,18 +1956,21 @@ function renderNarrativeTopics(){
   } else {
     let idxs = ROSTER.map((r,i)=>i);
     const state=document.getElementById('na-state').value, office=document.getElementById('na-office').value, level=document.getElementById('na-level').value;
+    const naParty=document.getElementById('na-party').value, naCtype=document.getElementById('na-ctype').value;
     if(state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===state);
     if(office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===office);
     if(level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===level);
-    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-    if(document.getElementById('na-compare-label')) document.getElementById('na-compare-label').textContent = 'Compare with Republicans';
-    document.getElementById('na-cand-label').textContent = `Democrats (${demE.length})`+(isGranular?' — sub-topics':' — key topics');
-    document.getElementById('na-cand-topics').innerHTML = isGranular ? granularBarsForGroup(demE,'Democrat') : topicBarsForGroup(demE,'Democrat');
-    if(compare){
+    // Party/Candidate Type now apply here (2026-08-31 fix) — previously both selects rendered and
+    // re-triggered this render but were never read; see aeo_dashboard_party_ctype_filter_gap memory.
+    const groups = partySplitGroups(idxs, {party:naParty, candidateType:naCtype});
+    const primary = groups[0] || {key:'Democrat', label:'Democrats', entities:[]};
+    if(document.getElementById('na-compare-label')) document.getElementById('na-compare-label').textContent = groups[1] ? `Compare with ${groups[1].label}` : 'Compare with Republicans';
+    document.getElementById('na-cand-label').textContent = `${primary.label} (${primary.entities.length})`+(isGranular?' — sub-topics':' — key topics');
+    document.getElementById('na-cand-topics').innerHTML = isGranular ? granularBarsForGroup(primary.entities,primary.key) : topicBarsForGroup(primary.entities,primary.key);
+    if(compare && groups[1]){
       document.getElementById('na-opp-panel').style.display='';
-      document.getElementById('na-opp-label').textContent = `Republicans (${repE.length})`+(isGranular?' — sub-topics':' — key topics');
-      document.getElementById('na-opp-topics').innerHTML = isGranular ? granularBarsForGroup(repE,'Republican') : topicBarsForGroup(repE,'Republican');
+      document.getElementById('na-opp-label').textContent = `${groups[1].label} (${groups[1].entities.length})`+(isGranular?' — sub-topics':' — key topics');
+      document.getElementById('na-opp-topics').innerHTML = isGranular ? granularBarsForGroup(groups[1].entities,groups[1].key) : topicBarsForGroup(groups[1].entities,groups[1].key);
     } else document.getElementById('na-opp-panel').style.display='none';
   }
 }
@@ -2166,11 +2203,12 @@ function insightSummaryHtml(key){
   </div>`;
 }
 function computeInsightEntities(key){
-  const f = dimFilters(key+'-cmp');
-  let idxs = ROSTER.map((r,i)=>i);
-  if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
-  if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
-  return idxs;
+  // These insight/category-breakdown functions are about "our" candidates specifically (never a
+  // Dem-vs-Rep bar split), so Party/Candidate Type apply the same way they do on the Overview KPI
+  // cards — resolveEntitiesForFilters — rather than the partySplitGroups bar-picker used by the
+  // actual comparison charts (2026-08-31 fix; previously state/office were the only filters read
+  // here, so Party and Candidate Type silently did nothing).
+  return resolveEntitiesForFilters(dimFilters(key+'-cmp'));
 }
 function renderInsightSummary(key){
   const body = document.getElementById(key+'-insight-body');
@@ -2184,7 +2222,10 @@ function bucketAndCategoryInsights(key){
   const bullets = [];
   let entities;
   if(f.race!=='all'){ entities = [ourEntity(parseInt(f.race,10))]; }
-  else { const idxs = computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat'); }
+  // No party filter here (2026-08-31 fix) — it silently dropped the 5 Non-Partisan WS2 races from
+  // every dimension's "Key issues & opportunities" bullets and category breakdown; Party/Candidate
+  // Type narrowing already happened inside computeInsightEntities.
+  else { const idxs = computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)); }
   if(!entities.length) return bullets;
   const worstLabel = bucket3Label(key, key==='favorability'?'neg':'0').toLowerCase();
   const overall = mergeBucketTotals(entities.map(e=>entityBucketTotals(e,key)));
@@ -2210,15 +2251,21 @@ function computeAccuracyIssueRows(){
   idxs.forEach(idx=>{
     (PROMPTS_BY_RACE[idx]||[]).forEach(p=>{
       MODELS.forEach(m=>{
-        const run = getRunInRange(p,m,i0,i1);
-        if(!run) return;
-        [['ours', ourEntity(idx)], ['opp', oppEntity(idx)]].forEach(([side,ent])=>{
-          const issue = run.accIssue[side];
-          if(issue && ent) rows.push({ent, p, m, issue, score:run.scores[side].accuracy, response:run.response, date:run.date});
+        // Every real run in range, not just the latest (2026-08-31 fix — see getRunsInRange).
+        getRunsInRange(p,m,i0,i1).forEach(run=>{
+          [['ours', ourEntity(idx)], ['opp', oppEntity(idx)]].forEach(([side,ent])=>{
+            const issue = run.accIssue[side];
+            if(issue && ent) rows.push({ent, p, m, issue, score:run.scores[side].accuracy, response:run.response, date:run.date});
+          });
         });
       });
     });
   });
+  // Party/Candidate Type now apply here (2026-08-31 fix) — this list already carries both our and
+  // opponent candidates by name, so this is a straight per-row filter on the entity actually named
+  // in that row, not a race-pool pre-filter.
+  if(f.party!=='all') rows = rows.filter(r=>r.ent.party===f.party);
+  if(f.candidateType!=='all') rows = rows.filter(r=>r.ent.candidateType===f.candidateType);
   return rows;
 }
 function buildAccuracyInsights(){
@@ -2252,7 +2299,7 @@ function buildNarrativeInsights(key){
   const f = dimFilters(key+'-cmp');
   let entities;
   if(f.race!=='all'){ entities=[ourEntity(parseInt(f.race,10))]; }
-  else { const idxs=computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat'); }
+  else { const idxs=computeInsightEntities(key); entities = idxs.map(i=>ourEntity(i)); }
   if(!entities.length) return [];
   const bullets=[];
   const avgScore = avg(entities.map(e=>METRICS[e.id].base.narrative));
@@ -2307,12 +2354,15 @@ function renderDimensionPage(key){
       if(p) series.push({name:p.name,color:'#B23B3B',values:[cmpVal(p.id)]});
       barChart(key+'-cmp', [o.race], series, {min:range[0],max:range[1],height:220});
     } else {
+      // Narrative Alignment is the only non-bucket3 dimension, so this is its own separate
+      // comparison chart (distinct from the Key Topics Explorer / Topic Comparison cards further
+      // down the page). Party/Candidate Type now apply here too (2026-08-31 fix), via the same
+      // partySplitGroups helper used by the bucket3 dimensions.
       let idxs = ROSTER.map((r,i)=>i);
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
-      const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-      const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-      barChart(key+'-cmp', [DIM_LABELS[key]], [{name:'Democrats',color:'#2E5EAA',values:[avg(demE.map(e=>cmpVal(e.id)))]},{name:'Republicans',color:'#B23B3B',values:[avg(repE.map(e=>cmpVal(e.id)))]}], {min:range[0],max:range[1],height:220});
+      const groups = partySplitGroups(idxs, fCmp);
+      barChart(key+'-cmp', [DIM_LABELS[key]], groups.map(g=>({name:g.label,color:partyColor(g.key),values:[avg(g.entities.map(e=>cmpVal(e.id)))]})), {min:range[0],max:range[1],height:220});
     }
     const [i0,i1]=dateRangeIdx(key+'-trend'); const labels=DATES.slice(i0,i1+1);
     if(fTrend.race!=='all'){
@@ -2324,12 +2374,8 @@ function renderDimensionPage(key){
       let idxs = ROSTER.map((r,i)=>i);
       if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
       if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
-      const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-      const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-      lineChart(key+'-trend', labels, [
-        {name:'Democrats',color:'#2E5EAA',values:labels.map((d,ix)=>avg(demE.map(e=>METRICS[e.id].history[key][i0+ix])))},
-        {name:'Republicans',color:'#B23B3B',values:labels.map((d,ix)=>avg(repE.map(e=>METRICS[e.id].history[key][i0+ix])))}
-      ], {min:range[0],max:range[1],height:220});
+      const groups = partySplitGroups(idxs, fTrend);
+      lineChart(key+'-trend', labels, groups.map(g=>({name:g.label,color:partyColor(g.key),values:labels.map((d,ix)=>avg(g.entities.map(e=>METRICS[e.id].history[key][i0+ix])))})), {min:range[0],max:range[1],height:220});
     }
   }
   renderInsightSummary(key);
@@ -2428,15 +2474,10 @@ function renderBucket3Charts(key, fCmp, fTrend){
     let idxs = ROSTER.map((r,i)=>i);
     if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
     if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
-    // Grouped by party (not just Dem/Rep) so NP candidates aren't silently dropped from the view.
-    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-    const npE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='NP');
-    const rows = [
-      rowFor('Democrats', groupBuckets(demE), key==='visibility'?partyColor('Democrat'):null),
-      rowFor('Republicans', groupBuckets(repE), key==='visibility'?partyColor('Republican'):null),
-    ];
-    if(npE.length) rows.push(rowFor('Non-Partisan', groupBuckets(npE), key==='visibility'?partyColor('NP'):null));
+    // Party/Candidate Type now actually apply here (2026-08-31 fix) via the shared partySplitGroups
+    // helper — previously both selects rendered and re-triggered this render, but were never read.
+    const groups = partySplitGroups(idxs, fCmp);
+    const rows = groups.map(g=>rowFor(g.label, groupBuckets(g.entities), key==='visibility'?partyColor(g.key):null));
     verticalStackedBarChart(key+'-cmp', rows, {height:260});
   }
 
@@ -2465,19 +2506,14 @@ function renderBucket3Charts(key, fCmp, fTrend){
     if(p) lseries.push({name:p.name, color:partyColor(p.party), values:labels.map((d,ix)=>dailyBucketShare(p.id,key,i0+ix)['1'])});
     lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
   } else if(key==='visibility'){
-    // Default view: always show all 3 party lines (no "compare" toggle needed — there's only one
-    // segment to plot, so there's no information lost by always showing every group).
+    // Default view: show every party line that survives the Party/Candidate Type filter (2026-08-31
+    // fix — both previously rendered but were ignored) — no "compare" toggle needed here since
+    // there's only one segment to plot, so nothing is lost by always showing every surviving group.
     let idxs = ROSTER.map((r,i)=>i);
     if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
     if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
-    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-    const npE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='NP');
-    const lseries = [
-      {name:'Democrats', color:partyColor('Democrat'), values:labels.map((d,ix)=>groupDailyShare(demE,i0+ix,'1'))},
-      {name:'Republicans', color:partyColor('Republican'), values:labels.map((d,ix)=>groupDailyShare(repE,i0+ix,'1'))},
-    ];
-    if(npE.length) lseries.push({name:'Non-Partisan', color:partyColor('NP'), values:labels.map((d,ix)=>groupDailyShare(npE,i0+ix,'1'))});
+    const groups = partySplitGroups(idxs, fTrend);
+    const lseries = groups.map(g=>({name:g.label, color:partyColor(g.key), values:labels.map((d,ix)=>groupDailyShare(g.entities,i0+ix,'1'))}));
     lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
   } else if(fTrend.race!=='all'){
     const idx = parseInt(fTrend.race,10); const o=ourEntity(idx), p=oppEntity(idx);
@@ -2490,12 +2526,15 @@ function renderBucket3Charts(key, fCmp, fTrend){
     let idxs = ROSTER.map((r,i)=>i);
     if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
     if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
-    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
-    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
-    if(trendCompareLabelEl) trendCompareLabelEl.textContent = 'Compare with Republicans';
-    if(trendCompareEl) trendCompareEl.disabled = false;
-    const lseries = order.map(b=>({name:(trendCompare?'Dem — ':'')+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), values:labels.map((d,ix)=>groupDailyShare(demE,i0+ix,b))}));
-    if(trendCompare) order.forEach(b=>lseries.push({name:'Rep — '+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), dash:'4,3', values:labels.map((d,ix)=>groupDailyShare(repE,i0+ix,b))}));
+    // Party/Candidate Type now apply here (2026-08-31 fix). Party picks which group is the primary
+    // (solid) line — previously always Democrats regardless of the filter; "Compare" still adds the
+    // next surviving group as a dashed line, disabled when nothing else is left to compare against.
+    const groups = partySplitGroups(idxs, fTrend);
+    const primary = groups[0] || {label:'Democrats', entities:[]};
+    if(trendCompareLabelEl) trendCompareLabelEl.textContent = groups[1] ? `Compare with ${groups[1].label}` : 'Compare with Republicans';
+    if(trendCompareEl) trendCompareEl.disabled = !groups[1];
+    const lseries = order.map(b=>({name:(trendCompare&&groups[1]?primary.label+' — ':'')+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), values:labels.map((d,ix)=>groupDailyShare(primary.entities,i0+ix,b))}));
+    if(trendCompare && groups[1]) order.forEach(b=>lseries.push({name:groups[1].label+' — '+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), dash:'4,3', values:labels.map((d,ix)=>groupDailyShare(groups[1].entities,i0+ix,b))}));
     lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
   }
 }
@@ -2864,7 +2903,8 @@ function renderFanoutRuns(){
   const {prompts, models, i0, i1} = pfScoped();
 
   let rows = [];
-  prompts.forEach(p=>{ models.forEach(m=>{ const run=getRunInRange(p,m,i0,i1); if(run) rows.push({p, m, run, composite: runComposite(run.scores.ours)}); }); });
+  // Every real run in range, not just the latest per prompt+model (2026-08-31 fix).
+  prompts.forEach(p=>{ models.forEach(m=>{ getRunsInRange(p,m,i0,i1).forEach(run=>rows.push({p, m, run, composite: runComposite(run.scores.ours)})); }); });
 
   const sort = window.__pfSort;
   rows.sort((a,b)=>{
@@ -3096,7 +3136,10 @@ function phCollectStats(prompts, models, rangeDates){
   let total=0, refused=0, onTopic=0, veered=0;
   const byCat={}, byDate={}, byPrompt={};
   prompts.forEach(p=>{
-    const cCat = p.category;
+    // categoryBucket(), not the raw p.category (2026-08-31 fix) — folds the handful of
+    // catalog-orphaned rows' stale pre-consolidation labels (e.g. "Comparison", "Foundational")
+    // into a safe bucket instead of showing them as their own confusing, near-duplicate bars here.
+    const cCat = categoryBucket(p.category);
     if(!byCat[cCat]) byCat[cCat]={total:0,refused:0,onTopic:0,veered:0};
     if(!byPrompt[p.id]) byPrompt[p.id]={p,total:0,refused:0,veered:0};
     models.forEach(m=>{

@@ -216,11 +216,11 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
     <div class="nav-item" data-page="favorability"><span class="nav-dot" style="background:#7FA98F"></span>Favorability</div>
     <div class="nav-item" data-page="depth"><span class="nav-dot" style="background:#B79A5C"></span>Depth</div>
     <div class="nav-item" data-page="accuracy"><span class="nav-dot" style="background:var(--bad)"></span>Accuracy</div>
-    <div class="nav-item" data-page="consistency"><span class="nav-dot" style="background:#8B7FB0"></span>Consistency</div>
     <div class="nav-item" data-page="narrative"><span class="nav-dot" style="background:#4F8B8B"></span>Narrative Alignment</div>
     <div class="nav-group-label">Diagnostics</div>
     <div class="nav-item" data-page="prompthealth"><span class="nav-dot" style="background:#C9915A"></span>Prompt Diagnostics</div>
     <div class="nav-item" data-page="citations"><span class="nav-dot" style="background:#6B9BC9"></span>Citation Breakout</div>
+    <div class="nav-item" data-page="consistency"><span class="nav-dot" style="background:#8B7FB0"></span>Response Consistency</div>
   </div>
 
   <div class="main" id="main-root">
@@ -635,7 +635,7 @@ function candidateTypeBadgeHtml(candidateType){
 }
 
 const DIM_KEYS = ['visibility','favorability','depth','accuracy','consistency','narrative'];
-const DIM_LABELS = {visibility:'Visibility',favorability:'Favorability',depth:'Depth',accuracy:'Accuracy',consistency:'Consistency',narrative:'Narrative Alignment'};
+const DIM_LABELS = {visibility:'Visibility',favorability:'Favorability',depth:'Depth',accuracy:'Accuracy',consistency:'Response Consistency',narrative:'Narrative Alignment'};
 const DIM_RANGE = {visibility:[0,100],favorability:[-100,100],depth:[0,100],accuracy:[0,100],consistency:[0,100],narrative:[0,100]};
 const CAT_TO_DIMKEY = {'Sentiment':'favorability','Narrative Alignment':'narrative','Visibility':'visibility','Accuracy':'accuracy','Depth':'depth','Consistency':'consistency'};
 
@@ -897,6 +897,17 @@ const CITATION_CATEGORIES = [
 ];
 function citationCatColor(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.color : '#999'; }
 function citationCatLabel(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.label : k; }
+
+/* Owned Domains Tracker (2026-08-31, Citation Breakout) — a short, hand-maintained watchlist of
+   domains WE publish (the aeo-sites/ network + any other owned property), distinct from the
+   "Candidate/Officeholder-Owned Content" citation category (which means the candidate's own site,
+   not ours). The 9-category breakdown above can't answer "how is our own content doing" on its
+   own — it only aggregates at the category level, so one domain's citations are invisible inside
+   whatever category it lands in. Add a domain here the moment it goes live; aeo-sites/content/
+   sites.yaml's real domains are still 'TBD-*.example' placeholders as of 2026-08-31, so this list
+   starts with just the one already-real domain from that conversation. */
+const OWNED_DOMAINS = ['heartlandsignal.com'];
+function normalizeDomain(d){ return (d||'').toLowerCase().replace(/^www\./,''); }
 
 function entityById(id){ return ENTITIES.find(e=>e.id===id); }
 function ourEntity(raceIdx){ return entityById('c'+raceIdx); }
@@ -3320,7 +3331,12 @@ function buildCitationsPage(){
       </div>
     </div>
     <div class="kpis" id="cb-kpis"></div>
-    <div class="card">
+    <div class="card section-gap">
+      <div class="card-title">Owned domains tracker</div>
+      <div class="card-caption">Citation count and rank among ALL cited domains (not just within one category) for domains we publish — respects the filters above. Add a domain to <code>OWNED_DOMAINS</code> in dashboard.html the moment it goes live.</div>
+      <div id="cb-owned"></div>
+    </div>
+    <div class="card section-gap">
       <div class="card-title">Citation mix</div>
       <div class="card-caption">Every citation across responses in view, by category.</div>
       <div id="cb-stackbar"></div>
@@ -3357,8 +3373,30 @@ function cbFilteredEvents(){
 function cbCrumb(label, onClick, isLast){
   return `<span style="${isLast?'font-weight:700;color:var(--ink);':'cursor:pointer;color:var(--brand);'}" ${onClick?`onclick="${onClick}"`:''}>${escXHtml(label)}</span>`;
 }
+function renderOwnedDomains(events){
+  const el = document.getElementById('cb-owned');
+  if(!el) return;
+  // Global per-domain tally across every category, not scoped to one — this is what makes rank
+  // meaningful here in a way the category→domain drill-down (scoped to one category) can't be.
+  const byDomainAll = {};
+  events.forEach(e=>{ const d = normalizeDomain(e.domain); byDomainAll[d] = (byDomainAll[d]||0)+e.count; });
+  const ranked = Object.entries(byDomainAll).sort((a,b)=>b[1]-a[1]);
+  const totalDomains = ranked.length;
+  el.innerHTML = OWNED_DOMAINS.map(rawDomain=>{
+    const d = normalizeDomain(rawDomain);
+    const idx = ranked.findIndex(([dom])=>dom===d);
+    const count = idx===-1 ? 0 : ranked[idx][1];
+    const rankText = idx===-1 ? 'not cited in the current filter' : `#${idx+1} of ${totalDomains} cited domains`;
+    return `<div class="topic-row" style="margin-bottom:6px;">
+      <div class="topic-name" style="width:190px;">${escXHtml(rawDomain)}</div>
+      <div class="topic-track"><div class="topic-fill core" style="width:${idx===-1?0:clamp(100*count/(ranked[0]?.[1]||1),2,100)}%;background:var(--brand);"></div></div>
+      <div class="topic-pct" style="width:180px;text-align:right;">${count} citation${count===1?'':'s'} · ${rankText}</div>
+    </div>`;
+  }).join('') || `<div class="small-muted">No domains in OWNED_DOMAINS yet.</div>`;
+}
 function renderCitations(){
   const events = cbFilteredEvents();
+  renderOwnedDomains(events);
   const domainKey = e => e.catKey+'||'+e.domain;
   // "Citations" = summed source_count (each row's weight), not row count — a row is one
   // (domain,url,date,model,source_type) combination that can represent many actual citations

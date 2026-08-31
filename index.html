@@ -678,45 +678,37 @@ const LEVERS_BY_DIM = {
   narrative: {__default: ["Publish content that explicitly addresses the specific topics this response should have raised but didn't — see the missing topics listed below for exactly which ones, and what to write about each."]}
 };
 
-/* ---- Root-cause taxonomy (DASHBOARD_DATA_SOURCES.md Section 3.8, confirmed with user 2026-08-27) ---- */
+/* ---- Root-cause taxonomy (2026-08-31 rewrite — prompt_category is now 5 clean, consolidated
+   values straight from the master prompt library, PROJECT_SPEC.md Part 2.1, so no more raw-value
+   collapsing/bucketing layer is needed; "bucket" = the category itself now, kept as an identity
+   map purely so the rest of the drill-down code below (byBucket, drillSrcBucket, etc.) didn't need
+   restructuring.) ---- */
 const CATEGORY_BUCKET = {
-  'Named Bio & Record':'bio', 'Credential/Reputation':'bio', 'Litmus':'bio', 'Vulnerabilities & Counter-Narratives':'bio',
-  'Comparison':'bio', 'Persuasion':'bio', 'Foundational':'bio',
-  'Issue-Grounded':'policy', 'Named/Issue':'policy', 'Policy Area: Cost of Living & Affordability':'policy',
-  'Ballot Basics':'other', 'Voting Mechanics':'other'
+  'Background & Qualifications':'Background & Qualifications',
+  'Political Narratives & Attack Lines':'Political Narratives & Attack Lines',
+  'Comparison':'Comparison',
+  'Issue & Policy Positions':'Issue & Policy Positions',
+  'Ballot & Voting Logistics':'Ballot & Voting Logistics',
 };
-function categoryBucket(cat){ return CATEGORY_BUCKET[cat] || 'other'; }
-// Consolidated display grouping of the 12 raw prompt_category values, for charts that break down
-// "every category" as its own bar/row (2026-08-27 feedback: "Policy Area: Cost of Living &
-// Affordability" showing up as its own peer category next to "Issue-Grounded" was confusing, and
-// several raw categories are functional near-duplicates). Display-only — does not change the
-// underlying `prompt_category` filtering/join logic anywhere, only how it's grouped for these
-// specific breakdown charts.
-const CONSOLIDATED_CATEGORY = {
-  'Named Bio & Record':'Bio & Credentials', 'Credential/Reputation':'Bio & Credentials',
-  'Litmus':'Litmus & Vulnerabilities', 'Vulnerabilities & Counter-Narratives':'Litmus & Vulnerabilities',
-  'Comparison':'Comparison & Persuasion', 'Persuasion':'Comparison & Persuasion', 'Foundational':'Comparison & Persuasion',
-  'Issue-Grounded':'Issue-Grounded', 'Named/Issue':'Issue-Grounded', 'Policy Area: Cost of Living & Affordability':'Issue-Grounded',
-  'Ballot Basics':'Ballot & Voting Logistics', 'Voting Mechanics':'Ballot & Voting Logistics',
-};
-function consolidatedCategory(cat){ return CONSOLIDATED_CATEGORY[cat] || cat; }
-// The dashboard's 6-issue "Issue" filter taxonomy (DASHBOARD_DATA_SOURCES.md Section 3.8) —
-// distinct from the 14-category narrative taxonomy (ROLLED_UP_TOPICS) and from raw prompt_category
-// values. Used to break down the "Issue & Policy Positions" root-cause bucket by real issue
-// instead of by prompt_category, since prompt_category doesn't line up with issues (a Comparison
-// prompt can be about any issue, e.g. "who's tougher on crime").
-const ISSUE_TAG_CATEGORIES = ['Affordability & Cost of Living','Border Security & Immigration','Public Safety & Crime','Healthcare','Jobs & the Economy','Public Infrastructure'];
-const BUCKET_LABELS = {bio:'Bio & Credentials', policy:'Issue & Policy Positions', other:'Ballot & Voting Logistics'};
-const BUCKET_COLORS = {bio:'#8E6FB0', policy:'#3F7D5C', other:'#B08A3F'};
+// Fallback covers the handful of catalog-orphaned prompt_ids that carry a stale pre-consolidation
+// vendor category label (see DASHBOARD_DATA_SOURCES.md 3.8) — safe default bucket, not a crash.
+function categoryBucket(cat){ return CATEGORY_BUCKET[cat] || 'Background & Qualifications'; }
+const BUCKET_LABELS = CATEGORY_BUCKET;
+// issue_tag's vocabulary is race-type-conditional now (WS1/Template A/C's 7 policy areas vs.
+// SOS/Clerk/Judicial's own topic banks — PROJECT_SPEC.md Part 6.2) — no fixed list works for every
+// race, so this is derived from whatever's actually present in PROMPTS rather than hardcoded.
+function issueTagCategories(){ return [...new Set(PROMPTS.map(p=>p.topic).filter(Boolean))].sort(); }
 const CATEGORY_PLAIN_LABEL = {
-  'Named Bio & Record': 'biography & record questions', 'Credential/Reputation': 'credentials & reputation questions',
-  'Litmus': 'loyalty/litmus-test questions', 'Vulnerabilities & Counter-Narratives': 'vulnerability & counter-narrative questions',
-  'Issue-Grounded': 'policy & issue questions', 'Named/Issue': 'candidate-linked issue questions',
-  'Policy Area: Cost of Living & Affordability': 'cost-of-living policy questions',
-  'Comparison': 'candidate-comparison questions', 'Persuasion': 'persuasion-style questions', 'Foundational': 'foundational persuasion questions',
-  'Ballot Basics': 'basic ballot/election questions', 'Voting Mechanics': 'voting-logistics questions'
+  'Background & Qualifications': 'biography, credentials, and record questions',
+  'Political Narratives & Attack Lines': 'attack-line and rebuttal questions',
+  'Comparison': 'candidate-comparison questions',
+  'Issue & Policy Positions': 'policy & issue questions',
+  'Ballot & Voting Logistics': 'basic ballot/voting-logistics questions',
 };
-function categoryPlain(cat){ return CATEGORY_PLAIN_LABEL[cat] || (cat||'').toLowerCase(); }
+// Falls back to a generic label, not the raw string, for the handful of catalog-orphaned rows that
+// still carry a stale pre-consolidation category value — those shouldn't leak an ugly internal-only
+// string into generated insight prose.
+function categoryPlain(cat){ return CATEGORY_PLAIN_LABEL[cat] || (cat && issueTagCategories().includes(cat) ? cat.toLowerCase() : 'other prompt types'); }
 
 const IS_BUCKET3 = {visibility:true, favorability:true, depth:true, accuracy:true, consistency:true};
 const HAS_ROOT_CAUSE_SECTION = {visibility:true, favorability:true, depth:true, narrative:true};
@@ -777,8 +769,11 @@ function dailyBucketShare(entityId, dim, dayIdx, modelFilter){
   return {'0':100*vals.filter(v=>v==='0').length/total, '1':100*vals.filter(v=>v==='1').length/total, '2':100*vals.filter(v=>v==='2').length/total};
 }
 
-/* ---- Narrative taxonomy: real 14-category rolled-up scheme (PROJECT_SPEC.md 6.2), NOT the
-   mockup's originally-invented 21 — confirmed during data-pipeline pressure-testing. ---- */
+/* ---- Narrative taxonomy: real rolled-up scheme (PROJECT_SPEC.md 6.2, 2026-08-31 state — renamed
+   "Common Critiques"->"Ideological & Partisan Attacks", split "Election Administration" into 3,
+   added Business Licensing & Registration/Constituent Services & Records/5 judicial-only
+   categories, split "Sentencing & Criminal Justice Philosophy" into Sentencing + Criminal Justice
+   Reform), NOT the mockup's originally-invented 21. ---- */
 const GRANULAR_TOPICS = {
   'Affordability & Cost of Living': ['Grocery/food prices','Housing affordability','Prescription drug costs','Energy/utility costs','Taxes','Inflation'],
   'Public Safety & Crime': ['Policing/law enforcement','Gun policy','Drug enforcement','Sentencing/law-and-order','Emergency/disaster management'],
@@ -786,13 +781,22 @@ const GRANULAR_TOPICS = {
   'Education': ['K-12 funding','Teacher pay/shortage','Higher ed/student loans','Early childhood education'],
   'Healthcare': ['ACA/coverage','Medicare/Medicaid','Reproductive rights/abortion','Mental health','Rural hospital access'],
   'Jobs & the Economy': ['Unemployment/job creation','Small business support','Labor rights/unions','Manufacturing','Trade policy'],
-  'Common Critiques': ['Too liberal/radical','Too Trump-aligned/MAGA','Party-over-constituents'],
+  'Ideological & Partisan Attacks': ['Too liberal/radical','Too Trump-aligned/MAGA','Party-over-constituents'],
   'Corruption & Ethics': ['Stock trading','Donor/PAC influence','Ethics violations','Residency/carpetbagger'],
   'Energy': ['Data centers/grid','Fossil fuel production','Renewables','Nuclear'],
   'Public Infrastructure': ['Roads & bridges','Broadband','Transit/rail','Water infrastructure'],
   'Climate & Natural Resources': ['Water quality/contamination','Climate change policy','Conservation/public lands'],
   'Foreign Policy': ['Israel/Gaza','Ukraine/Russia','China','Defense/military spending'],
-  'Election Administration': ['Election operations & security','Voter registration & database access/privacy','Election integrity disputes'],
+  'Election Security': ['Ballot procedures','Election-security audits & certification','Voter registration & database access/privacy','Resisting federal pressure/interference'],
+  'Voter Access': ['Ease of voting/registration'],
+  'Election Integrity Disputes': ['Voter fraud claims','Voter suppression claims'],
+  'Business Licensing & Registration': ['Business filing/licensing efficiency'],
+  'Constituent Services & Records': ['DMV/vehicle registration','Vital records','Public-records digitization','Transaction wait times/bureaucracy'],
+  'Judicial Experience & Track Record': ['Courtroom/trial experience','Notable cases/rulings','Bar association ratings'],
+  'Judicial Temperament & Fairness': ['Perceived fairness/independence','Good-judge character assessments'],
+  'Sentencing': ['Lenient-sentencing attacks','Tougher-on-crime record'],
+  'Criminal Justice Reform': ['Criminal-justice-reform policy stance'],
+  'Community Involvement': ['Local civic engagement'],
   'Other': ['Term limits/congressional reform','LGBTQ rights','Veterans (non-healthcare)']
 };
 const ROLLED_UP_TOPICS = Object.keys(GRANULAR_TOPICS);
@@ -830,7 +834,7 @@ function buildDateAxis(){
   if(DATES.length===0) DATES=['2026-08-13'];
 }
 
-let ROSTER = [], ENTITIES = [], aggRowsCache = [], PROMPTS = [], PROMPTS_BY_RACE = {}, CITATION_EVENTS = [];
+let ROSTER = [], ENTITIES = [], aggRowsCache = [], PROMPTS = [], PROMPTS_BY_RACE = {}, PROMPT_NARR_TESTED = {}, CITATION_EVENTS = [];
 let RUN_INDEX = {}, PROMPT_INDEX = {}, ACC_ISSUES_BY_ROW = {}, NARR_GAPS_BY_ROW = {};
 let METRICS = {};
 
@@ -901,7 +905,7 @@ function buildFromFetchedData(){
     const dims = (r.dimensions_assessed||'').split(',').map(s=>s.trim()).map(d=>CAT_TO_DIMKEY[d]||d.toLowerCase()).filter(Boolean);
     return {
       id: r.prompt_id, text: r.full_query, category: r.prompt_category,
-      category_bucket: r.prompt_category_bucket, topic: r.issue_tag || null,
+      topic: r.issue_tag || null, narrativeTested: r.narrative_tested ? r.narrative_tested.split(', ') : [],
       raceIdx, race: r.race, cand: r.candidate_name, cand_party: r.candidate_party_affiliation,
       opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null,
       state: r.state, location: r.location, office: r.office_name,
@@ -911,11 +915,18 @@ function buildFromFetchedData(){
   });
   PROMPTS_BY_RACE = {};
   PROMPTS.forEach(p=>{ (PROMPTS_BY_RACE[p.raceIdx] = PROMPTS_BY_RACE[p.raceIdx]||[]).push(p); });
+  PROMPT_NARR_TESTED = {};
+  PROMPTS.forEach(p=>{ if(p.narrativeTested.length) PROMPT_NARR_TESTED[p.id] = p.narrativeTested; });
 
   buildFilterOptionLists();
   buildMetrics();
 }
 function topicsForCategory(cat){ return [...new Set(PROMPTS.filter(p=>p.category===cat && p.topic).map(p=>p.topic))].sort(); }
+// Task 2's narrative_tested field — the vocabulary for the Topic Comparison chart. Distinct from
+// issue_tag (topicsForCategory above) and the key-topics rolled-up taxonomy (ROLLED_UP_TOPICS):
+// narrative_tested spans directional/comparative prompts AND Fair Rebuttal/Critique-Association,
+// across every prompt_category, not just Issue & Policy Positions.
+function narrativeTestedTopics(){ return [...new Set(PROMPTS.flatMap(p=>p.narrativeTested))].sort(); }
 
 function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
 /* Average of an entity's per-day history values within [i0,i1] — the date-range-scoped analog of
@@ -1600,7 +1611,7 @@ function buildDimensionPage(key){
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
-    ${key==='narrative' ? narrativeExtraHtml() : ''}
+    ${key==='narrative' ? narrativeExtraHtml() + topicComparisonHtml() : ''}
     ${key==='consistency' ? consistencyCandidateSummaryHtml()+consistencyFlaggedHtml() : ''}
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
@@ -1632,7 +1643,7 @@ function buildDimensionPage(key){
     const trendCompareEl = document.getElementById(key+'-trend-compare');
     if(trendCompareEl) trendCompareEl.addEventListener('change', ()=>renderDimensionPage(key));
   }
-  if(key==='narrative') wireNarrativeExtra();
+  if(key==='narrative'){ wireNarrativeExtra(); wireTopicComparison(); }
   if(key==='consistency') wireConsistencyFlagged();
   if(hasRootCause) wireDimSource(key);
   renderDimensionPage(key);
@@ -1667,6 +1678,76 @@ function wireNarrativeExtra(){
 function toggleNaView(){
   window.__naView = window.__naView==='rolled-up' ? 'granular' : 'rolled-up';
   renderNarrativeTopics();
+}
+/* ---- Topic Comparison (Task 2, added 2026-08-31): pick a narrative_tested topic, see the real
+   0/1/2 Narrative Alignment score share — Democrats vs. Republicans by default, narrowing to
+   candidate vs. opponent when a single race is selected, same aggregation pattern as the Key
+   Topics Explorer above. Distinct from that explorer: this reads real per-response scores gated by
+   whether that response's prompt tests the selected topic (PROMPT_NARR_TESTED), not key-topic
+   extraction counts. ---- */
+function topicComparisonHtml(){
+  return `<div class="card section-gap">
+    <div class="card-title">Topic Comparison</div>
+    <div class="card-caption">Pick a topic to see the real Narrative Alignment score breakdown for Democrats vs. Republicans (or one candidate vs. their opponent, if a race is selected). Covers policy topics, Fair Rebuttal, Critique-Association, and narrative-framing topics like Moderatism or Who Is Better.</div>
+    ${chartFilterBarHtml('tc', {})}
+    <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+      <div class="fitem"><label>Race level</label><select id="tc-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+      <div class="fitem"><label>Topic</label><select id="tc-topic"><option value="">Select a topic…</option>${narrativeTestedTopics().map(t=>opt(t,t)).join('')}</select></div>
+    </div>
+    ${bucket3Legend('narrative')}
+    <div id="tc-body"></div>
+  </div>`;
+}
+function wireTopicComparison(){
+  wireChartFilterBar('tc', {}, renderTopicComparison);
+  document.getElementById('tc-level').addEventListener('change', renderTopicComparison);
+  document.getElementById('tc-topic').addEventListener('change', renderTopicComparison);
+  renderTopicComparison();
+}
+function scoresByTopicForEntities(entities, topic){
+  const buckets = {'0':0,'1':0,'2':0}; let total=0;
+  entities.forEach(ent=>{
+    const side = ent.role==='ours' ? 'candidate' : 'opponent';
+    aggRowsCache.forEach(r=>{
+      if(r.race!==ent.race) return;
+      const tested = PROMPT_NARR_TESTED[r.prompt_id];
+      if(!tested || !tested.includes(topic)) return;
+      const v = r['narrative_alignment_score_'+side];
+      if(v==='0'||v==='1'||v==='2'){ buckets[v]++; total++; }
+    });
+  });
+  return {buckets, total};
+}
+function renderTopicComparison(){
+  const bodyEl = document.getElementById('tc-body');
+  const topic = document.getElementById('tc-topic').value;
+  if(!topic){ bodyEl.innerHTML = '<div class="small-muted" style="padding:10px;">Select a topic above to see the comparison.</div>'; return; }
+  const raceVal = document.getElementById('tc-race').value;
+  let groups;
+  if(raceVal!=='all'){
+    const idx = parseInt(raceVal,10);
+    const e = ourEntity(idx), opp = oppEntity(idx);
+    groups = [{label:e.name, entities:[e]}];
+    if(opp) groups.push({label:opp.name, entities:[opp]});
+  } else {
+    let idxs = ROSTER.map((r,i)=>i);
+    const state=document.getElementById('tc-state').value, office=document.getElementById('tc-office').value,
+          level=document.getElementById('tc-level').value, party=document.getElementById('tc-party').value;
+    if(state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===state);
+    if(office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===office);
+    if(level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===level);
+    const demE = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat');
+    const repE = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican');
+    groups = [{label:`Democrats (${demE.length})`, entities:demE}, {label:`Republicans (${repE.length})`, entities:repE}];
+    if(party==='Democrat') groups = groups.slice(0,1);
+    if(party==='Republican') groups = groups.slice(1,2);
+  }
+  const rows = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic)}));
+  bodyEl.innerHTML = rows.map(r=>`
+    <div class="topic-row" style="margin-bottom:8px;">
+      <div class="topic-name" style="width:190px;">${escXHtml(r.label)}<br><span class="small-muted">n=${r.d.total}</span></div>
+      ${stackedRowHtml('narrative', r.d.buckets, r.d.total)}
+    </div>`).join('') || '<div class="small-muted" style="padding:10px;">No scored responses for this topic in the current filter.</div>';
 }
 function granularBreakdown(entityId, topic, totalCount){
   const subs = GRANULAR_TOPICS[topic] || ['General'];
@@ -1833,7 +1914,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter){
       }
     }); });
   });
-  const byBucket = {bio:{buckets:{},total:0,items:[]}, policy:{buckets:{},total:0,items:[]}, other:{buckets:{},total:0,items:[]}};
+  const byBucket = {}; Object.keys(BUCKET_LABELS).forEach(b=>{ byBucket[b] = {buckets:{},total:0,items:[]}; });
   Object.keys(byCategory).forEach(cat=>{
     const bkt = categoryBucket(cat); const c=byCategory[cat];
     byBucket[bkt].total += c.total;
@@ -1852,7 +1933,7 @@ function entityBucketTotals(ent, key, modelFilter){
   return mergeBucketTotals(Object.values(data.byCategory));
 }
 function bucketScoresAcrossEntities(entities, key){
-  const acc = {bio:{buckets:{},total:0}, policy:{buckets:{},total:0}, other:{buckets:{},total:0}};
+  const acc = {}; Object.keys(BUCKET_LABELS).forEach(b=>{ acc[b] = {buckets:{},total:0}; });
   entities.forEach(e=>{
     const d = scoresByCategoryForEntity(e, key);
     Object.keys(acc).forEach(b=>{ acc[b] = mergeBucketTotals([acc[b], d.byBucket[b]]); });
@@ -1899,7 +1980,12 @@ function renderDimSource(key){
   const ent = ourEntity(idx), opp = oppEntity(idx);
   const compare = document.getElementById(key+'src-compare').checked;
   const drill = window['__srcDrill_'+key] || {level:'bucket'};
-  const isPolicyDrill = drill.level==='category' && drill.bucket==='policy';
+  // A category drills into its real issue_tag topics when any exist for it (not hardcoded to
+  // "Issue & Policy Positions" — Political Narratives & Attack Lines and Comparison rows can carry
+  // an issue_tag too, per PROJECT_SPEC.md Part 2.1's 2026-08-30 extension); categories with no
+  // topics at all (Background & Qualifications, Ballot & Voting Logistics) skip straight to the
+  // side panel instead of showing a pointless single-row intermediate level — see drillSrcBucket.
+  const isPolicyDrill = drill.level==='category' && topicsForCategory(drill.bucket).length>0;
   const data = scoresByCategoryForEntity(ent, key, null);
   const oppData = (compare && opp) ? scoresByCategoryForEntity(opp, key, null) : null;
   const crumbEl = document.getElementById(key+'src-crumb');
@@ -1909,29 +1995,26 @@ function renderDimSource(key){
 
   if(drill.level==='bucket'){
     crumbEl.innerHTML = `<span style="font-weight:600;color:var(--ink);">All categories</span>`;
-    const rows = ['bio','policy','other'].map(b=>{
+    const rows = Object.keys(BUCKET_LABELS).map(b=>{
       const t = data.byBucket[b];
       const ot = oppData ? oppData.byBucket[b] : null;
       return {b, t, ot};
     });
     bodyEl.innerHTML = rows.map(r=>{
       const oppBadge = (compare && r.ot && r.ot.total) ? `<span class="small-muted" style="margin-left:8px;">opp ${worstLabel.toLowerCase()}: ${fmt1(worstShare(key,r.ot))}%</span>` : '';
-      return `<div class="drillable-row" onclick="drillSrcBucket('${key}','${r.b}')">
+      return `<div class="drillable-row" onclick="drillSrcBucket('${key}','${escXAttr(r.b)}')">
         <div class="topic-row" style="margin-bottom:2px;">
-          <div class="topic-name" style="width:190px;">${BUCKET_LABELS[r.b]}${oppBadge}</div>
+          <div class="topic-name" style="width:190px;">${escXHtml(BUCKET_LABELS[r.b])}${oppBadge}</div>
           ${stackedRowHtml(key, r.t.buckets, r.t.total)}
-          <div class="drill-hint">See categories <span class="drill-chevron"></span></div>
+          <div class="drill-hint">See responses <span class="drill-chevron"></span></div>
         </div>
       </div>`;
     }).join('') || '<div class="small-muted" style="padding:10px;">No data for this candidate/dimension in range.</div>';
   } else if(drill.level==='category'){
-    crumbEl.innerHTML = `<span class="cb-crumb-link" onclick="drillSrcReset('${key}')">All categories</span> / <span style="font-weight:600;color:var(--ink);">${BUCKET_LABELS[drill.bucket]}</span>`;
-    // Issue & Policy Positions breaks down by real issue (byIssueTag), not by raw prompt_category —
-    // a Comparison/Persuasion-style prompt can be about any issue, so prompt_category doesn't line
-    // up with "which issue is this about." Bio/Ballot buckets keep the prompt_category breakdown.
+    crumbEl.innerHTML = `<span class="cb-crumb-link" onclick="drillSrcReset('${key}')">All categories</span> / <span style="font-weight:600;color:var(--ink);">${escXHtml(BUCKET_LABELS[drill.bucket])}</span>`;
     const byMap = isPolicyDrill ? data.byIssueTag : data.byCategory;
     const oppByMap = oppData ? (isPolicyDrill ? oppData.byIssueTag : oppData.byCategory) : null;
-    const cats = isPolicyDrill ? ISSUE_TAG_CATEGORIES : Object.keys(CATEGORY_BUCKET).filter(c=>categoryBucket(c)===drill.bucket);
+    const cats = isPolicyDrill ? topicsForCategory(drill.bucket) : [drill.bucket];
     const rows = cats.map(cat=>{
       const t = byMap[cat] || {buckets:{},total:0};
       const ot = oppByMap ? oppByMap[cat] : null;
@@ -1949,13 +2032,18 @@ function renderDimSource(key){
     }).join('') || '<div class="small-muted" style="padding:10px;">No data for this candidate/dimension in range.</div>';
   }
 }
-function drillSrcBucket(key,b){ window['__srcDrill_'+key] = {level:'category', bucket:b}; renderDimSource(key); }
+function drillSrcBucket(key,b){
+  // Skip the pointless single-row intermediate level for a category with no issue_tag topics at
+  // all (Background & Qualifications, Ballot & Voting Logistics) — go straight to the side panel.
+  if(topicsForCategory(b).length>0){ window['__srcDrill_'+key] = {level:'category', bucket:b}; renderDimSource(key); }
+  else { window['__srcDrill_'+key] = {level:'category', bucket:b}; openDimSourceSidebar(key, b); }
+}
 function drillSrcReset(key){ window['__srcDrill_'+key] = {level:'bucket', bucket:null}; renderDimSource(key); }
 function openDimSourceSidebar(key, category, entIdOverride){
   let ent;
   if(entIdOverride){ ent = entityById(entIdOverride); }
   else { const candEl = document.getElementById(key+'src-cand'); const idx = parseInt(candEl.value,10); ent = ourEntity(idx); }
-  const isIssueTag = ISSUE_TAG_CATEGORIES.includes(category);
+  const isIssueTag = issueTagCategories().includes(category) && !BUCKET_LABELS[category];
   const bucketKey = Object.keys(BUCKET_LABELS).find(k=>BUCKET_LABELS[k]===category);
   const data = scoresByCategoryForEntity(ent, key, null);
   const d = isIssueTag ? data.byIssueTag[category] : (bucketKey ? data.byBucket[bucketKey] : data.byCategory[category]);
@@ -2026,16 +2114,13 @@ function bucketAndCategoryInsights(key){
   const overall = mergeBucketTotals(entities.map(e=>entityBucketTotals(e,key)));
   const overallWorst = worstShare(key, overall);
   if(overallWorst!==null) bullets.push(`${fmt1(overallWorst)}% of scored responses for ${entities.length===1?entities[0].name:entities.length+' candidates in view'} are ${worstLabel}.`);
-  const buckets = bucketScoresAcrossEntities(entities, key);
-  const bucketRows = Object.keys(buckets).map(b=>({b, share: worstShare(key,buckets[b])})).filter(x=>x.share!==null).sort((a,b)=>b.share-a.share);
-  if(bucketRows.length){
-    const worst=bucketRows[0], best=bucketRows[bucketRows.length-1];
-    const seeMoreText = key==='consistency' ? 'see the "Most inconsistent prompts" list below for specifics.' : 'see the breakdown below for specific categories and fixes.';
-    bullets.push(`${BUCKET_LABELS[worst.b]} content has the highest ${worstLabel} share (${fmt1(worst.share)}%)${bucketRows.length>1?`, vs. ${fmt1(best.share)}% on ${BUCKET_LABELS[best.b]}`:''} — ${seeMoreText}`);
-  }
+  const seeMoreText = key==='consistency' ? 'see the "Most inconsistent prompts" list below for specifics.' : 'see the breakdown below for specific categories and fixes.';
   const catAcc = categoryScoresAcrossEntities(entities, key);
   const catRows = Object.entries(catAcc).map(([cat,c])=>({cat,share:worstShare(key,c)})).filter(x=>x.share!==null).sort((a,b)=>b.share-a.share);
-  if(catRows.length) bullets.push(`Worst-performing prompt type: ${categoryPlain(catRows[0].cat)} (${fmt1(catRows[0].share)}% ${worstLabel}).`);
+  if(catRows.length){
+    const worst = catRows[0], best = catRows[catRows.length-1];
+    bullets.push(`${categoryPlain(worst.cat)} have the highest ${worstLabel} share (${fmt1(worst.share)}%)${catRows.length>1?`, vs. ${fmt1(best.share)}% for ${categoryPlain(best.cat)}`:''} — ${seeMoreText}`);
+  }
   return bullets;
 }
 function computeAccuracyIssueRows(){
@@ -2179,8 +2264,8 @@ function syncIssueFilter(key){
   const wrap = document.getElementById(key+'-cmp-topic-wrap');
   const topicSel = document.getElementById(key+'-cmp-topic');
   const cat = catSel.value;
-  if(categoryBucket(cat)==='policy'){
-    const topics = topicsForCategory(cat);
+  const topics = topicsForCategory(cat);
+  if(topics.length){
     topicSel.innerHTML = `<option value="all">All issues</option>${topics.map(t=>opt(t,t)).join('')}`;
     topicSel.value = 'all';
     refreshXSel(topicSel);
@@ -2536,15 +2621,16 @@ function renderAccuracyPriority(){
         </div>`;
       }).join('');
     } else {
-      // Bars: Bio & Credentials, each of the 6 policy issues, Ballot & Voting Logistics —
-      // replaces the old single "Issue-Grounded" bar (2026-08-27 feedback: a Comparison/
-      // Persuasion-style prompt can be about any issue, so prompt_category doesn't map to issues).
+      // Bars: the 5 prompt categories, except Issue & Policy Positions (and any other category
+      // with real issue_tag topics) expands into its individual topics instead of one combined bar
+      // — a Comparison/Political-Narratives prompt can carry an issue_tag too, so this isn't
+      // hardcoded to just the Issue & Policy Positions category (2026-08-31).
       const data = scoresByCategoryForEntity(ent, 'accuracy', null);
-      const list = [
-        {cat: BUCKET_LABELS.bio, t: data.byBucket.bio},
-        ...ISSUE_TAG_CATEGORIES.map(tag=>({cat: tag, t: data.byIssueTag[tag] || {buckets:{},total:0}})),
-        {cat: BUCKET_LABELS.other, t: data.byBucket.other},
-      ].sort((a,b)=>(worstShare('accuracy',b.t)||0)-(worstShare('accuracy',a.t)||0));
+      const list = Object.keys(BUCKET_LABELS).flatMap(cat=>{
+        const topics = topicsForCategory(cat);
+        if(topics.length) return topics.map(tag=>({cat: tag, t: data.byIssueTag[tag] || {buckets:{},total:0}}));
+        return [{cat: BUCKET_LABELS[cat], t: data.byBucket[cat]}];
+      }).sort((a,b)=>(worstShare('accuracy',b.t)||0)-(worstShare('accuracy',a.t)||0));
       bodyEl.innerHTML = toggleHtml + list.map(x=>`
         <div class="drillable-row" onclick="openDimSourceSidebar('accuracy','${escXAttr(x.cat)}','${ent.id}')">
           <div class="topic-row" style="margin-bottom:2px;">
@@ -2912,7 +2998,7 @@ function phCollectStats(prompts, models, rangeDates){
   let total=0, refused=0, onTopic=0, veered=0;
   const byCat={}, byDate={}, byPrompt={};
   prompts.forEach(p=>{
-    const cCat = consolidatedCategory(p.category);
+    const cCat = p.category;
     if(!byCat[cCat]) byCat[cCat]={total:0,refused:0,onTopic:0,veered:0};
     if(!byPrompt[p.id]) byPrompt[p.id]={p,total:0,refused:0,veered:0};
     models.forEach(m=>{

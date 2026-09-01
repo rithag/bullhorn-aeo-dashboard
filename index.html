@@ -1082,6 +1082,90 @@ function composite(e){
   const favN = m.favorability!=null? (m.favorability+100)/2 : null;
   return weightedAvgKnown([[m.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]]);
 }
+/* ============================================================================
+   TIE-OUT AUDIT (2026-09-01) — callable from the browser console as
+   runTieOutAudit(). Companion to scripts/dashboard/tie_out_audit.py, which must
+   be run first to produce dashboard_data/tie_out_ground_truth.json (Sections
+   A-C: response-level completeness, response->prompt tie-out, and this
+   function's ground truth for prompt->candidate-level base metrics). This
+   function covers what only exists at runtime: comparing the LIVE computed
+   METRICS/composite() against that ground truth, plus filter-partition
+   consistency (Section D) — do subgroup values actually differ (catches a
+   filter silently being a no-op, the exact bug class found and fixed
+   2026-08-31) and do they weighted-recombine to the unfiltered total (an
+   exact mathematical identity, not an approximation — any real mismatch here
+   means an entity was double-counted or dropped somewhere). See
+   TIE_OUT_AUDIT_RUNBOOK.md for the full checklist, including chart-specific
+   spot-checks (Prompt Fanout, Citations, Accuracy, Consistency) this generic
+   pass doesn't cover. ---- */
+async function runTieOutAudit(){
+  console.log('%c=== TIE-OUT AUDIT ===', 'font-weight:bold;font-size:14px;');
+  const results = {passed:0, failed:0, findings:[]};
+  function check(name, ok, detail){
+    if(ok) results.passed++; else { results.failed++; results.findings.push({name, detail}); }
+    console.log(`${ok?'PASS':'FAIL'} ${name}` + (detail?` — ${detail}`:''));
+  }
+
+  let gt;
+  try{ gt = await fetch('dashboard_data/tie_out_ground_truth.json').then(r=>r.json()); }
+  catch(e){ console.error('Could not fetch ground truth — run scripts/dashboard/tie_out_audit.py first.', e); return results; }
+
+  console.log(`--- Section C: candidate-level base metrics vs. ground truth (${Object.keys(gt).length} entities) ---`);
+  let baseChecked=0, baseMismatches=0, compChecked=0, compMismatches=0;
+  Object.entries(gt).forEach(([key, entry])=>{
+    const ent = ENTITIES.find(e=>e.race===entry.race && e.role===entry.role);
+    if(!ent || !METRICS[ent.id]) return;
+    const live = METRICS[ent.id].base;
+    ['visibility','favorability','depth','accuracy','narrative','consistency'].forEach(dim=>{
+      const gtVal = entry.base[dim], liveVal = live[dim];
+      baseChecked++;
+      const bothNull = (gtVal==null && liveVal==null);
+      const match = bothNull || (gtVal!=null && liveVal!=null && Math.abs(gtVal-liveVal)<0.1);
+      if(!match){ baseMismatches++; console.warn(`  MISMATCH ${key} ${dim}: ground-truth=${gtVal} live=${liveVal}`); }
+    });
+    const b = entry.base;
+    const favN = b.favorability!=null ? (b.favorability+100)/2 : null;
+    const expected = weightedAvgKnown([[b.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[b.depth,WEIGHTS.depth],[b.accuracy,WEIGHTS.accuracy],[b.narrative,WEIGHTS.narrative]]);
+    const live_comp = composite(ent);
+    compChecked++;
+    const bothNullC = (expected==null && live_comp==null);
+    const matchC = bothNullC || (expected!=null && live_comp!=null && Math.abs(expected-live_comp)<0.1);
+    if(!matchC){ compMismatches++; console.warn(`  COMPOSITE MISMATCH ${key}: expected=${expected} live=${live_comp}`); }
+  });
+  check('Section C: entity base metrics match ground truth', baseMismatches===0, `${baseChecked} values checked, ${baseMismatches} mismatches`);
+  check('Composite formula matches expected weighted-average', compMismatches===0, `${compChecked} entities checked, ${compMismatches} mismatches`);
+
+  console.log('--- Section D: filter-partition consistency ---');
+  function compositeValueFn(ents){
+    const vals = ents.map(e=>composite(e)).filter(v=>v!=null);
+    return {value: vals.length?avg(vals):null, n:vals.length};
+  }
+  function partitionCheck(dimName, groupFn){
+    const groups = {};
+    ENTITIES.filter(e=>e.role==='ours').forEach(e=>{
+      const k = groupFn(e);
+      if(k==null) return;
+      (groups[k] = groups[k]||[]).push(e);
+    });
+    const groupVals = Object.entries(groups).map(([k,ents])=>({k, ...compositeValueFn(ents)})).filter(g=>g.value!=null);
+    if(groupVals.length < 2){ check(`${dimName}: has >=2 distinct groups with data to check`, false, `only ${groupVals.length} group(s)`); return; }
+    const totalN = groupVals.reduce((a,g)=>a+g.n,0);
+    const recombined = groupVals.reduce((a,g)=>a+g.value*g.n,0)/totalN;
+    const overall = compositeValueFn(ENTITIES.filter(e=>e.role==='ours'));
+    const match = overall.value!=null && Math.abs(recombined-overall.value)<0.5;
+    check(`${dimName}: subgroup composites weighted-recombine to overall`, match, `recombined=${recombined?.toFixed(2)} overall=${overall.value?.toFixed(2)}`);
+    const distinctVals = new Set(groupVals.map(g=>g.value.toFixed(1)));
+    check(`${dimName}: subgroups actually differ (filter isn't a silent no-op)`, distinctVals.size>1, `${distinctVals.size} distinct rounded values across ${groupVals.length} groups`);
+  }
+  partitionCheck('State', e=>e.state);
+  partitionCheck('Office', e=>e.office);
+  partitionCheck('Party', e=>e.party);
+  partitionCheck('Candidate Type', e=>e.candidateType);
+
+  const color = results.failed ? 'color:#B23B3B;font-weight:bold;' : 'color:#3C8A5B;font-weight:bold;';
+  console.log(`%c=== AUDIT COMPLETE: ${results.passed} passed, ${results.failed} failed ===`, color);
+  return results;
+}
 /* Date-scoped analog of composite() — sourced from one day's slice of the entity's history arrays
    instead of the all-history .base — used by the "All races" tables' Composite column so it
    reflects only the most recent day, same reasoning as computeRaceRows below. */

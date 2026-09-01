@@ -963,6 +963,7 @@ function buildFromFetchedData(){
     return {
       id: r.prompt_id, text: r.full_query, category: r.prompt_category,
       topic: r.issue_tag || null, narrativeTested: r.narrative_tested ? r.narrative_tested.split(', ') : [],
+      subTopic: r.sub_topic || null,
       raceIdx, race: r.race, cand: r.candidate_name, cand_party: r.candidate_party_affiliation, cand_type: r.candidate_type,
       opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null, opp_type: r.opponent_type || null,
       state: r.state, location: r.location, office: r.office_name,
@@ -1797,6 +1798,13 @@ function toggleNaView(){
    Topics Explorer above. Distinct from that explorer: this reads real per-response scores gated by
    whether that response's prompt tests the selected topic (PROMPT_NARR_TESTED), not key-topic
    extraction counts. ---- */
+// Sub-topics scoped to one main topic only (2026-08-31) — a flat list of every sub_topic across
+// every main topic would be unusable (dozens of values, most irrelevant to whatever topic is
+// picked); this is deliberately a two-step cascade, per direct feedback: pick the main topic
+// first, then narrow to a sub_topic scoped to it.
+function subTopicsForNarrativeTopic(topic){
+  return [...new Set(PROMPTS.filter(p=>p.narrativeTested.includes(topic) && p.subTopic).map(p=>p.subTopic))].sort();
+}
 function topicComparisonHtml(){
   return `<div class="card section-gap">
     <div class="card-title">Topic Comparison</div>
@@ -1805,6 +1813,7 @@ function topicComparisonHtml(){
     <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
       <div class="fitem"><label>Race level</label><select id="tc-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
       <div class="fitem"><label>Topic</label><select id="tc-topic"><option value="">Select a topic…</option>${narrativeTestedTopics().map(t=>opt(t,t)).join('')}</select></div>
+      <div class="fitem" id="tc-subtopic-wrap" style="display:none;"><label>Sub-topic</label><select id="tc-subtopic"><option value="all">All</option></select></div>
     </div>
     ${bucket3Legend('narrative')}
     <div id="tc-body"></div>
@@ -1813,10 +1822,23 @@ function topicComparisonHtml(){
 function wireTopicComparison(){
   wireChartFilterBar('tc', {}, renderTopicComparison);
   document.getElementById('tc-level').addEventListener('change', renderTopicComparison);
-  document.getElementById('tc-topic').addEventListener('change', renderTopicComparison);
+  document.getElementById('tc-topic').addEventListener('change', ()=>{
+    const topic = document.getElementById('tc-topic').value;
+    const subSel = document.getElementById('tc-subtopic'), wrap = document.getElementById('tc-subtopic-wrap');
+    const subs = topic ? subTopicsForNarrativeTopic(topic) : [];
+    if(subs.length){
+      subSel.innerHTML = `<option value="all">All</option>${subs.map(s=>opt(s,s)).join('')}`;
+      wrap.style.display = '';
+    } else {
+      subSel.innerHTML = `<option value="all">All</option>`;
+      wrap.style.display = 'none';
+    }
+    renderTopicComparison();
+  });
+  document.getElementById('tc-subtopic').addEventListener('change', renderTopicComparison);
   renderTopicComparison();
 }
-function scoresByTopicForEntities(entities, topic){
+function scoresByTopicForEntities(entities, topic, subTopic){
   const buckets = {'0':0,'1':0,'2':0}; let total=0;
   entities.forEach(ent=>{
     const side = ent.role==='ours' ? 'candidate' : 'opponent';
@@ -1824,6 +1846,7 @@ function scoresByTopicForEntities(entities, topic){
       if(r.race!==ent.race) return;
       const tested = PROMPT_NARR_TESTED[r.prompt_id];
       if(!tested || !tested.includes(topic)) return;
+      if(subTopic && subTopic!=='all' && r.sub_topic!==subTopic) return;
       const v = r['narrative_alignment_score_'+side];
       if(v==='0'||v==='1'||v==='2'){ buckets[v]++; total++; }
     });
@@ -1834,6 +1857,7 @@ function renderTopicComparison(){
   const bodyEl = document.getElementById('tc-body');
   const topic = document.getElementById('tc-topic').value;
   if(!topic){ bodyEl.innerHTML = '<div class="small-muted" style="padding:10px;">Select a topic above to see the comparison.</div>'; return; }
+  const subTopic = document.getElementById('tc-subtopic').value;
   const raceVal = document.getElementById('tc-race').value;
   let groups;
   if(raceVal!=='all'){
@@ -1853,7 +1877,7 @@ function renderTopicComparison(){
     // this render already, but its value was never read.
     groups = partySplitGroups(idxs, {party, candidateType:ctype}).map(g=>({label:`${g.label} (${g.entities.length})`, entities:g.entities}));
   }
-  const rows = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic)}));
+  const rows = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic, subTopic)}));
   bodyEl.innerHTML = rows.map(r=>`
     <div class="topic-row" style="margin-bottom:8px;">
       <div class="topic-name" style="width:190px;">${escXHtml(r.label)}<br><span class="small-muted">n=${r.d.total}</span></div>

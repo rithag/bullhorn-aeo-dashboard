@@ -1808,7 +1808,7 @@ function buildDimensionPage(key){
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
-    ${key==='narrative' ? narrativeExtraHtml() + topicComparisonHtml() : ''}
+    ${key==='narrative' ? topicComparisonHtml() + narrativeExtraHtml() : ''}
     ${key==='consistency' ? consistencyCandidateSummaryHtml()+consistencyFlaggedHtml() : ''}
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
@@ -3253,7 +3253,7 @@ function phFilterPrompts(f){
    calls this with its own filtered prompt set / model list / date range. */
 function phCollectStats(prompts, models, rangeDates){
   let total=0, refused=0, onTopic=0, veered=0;
-  const byCat={}, byDate={}, byPrompt={};
+  const byCat={}, byDate={}, byPrompt={}, byModel={};
   prompts.forEach(p=>{
     // categoryBucket(), not the raw p.category (2026-08-31 fix) — folds the handful of
     // catalog-orphaned rows' stale pre-consolidation labels (e.g. "Comparison", "Foundational")
@@ -3262,22 +3262,23 @@ function phCollectStats(prompts, models, rangeDates){
     if(!byCat[cCat]) byCat[cCat]={total:0,refused:0,onTopic:0,veered:0};
     if(!byPrompt[p.id]) byPrompt[p.id]={p,total:0,refused:0,veered:0};
     models.forEach(m=>{
+      if(!byModel[m]) byModel[m]={total:0,refused:0,onTopic:0,veered:0};
       rangeDates.forEach(d=>{
         const run = getHealthRun(p,m,d);
         if(!run) return;
-        total++; byCat[cCat].total++; byPrompt[p.id].total++;
+        total++; byCat[cCat].total++; byPrompt[p.id].total++; byModel[m].total++;
         if(!byDate[d]) byDate[d]={total:0,refused:0,veered:0,scored:0};
         byDate[d].total++;
-        if(run.refused){ refused++; byCat[cCat].refused++; byPrompt[p.id].refused++; byDate[d].refused++; }
+        if(run.refused){ refused++; byCat[cCat].refused++; byPrompt[p.id].refused++; byDate[d].refused++; byModel[m].refused++; }
         else{
           byDate[d].scored++;
-          if(run.alignment==='on_topic'){ onTopic++; byCat[cCat].onTopic++; }
-          else { veered++; byCat[cCat].veered++; byPrompt[p.id].veered++; byDate[d].veered++; }
+          if(run.alignment==='on_topic'){ onTopic++; byCat[cCat].onTopic++; byModel[m].onTopic++; }
+          else { veered++; byCat[cCat].veered++; byPrompt[p.id].veered++; byDate[d].veered++; byModel[m].veered++; }
         }
       });
     });
   });
-  return {total,refused,onTopic,veered,byCat,byDate,byPrompt};
+  return {total,refused,onTopic,veered,byCat,byDate,byPrompt,byModel};
 }
 function buildPromptHealthPage(){
   document.getElementById('page-prompthealth').innerHTML = `
@@ -3288,6 +3289,9 @@ function buildPromptHealthPage(){
       ${phFilterBarHtml('ph-ref')}
       <div class="kpis" id="ph-kpis"></div>
       <div id="ph-refusal-chart"></div>
+      <div style="margin-top:28px;padding-top:22px;border-top:1px solid var(--border);">
+        <div id="ph-model-chart-block"></div>
+      </div>
     </div>
     <div class="card section-gap">
       <div class="card-title">Refusal &amp; veer rate over time</div>
@@ -3328,6 +3332,29 @@ function renderPhRefusal(){
     <div class="kpi"><div class="kpi-label">Flagged for review</div><div class="kpi-value">${Object.values(s.byPrompt).filter(x=>x.total && (x.refused/x.total>0.22 || x.veered/Math.max(1,x.total-x.refused)>0.30)).length}</div><div class="kpi-sub">high refusal or veer rate</div></div>`;
   const cats = Object.keys(s.byCat).sort();
   barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>s.byCat[c].total? 100*s.byCat[c].refused/s.byCat[c].total : null)}], {min:0,max:60,height:280,width:560,rotateLabels:true});
+  renderPhModelChart(s, f.models);
+}
+/* Own toggle (refusal rate vs. on-hypothesis rate), independent of the flagged-prompt table's
+   sort toggle — rebuilds its own block each call since the chart div it targets is recreated. */
+function renderPhModelChart(s, modelsInView){
+  const mode = window.__phModelMode || 'refusal';
+  const titleText = mode==='refusal' ? 'Refusal rate by model' : 'On-hypothesis rate by model';
+  const captionText = mode==='refusal'
+    ? 'Same filtered view, broken out by model instead of category — some models decline to answer certain prompts far more often than others.'
+    : 'Of the non-refused runs in this same filtered view: how often each model engaged with the specific angle the prompt was built to test, rather than drifting off-topic.';
+  document.getElementById('ph-model-chart-block').innerHTML = `
+    <div class="card-title">${titleText}</div>
+    <div class="card-caption">${captionText}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button type="button" class="btn ${mode==='refusal'?'':'ghost'} sm" onclick="window.__phModelMode='refusal';renderPhRefusal();">Refusal rate</button>
+      <button type="button" class="btn ${mode==='hyp'?'':'ghost'} sm" onclick="window.__phModelMode='hyp';renderPhRefusal();">On-hypothesis rate</button>
+    </div>
+    <div id="ph-refusal-model-chart"></div>`;
+  if(mode==='refusal'){
+    barChart('ph-refusal-model-chart', modelsInView, [{name:'Refusal rate %', color:'var(--bad)', values:modelsInView.map(m=>s.byModel[m] && s.byModel[m].total? 100*s.byModel[m].refused/s.byModel[m].total : null)}], {min:0,max:60,height:220,width:560});
+  } else {
+    barChart('ph-refusal-model-chart', modelsInView, [{name:'On-hypothesis rate %', color:'var(--brand)', values:modelsInView.map(m=>{ const b=s.byModel[m]; const scoredM=b? b.onTopic+b.veered : 0; return scoredM? 100*b.onTopic/scoredM : null; })}], {min:0,max:100,height:220,width:560});
+  }
 }
 function renderPhTrend(){
   const f = phSectionFilters('ph-trend');
@@ -3395,6 +3422,21 @@ function openPromptHealthDetail(promptId){
     runs.push({m, d, run, response: fullRun?fullRun.response:''});
   }); });
   runs.sort((a,b)=> b.d.localeCompare(a.d));
+  const byModel = {};
+  runs.forEach(r=>{
+    if(!byModel[r.m]) byModel[r.m] = {total:0, refused:0};
+    byModel[r.m].total++;
+    if(r.run.refused) byModel[r.m].refused++;
+  });
+  const modelBreakdownHtml = f.models.map(m=>{
+    const b = byModel[m];
+    const rate = b && b.total ? 100*b.refused/b.total : null;
+    return `<div class="topic-row" style="margin-bottom:4px;">
+      <div class="topic-name" style="width:130px;">${escXHtml(m)}</div>
+      <div class="topic-track"><div class="topic-fill core" style="width:${rate==null?0:clamp(rate,2,100)}%;background:var(--bad);"></div></div>
+      <div class="topic-pct" style="width:130px;text-align:right;">${rate==null?'no runs':fmt1(rate)+'% ('+b.refused+'/'+b.total+')'}</div>
+    </div>`;
+  }).join('');
   const statusHtml = (run)=> run.refused
     ? '<span style="font-weight:600;color:var(--bad);">Refused</span>'
     : run.alignment==='on_topic' ? '<span style="font-weight:600;color:var(--good);">On-hypothesis</span>'
@@ -3404,6 +3446,10 @@ function openPromptHealthDetail(promptId){
     <div style="margin-bottom:14px;">
       <div class="card-title" style="font-size:16px;margin-bottom:2px;">${escapeXml(p.text)}</div>
       <div class="small-muted">${escXHtml(p.category)} · what this prompt tests for · ${runs.length} real run${runs.length===1?'':'s'} in the current filter</div>
+    </div>
+    <div style="margin-bottom:18px;">
+      <div class="card-title" style="font-size:13px;margin-bottom:6px;">Refusal rate by model — this prompt</div>
+      ${modelBreakdownHtml}
     </div>
     ${runs.map(r=>`
       <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">

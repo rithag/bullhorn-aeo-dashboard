@@ -688,9 +688,18 @@ function decodeCol(colData){
 function aggRows(){
   const {columns, data, row_count} = AGG;
   const decoded = {}; for(const c of columns) decoded[c] = decodeCol(data[c]);
-  const rows = new Array(row_count);
-  for(let i=0;i<row_count;i++){ const r={}; for(const c of columns) r[c]=decoded[c][i]; rows[i]=r; }
-  return rows;
+  // Build all 591k+ row objects via a generated function using object-LITERAL syntax with static
+  // keys (`{"col1": cols[0][i], ...}`), instead of a loop that assigns properties dynamically
+  // (`r[c] = decoded[c][i]`) -- the dynamic version can't give V8 a single, predictable hidden
+  // class up front, so at this scale every object construction was effectively megamorphic.
+  // Confirmed via instrumentation this was ~4.5 of buildFromFetchedData's ~8-10 total seconds.
+  // `columns` comes from our own exported JSON schema, never attacker input, so generating code
+  // from it here is safe -- this is a perf technique (give V8 one shared shape), not eval-of-
+  // untrusted-data.
+  const cols = columns.map(c=>decoded[c]);
+  const src = `const rows=new Array(n);for(let i=0;i<n;i++){rows[i]={${columns.map((c,ci)=>`${JSON.stringify(c)}:cols[${ci}][i]`).join(',')}};}return rows;`;
+  const build = new Function('cols','n', src);
+  return build(cols, row_count);
 }
 
 const MODELS = ['ChatGPT Search','Gemini Search','AI Overview'];

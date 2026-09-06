@@ -1061,12 +1061,6 @@ function topicsForCategory(cat, opts){
 function narrativeTestedTopics(){ return [...new Set(PROMPTS.flatMap(p=>p.narrativeTested))].sort(); }
 
 function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
-/* Average of an entity's per-day history values within [i0,i1] — the date-range-scoped analog of
-   METRICS[id].base[dim] (which is all-history) — used by Narrative's comparison chart so it can
-   respect its own date-range filter instead of always aggregating the full history regardless of
-   what range is picked (2026-08-28 feedback: comparison and over-time charts showed different
-   numbers for the same race because only the trend chart's aggregate was date-scoped). */
-function rangeAvg(entityId, dim, i0, i1){ return avg(METRICS[entityId].history[dim].slice(i0,i1+1)); }
 function stddev(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); if(v.length<2) return 0; const m=avg(v); return Math.sqrt(avg(v.map(x=>(x-m)*(x-m)))); }
 function pctScored2(rows, field){
   const vals = rows.map(r=>r[field]).filter(v=>v!==''&&v!==null&&v!==undefined);
@@ -1240,6 +1234,7 @@ async function runTieOutAudit(){
   }
   partitionCheck('State', e=>e.state);
   partitionCheck('Office', e=>e.office);
+  partitionCheck('Race Level', e=>e.race_level);
   partitionCheck('Party', e=>e.party);
   partitionCheck('Candidate Type', e=>e.candidateType);
 
@@ -2545,7 +2540,14 @@ function renderDimensionPage(key){
   } else {
     const fCmp = dimFilters(key+'-cmp'), fTrend = dimFilters(key+'-trend');
     const [ci0,ci1] = dateRangeIdx(key+'-cmp');
-    const cmpVal = id => rangeAvg(id, key, ci0, ci1);
+    // Response-weighted across the whole range (via entityBucketTotals, the same function the
+    // "All races" table uses) -- NOT rangeAvg's old mean-of-per-day-percentages, which silently
+    // diverges from the table the moment two days have different response counts. Confirmed
+    // mathematically identical to the old computation for the current single-report-date data (so
+    // this changes nothing visible today), but real multi-week data will have exactly that
+    // divergence -- fixing proactively rather than leaving a latent tie-out bug for whenever this
+    // dimension's comparison chart's date range actually spans more than one day.
+    const cmpVal = id => bestShare(key, entityBucketTotals(entityById(id), key, null, [ci0,ci1], 'all'));
     if(fCmp.race!=='all'){
       const idx = parseInt(fCmp.race,10); const o=ourEntity(idx), p=oppEntity(idx);
       const series=[{name:o.name,color:'#2E5EAA',values:[cmpVal(o.id)]}];

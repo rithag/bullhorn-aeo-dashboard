@@ -1274,33 +1274,46 @@ function runComposite(scores){
    already-specific run a user clicked, should carry that run's own stable `_row.id` through and
    use getRunById() instead of re-deriving it from (prompt,model,date), which alone can no longer
    disambiguate which of potentially many runs was meant. ---- */
+// Memoized by row.id -- everything but `response` is fully determined by the row itself and
+// never changes after load, but the SAME row can have its runView requested many times over (a
+// single Overview filter change was measured calling getRun() ~8,900 times, touching over 711k
+// row-equivalents -- more than the entire 591,619-row dataset -- since overlapping category/topic
+// breakdowns each independently re-derive the same cells). Confirmed no caller mutates the
+// returned scores/accIssue/missingTopics, so caching them is safe. `response` is looked up fresh
+// on every call (not cached) since per-race response text loads lazily, sometime after a runView
+// may already have been cached with an empty response.
+const RUN_VIEW_CACHE = {};
 function runViewFromRow(row, model, dateStr){
-  const hasOpponent = !!row.opponent_name;
-  function sideScores(side){
-    const out = {};
-    DIM_KEYS.forEach(dim=>{
-      // visibility_score_* is a real binary 0/1 on-target flag (not a continuous 0-100 metric —
-      // no broader real vendor export exists beyond that), so pass it through directly instead
-      // of the old dummy-era >=50 threshold, which would have silently zeroed out every real 1.
-      if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? +v : null; return; }
-      if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? (+v - +row['favorability_pct_negative_'+side]) : null; return; }
-      const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
-      const v = row[field];
-      out[dim] = (v!==''&&v!=null) ? +v : null;
-    });
-    return out;
+  let cached = RUN_VIEW_CACHE[row.id];
+  if(!cached){
+    const hasOpponent = !!row.opponent_name;
+    function sideScores(side){
+      const out = {};
+      DIM_KEYS.forEach(dim=>{
+        // visibility_score_* is a real binary 0/1 on-target flag (not a continuous 0-100 metric —
+        // no broader real vendor export exists beyond that), so pass it through directly instead
+        // of the old dummy-era >=50 threshold, which would have silently zeroed out every real 1.
+        if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? +v : null; return; }
+        if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? (+v - +row['favorability_pct_negative_'+side]) : null; return; }
+        const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
+        const v = row[field];
+        out[dim] = (v!==''&&v!=null) ? +v : null;
+      });
+      return out;
+    }
+    const oursSide = sideScores('candidate');
+    const oppSide = hasOpponent ? sideScores('opponent') : {};
+    // Real rows can carry multiple flagged statements per role (pipe-delimited at ingestion into
+    // one accuracy_issues child row each) -- confirmed 2,178 (prompt_result,role) keys have 2-3, not
+    // just 1. Carry the FULL array here, same shape as missingTopics below, not just [0] -- taking
+    // only the first silently dropped 3,814 of 10,726 real flagged statements from every downstream
+    // consumer (the issues table/count, the Prompt Fanout detail panel).
+    const accIssue = { ours: ACC_ISSUES_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (ACC_ISSUES_BY_ROW[row.id+'|opponent']||[]) : [] };
+    const missingTopics = { ours: NARR_GAPS_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (NARR_GAPS_BY_ROW[row.id+'|opponent']||[]) : [] };
+    cached = { model, date: dateStr, scores:{ours:oursSide, opp:oppSide}, accIssue, missingTopics, _row: row };
+    RUN_VIEW_CACHE[row.id] = cached;
   }
-  const oursSide = sideScores('candidate');
-  const oppSide = hasOpponent ? sideScores('opponent') : {};
-  // Real rows can carry multiple flagged statements per role (pipe-delimited at ingestion into
-  // one accuracy_issues child row each) -- confirmed 2,178 (prompt_result,role) keys have 2-3, not
-  // just 1. Carry the FULL array here, same shape as missingTopics below, not just [0] -- taking
-  // only the first silently dropped 3,814 of 10,726 real flagged statements from every downstream
-  // consumer (the issues table/count, the Prompt Fanout detail panel).
-  const accIssue = { ours: ACC_ISSUES_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (ACC_ISSUES_BY_ROW[row.id+'|opponent']||[]) : [] };
-  const missingTopics = { ours: NARR_GAPS_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (NARR_GAPS_BY_ROW[row.id+'|opponent']||[]) : [] };
-  return { model, date: dateStr, scores:{ours:oursSide, opp:oppSide}, accIssue, missingTopics,
-           response: (TEXT[row.id] && TEXT[row.id].full_response) || '', _row: row };
+  return { ...cached, response: (TEXT[row.id] && TEXT[row.id].full_response) || '' };
 }
 function getRun(prompt, model, dateStr){
   const provider = MODEL_TO_PROVIDER[model];
@@ -1668,7 +1681,7 @@ function buildOverviewPage(){
     </div>
     <div class="card">
       <div class="card-title">Score by dimension</div>
-      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
+      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate. Favorability is rescaled 0-100 here (from its native −100 to 100 net-sentiment range, shown as-is in the KPI above) so it plots on the same axis as every other dimension.</div>
       ${chartFilterBarHtml('ov-cmp', {})}
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div class="fitem"><label>Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1679,7 +1692,7 @@ function buildOverviewPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">All races</div>
-      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Click a race to expand candidate vs. opponent detail across all dimensions. Sorted by biggest gap first.</div>
+      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Click a race to expand candidate vs. opponent detail across all dimensions (Favorability shown rescaled 0-100 here too, same as the chart above). Sorted by biggest gap first.</div>
       <div class="filterbar" style="margin-bottom:10px;">
         <div class="fitem"><label>Race</label><select id="ov-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
         <div class="fitem"><label>Candidate</label><select id="ov-tbl-cand"><option value="all">All</option></select></div>
@@ -1781,7 +1794,7 @@ function renderOverview(){
   document.getElementById('ov-kpis').innerHTML = `
     <div class="kpi hi" title="Composite = Visibility × 40% + Favorability × 15% + Depth × 15% + Accuracy × 15% + Narrative Alignment × 15% (Consistency excluded). Favorability is rescaled from its native -100..100 net range to 0..100 before weighting."><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
     <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.visibility)))}</div></div>
-    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.favorability)))}</div></div>
+    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.favorability)))}</div><div class="kpi-sub">net sentiment, −100 to 100</div></div>
     <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.depth)))}</div></div>
     <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.accuracy)))}</div></div>
     <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.narrative)))}</div></div>`;

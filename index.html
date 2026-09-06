@@ -721,7 +721,7 @@ function candidateTypeBadgeHtml(candidateType){
 
 const DIM_KEYS = ['visibility','favorability','depth','accuracy','consistency','narrative'];
 const DIM_LABELS = {visibility:'Visibility',favorability:'Favorability',depth:'Depth',accuracy:'Accuracy',consistency:'Response Consistency',narrative:'Narrative Alignment'};
-const DIM_RANGE = {visibility:[0,100],favorability:[-100,100],depth:[0,100],accuracy:[0,100],consistency:[0,100],narrative:[0,100]};
+const DIM_RANGE = {visibility:[0,100],favorability:[0,100],depth:[0,100],accuracy:[0,100],consistency:[0,100],narrative:[0,100]};
 const CAT_TO_DIMKEY = {'Sentiment':'favorability','Narrative Alignment':'narrative','Visibility':'visibility','Accuracy':'accuracy','Depth':'depth','Consistency':'consistency'};
 
 const ACCURACY_CATEGORIES = [
@@ -809,7 +809,11 @@ function categoryPlain(cat){ return CATEGORY_PLAIN_LABEL[cat] || (cat && issueTa
 
 const IS_BUCKET3 = {visibility:true, favorability:true, depth:true, accuracy:true, consistency:true};
 const HAS_ROOT_CAUSE_SECTION = {visibility:true, favorability:true, depth:true, narrative:true};
-const BUCKET3_ORDER = {favorability:['neg','neu','pos'], depth:['0','1','2'], accuracy:['0','1','2'], visibility:['0','1'], consistency:['0','1','2']};
+// Stacked bars draw segments bottom-up in this array's order (see verticalStackedBarChart/
+// stackedBarChart: yTop starts at the bar's bottom and decrements per segment) -- best-outcome
+// first so it lands at the bottom (green), worst-outcome last so it lands at the top (red), per
+// explicit request (2026-09-06).
+const BUCKET3_ORDER = {favorability:['pos','neu','neg'], depth:['2','1','0'], accuracy:['2','1','0'], visibility:['1','0'], consistency:['2','1','0']};
 const BUCKET3_COLORS = {pos:'#3C8A5B', neu:'#9AA3AF', neg:'#B23B3B', '2':'#3C8A5B', '1':'#9AA3AF', '0':'#B23B3B'};
 const BUCKET3_COLORS_OVERRIDE = {visibility: {'1':'#3C8A5B', '0':'#B23B3B'}};
 const BUCKET3_LABELS = {
@@ -820,8 +824,6 @@ const BUCKET3_LABELS = {
   consistency: {'2':'Consistent', '1':'Partially consistent', '0':'Inconsistent'},
   narrative: {'2':'Fully aligned', '1':'Partially aligned', '0':'Missing key topics'}
 };
-function favBucket(score){ return score >= 15 ? 'pos' : score <= -15 ? 'neg' : 'neu'; }
-function bucketOf(key, v){ return key==='favorability' ? favBucket(v) : String(v); }
 function bucket3Label(key,b){ return (BUCKET3_LABELS[key]||{})[b] || b; }
 function bucket3Color(key,b){ return (BUCKET3_COLORS_OVERRIDE[key]&&BUCKET3_COLORS_OVERRIDE[key][b]) || BUCKET3_COLORS[b] || '#999'; }
 function bucket3Order(key){ return BUCKET3_ORDER[key] || ['0','1','2']; }
@@ -1083,8 +1085,14 @@ function buildMetrics(){
     rows.forEach(r=>{
       const vis = r['prompt_level_visibility_score_'+side];
       if(vis!=='' && vis!=null) promptLevelVis[r.prompt_id] = +vis;
-      const pos = r['prompt_level_favorability_pct_positive_'+side], neg = r['prompt_level_favorability_pct_negative_'+side];
-      if(pos!=='' && pos!=null) promptLevelFav[r.prompt_id] = (+pos) - (+neg);
+      // Favorability = % of responses scored positive, directly -- Evertune's own field is
+      // already a 0-100 percentage, so no net-of-negative computation or rescale is needed
+      // anywhere this gets used (per explicit request 2026-09-06; previously computed as
+      // pct_positive - pct_negative, a -100..100 "net sentiment" that then needed rescaling back
+      // to 0-100 for the composite weighting and any chart shown alongside other 0-100 dimensions
+      // -- removed everywhere, not just here).
+      const pos = r['prompt_level_favorability_pct_positive_'+side];
+      if(pos!=='' && pos!=null) promptLevelFav[r.prompt_id] = +pos;
     });
     const base = {
       visibility: avg(Object.values(promptLevelVis)),
@@ -1116,7 +1124,8 @@ function buildMetrics(){
           return;
         }
         if(dim==='favorability'){
-          const vals = dayRows.map(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side], n=r['prompt_level_favorability_pct_negative_'+side]; return (p!==''&&p!=null)? (+p-+n) : null; });
+          // % positive, directly -- see base.favorability's own comment above.
+          const vals = dayRows.map(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side]; return (p!==''&&p!=null)? +p : null; });
           history[dim].push(avg(vals));
           const pos=[], neu=[], neg=[];
           dayRows.forEach(r=>{ const p=r['prompt_level_favorability_pct_positive_'+side]; if(p!==''&&p!=null){ pos.push(+p); neu.push(+r['prompt_level_favorability_pct_neutral_'+side]); neg.push(+r['prompt_level_favorability_pct_negative_'+side]); } });
@@ -1151,8 +1160,9 @@ function weightedAvgKnown(parts){
 }
 function composite(e){
   const m=METRICS[e.id].base;
-  const favN = m.favorability!=null? (m.favorability+100)/2 : null;
-  return weightedAvgKnown([[m.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]]);
+  // Favorability is already 0-100 (% positive) -- no rescale needed, unlike the old net-sentiment
+  // (-100..100) definition this replaced.
+  return weightedAvgKnown([[m.visibility,WEIGHTS.visibility],[m.favorability,WEIGHTS.favorability],[m.depth,WEIGHTS.depth],[m.accuracy,WEIGHTS.accuracy],[m.narrative,WEIGHTS.narrative]]);
 }
 /* ============================================================================
    TIE-OUT AUDIT (2026-09-01) — callable from the browser console as
@@ -1196,8 +1206,7 @@ async function runTieOutAudit(){
       if(!match){ baseMismatches++; console.warn(`  MISMATCH ${key} ${dim}: ground-truth=${gtVal} live=${liveVal}`); }
     });
     const b = entry.base;
-    const favN = b.favorability!=null ? (b.favorability+100)/2 : null;
-    const expected = weightedAvgKnown([[b.visibility,WEIGHTS.visibility],[favN,WEIGHTS.favorability],[b.depth,WEIGHTS.depth],[b.accuracy,WEIGHTS.accuracy],[b.narrative,WEIGHTS.narrative]]);
+    const expected = weightedAvgKnown([[b.visibility,WEIGHTS.visibility],[b.favorability,WEIGHTS.favorability],[b.depth,WEIGHTS.depth],[b.accuracy,WEIGHTS.accuracy],[b.narrative,WEIGHTS.narrative]]);
     const live_comp = composite(ent);
     compChecked++;
     const bothNullC = (expected==null && live_comp==null);
@@ -1243,23 +1252,20 @@ async function runTieOutAudit(){
    reflects only the most recent day, same reasoning as computeRaceRows below. */
 function compositeAtDay(e, dayIdx){
   const h = METRICS[e.id].history;
-  const fav = h.favorability[dayIdx];
-  const favN = fav!=null? (fav+100)/2 : null;
-  return weightedAvgKnown([[h.visibility[dayIdx],WEIGHTS.visibility],[favN,WEIGHTS.favorability],[h.depth[dayIdx],WEIGHTS.depth],[h.accuracy[dayIdx],WEIGHTS.accuracy],[h.narrative[dayIdx],WEIGHTS.narrative]]);
+  return weightedAvgKnown([[h.visibility[dayIdx],WEIGHTS.visibility],[h.favorability[dayIdx],WEIGHTS.favorability],[h.depth[dayIdx],WEIGHTS.depth],[h.accuracy[dayIdx],WEIGHTS.accuracy],[h.narrative[dayIdx],WEIGHTS.narrative]]);
 }
 /* Same weights/formula as the candidate-level composite() above, applied to a single prompt×model
    run's own scores instead of an aggregate — used by Prompt Fanout's per-row Composite column.
    0/1/2 dims scale to 0/50/100 (the single-run analog of composite()'s "% scored 2" share);
-   Visibility's 0/1 mention flag scales to 0/100; Favorability rescales from its native -100..100
-   net range, identically to the aggregate version. Dims this particular prompt doesn't test are
-   null and drop out of the weighted average (renormalized over whichever dims are present), same
-   renormalize-over-known-parts behavior as composite(). */
+   Visibility's 0/1 mention flag scales to 0/100; Favorability is already 0-100 (% positive), no
+   rescale needed. Dims this particular prompt doesn't test are null and drop out of the weighted
+   average (renormalized over whichever dims are present), same renormalize-over-known-parts
+   behavior as composite(). */
 function runComposite(scores){
-  const favN = scores.favorability!=null? (scores.favorability+100)/2 : null;
   const scale2 = v => v!=null? v*50 : null;
   return weightedAvgKnown([
     [scores.visibility!=null?scores.visibility*100:null, WEIGHTS.visibility],
-    [favN, WEIGHTS.favorability],
+    [scores.favorability, WEIGHTS.favorability],
     [scale2(scores.depth), WEIGHTS.depth],
     [scale2(scores.accuracy), WEIGHTS.accuracy],
     [scale2(scores.narrative), WEIGHTS.narrative],
@@ -1294,7 +1300,9 @@ function runViewFromRow(row, model, dateStr){
         // no broader real vendor export exists beyond that), so pass it through directly instead
         // of the old dummy-era >=50 threshold, which would have silently zeroed out every real 1.
         if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? +v : null; return; }
-        if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? (+v - +row['favorability_pct_negative_'+side]) : null; return; }
+        // % positive, directly -- Evertune's own field is already a 0-100 percentage (per
+        // explicit request 2026-09-06); no net-of-negative computation needed.
+        if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? +v : null; return; }
         const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
         const v = row[field];
         out[dim] = (v!==''&&v!=null) ? +v : null;
@@ -1555,24 +1563,17 @@ function computeRaceRows(dimKey, filters){
   const dayIdx = DATES.length-1;
   return idxs.map(i=>{
     const ours = ourEntity(i), opp = oppEntity(i);
-    let ourVal, oppVal, gap;
-    if(dimKey==='favorability'){
-      // Net favorability (% positive − % negative), not % negative alone — higher is better,
-      // same convention as every other dimension.
-      ourVal = METRICS[ours.id].history.favorability[dayIdx];
-      oppVal = opp? METRICS[opp.id].history.favorability[dayIdx] : null;
-      gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null; // positive = opponent's net favorability ahead of ours
-    } else {
-      if(dimKey==='composite'){ ourVal = compositeAtDay(ours, dayIdx); oppVal = opp? compositeAtDay(opp, dayIdx): null; }
-      else { ourVal = METRICS[ours.id].history[dimKey][dayIdx]; oppVal = opp? METRICS[opp.id].history[dimKey][dayIdx] : null; }
-      gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null;
-    }
+    let ourVal, oppVal;
+    // Favorability (% positive, 0-100) needs no special-casing anymore -- same convention as
+    // every other dimension (higher is better, plain 0-100 range).
+    if(dimKey==='composite'){ ourVal = compositeAtDay(ours, dayIdx); oppVal = opp? compositeAtDay(opp, dayIdx): null; }
+    else { ourVal = METRICS[ours.id].history[dimKey][dayIdx]; oppVal = opp? METRICS[opp.id].history[dimKey][dayIdx] : null; }
+    const gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null;
     return {raceIdx:i, ours, opp, ourVal, oppVal, gap};
   });
 }
 function renderRaceTable(containerId, dimKey, filters, opts){
   opts = opts||{};
-  const isFav = dimKey==='favorability';
   const rows = computeRaceRows(dimKey, filters).sort((a,b)=>{
     const av = a.gap===null? -9999 : a.gap, bv = b.gap===null? -9999 : b.gap;
     return bv-av;
@@ -1581,8 +1582,8 @@ function renderRaceTable(containerId, dimKey, filters, opts){
   const showAll = window.__showAllState && window.__showAllState[containerId];
   const shown = showAll ? rows : rows.slice(0,15);
   const range = DIM_RANGE[dimKey]||[0,100];
-  const heat=(v)=> v===null? '<span class="small-muted">—</span>' : `<span class="heat" style="background:${heatColor(v,range[0],range[1])};color:${heatText(v,range[0],range[1])}">${v>0&&isFav?'+':''}${fmt1(v)}</span>`;
-  let html = `<table><tr><th>Race</th><th>State</th><th>Office</th><th>${isFav?'Our net favorability':'Our score'}</th><th>${isFav?'Opponent net favorability':'Opponent score'}</th><th>Gap</th></tr>`;
+  const heat=(v)=> v===null? '<span class="small-muted">—</span>' : `<span class="heat" style="background:${heatColor(v,range[0],range[1])};color:${heatText(v,range[0],range[1])}">${fmt1(v)}</span>`;
+  let html = `<table><tr><th>Race</th><th>State</th><th>Office</th><th>Our score</th><th>Opponent score</th><th>Gap</th></tr>`;
   shown.forEach(r=>{
     html += `<tr class="clickable" onclick="toggleFanoutRow('${containerId}', ${r.raceIdx}, '${dimKey}')" data-racerow="${containerId}-${r.raceIdx}">
       <td><b>${r.ours.name}</b><br><span class="small-muted">${escapeXml(r.ours.race)}</span></td>
@@ -1681,7 +1682,7 @@ function buildOverviewPage(){
     </div>
     <div class="card">
       <div class="card-title">Score by dimension</div>
-      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate. Favorability is rescaled 0-100 here (from its native −100 to 100 net-sentiment range, shown as-is in the KPI above) so it plots on the same axis as every other dimension.</div>
+      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
       ${chartFilterBarHtml('ov-cmp', {})}
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div class="fitem"><label>Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
@@ -1692,7 +1693,7 @@ function buildOverviewPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">All races</div>
-      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Click a race to expand candidate vs. opponent detail across all dimensions (Favorability shown rescaled 0-100 here too, same as the chart above). Sorted by biggest gap first.</div>
+      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Click a race to expand candidate vs. opponent detail across all dimensions. Sorted by biggest gap first.</div>
       <div class="filterbar" style="margin-bottom:10px;">
         <div class="fitem"><label>Race</label><select id="ov-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
         <div class="fitem"><label>Candidate</label><select id="ov-tbl-cand"><option value="all">All</option></select></div>
@@ -1792,9 +1793,9 @@ function renderOverview(){
   renderOverviewInsight(ours);
   const compAvg = avg(ours.map(composite));
   document.getElementById('ov-kpis').innerHTML = `
-    <div class="kpi hi" title="Composite = Visibility × 40% + Favorability × 15% + Depth × 15% + Accuracy × 15% + Narrative Alignment × 15% (Consistency excluded). Favorability is rescaled from its native -100..100 net range to 0..100 before weighting."><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
+    <div class="kpi hi" title="Composite = Visibility × 40% + Favorability × 15% + Depth × 15% + Accuracy × 15% + Narrative Alignment × 15% (Consistency excluded)."><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
     <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.visibility)))}</div></div>
-    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.favorability)))}</div><div class="kpi-sub">net sentiment, −100 to 100</div></div>
+    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.favorability)))}</div></div>
     <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.depth)))}</div></div>
     <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.accuracy)))}</div></div>
     <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.narrative)))}</div></div>`;
@@ -1802,9 +1803,9 @@ function renderOverview(){
   // chart: if exactly one race resolved, show candidate vs opponent; else Dem vs Rep (within filtered set)
   const dims=['visibility','favorability','depth','accuracy','narrative'];
   const dimLabels=['Visibility','Favorability','Depth','Accuracy','Narrative'];
-  // v==null guard (2026-08-31 fix): avg([]) returns null, and "null+100" silently coerces to 100 in
-  // JS, so an empty group used to render a bogus flat "50.0" bar instead of going empty.
-  const norm=(v,d)=> v==null ? null : (d==='favorability'? (v+100)/2 : v);
+  // Favorability (% positive, 0-100) needs no rescale anymore -- passes through like every other
+  // dimension.
+  const norm=(v,d)=> v;
   let series;
   if(idxs.length===1){
     const o=ourEntity(idxs[0]), p=oppEntity(idxs[0]);
@@ -1856,7 +1857,7 @@ function toggleOvExpand(raceIdx){
   const dims=['visibility','favorability','depth','accuracy','narrative'];
   const dayIdx = DATES.length-1;
   const heat=(v)=>`<span class="heat" style="background:${heatColor(v)};color:${heatText(v)}">${fmt1(v)}</span>`;
-  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td>${partyBadgeHtml(e.party)}${candidateTypeBadgeHtml(e.candidateType)}</td>${dims.map(d=>{ const raw=METRICS[e.id].history[d][dayIdx]; return `<td>${heat(d==='favorability'&&raw!=null?(raw+100)/2:raw)}</td>`; }).join('')}<td><b>${fmt1(compositeAtDay(e,dayIdx))}</b></td></tr>`:'';
+  const subRow = (e)=> e? `<tr><td style="padding-left:24px;">${e.name}</td><td>${partyBadgeHtml(e.party)}${candidateTypeBadgeHtml(e.candidateType)}</td>${dims.map(d=>`<td>${heat(METRICS[e.id].history[d][dayIdx])}</td>`).join('')}<td><b>${fmt1(compositeAtDay(e,dayIdx))}</b></td></tr>`:'';
   document.getElementById('ov-expand-body-'+raceIdx).innerHTML = `<table style="margin-top:4px;"><tr><th style="padding-left:24px;">Name</th><th>Party</th><th>Vis.</th><th>Fav.</th><th>Depth</th><th>Acc.</th><th>Narr.</th><th>Composite</th></tr>${subRow(o)}${subRow(p)}</table>`;
   document.getElementById('ov-expand-'+raceIdx).style.display='';
 }
@@ -1963,7 +1964,7 @@ function buildDimensionPage(key){
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
       <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
-      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. ${key==='favorability' ? 'Sorted by highest net favorability gap (opponent minus ours) first.' : 'Sorted by biggest gap first.'} Click a race to see every prompt run for it, sorted lowest to highest.</div>
+      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Sorted by biggest gap first. Click a race to see every prompt run for it, sorted lowest to highest.</div>
       <div class="filterbar" style="margin-bottom:10px;">
         <div class="fitem"><label>Race</label><select id="${key}-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
         <div class="fitem"><label>Candidate</label><select id="${key}-tbl-cand"><option value="all">All</option></select></div>
@@ -2103,33 +2104,82 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter){
   // its category/issue selectors from the same `${key}-cmp-*` bar.
   const [i0,i1] = dateRangeIdx(key+'-cmp');
   const dateIdxs = sampleDateRange(i0,i1,9);
-  let prompts = (PROMPTS_BY_RACE[ent.raceIdx]||[]).filter(p=>p.dims.includes(key));
+  // NOT filtered by p.dims.includes(key) -- confirmed directly against the real data that
+  // dimensions_assessed's per-dimension tags don't reliably predict whether a row actually has a
+  // score for that dimension (e.g. 230,021 of 279,617 rows whose dimensions_assessed does NOT
+  // mention "Visibility" still have a real, populated visibility_score_candidate -- essentially no
+  // correlation). This filter was silently excluding a large, non-representative chunk of
+  // genuinely-scored rows from every comparison-chart computation, while history[]/dailyBucketShare
+  // (used by the trend chart and "All races" table) never filtered by it at all -- exactly the
+  // "these percentages don't tie out" bug reported 2026-09-06, and not specific to one dimension.
+  // The per-row null check inside the loop below already correctly excludes rows with no real
+  // score, which is the only filtering that's actually meaningful here.
+  let prompts = PROMPTS_BY_RACE[ent.raceIdx]||[];
   if(topicFilter) prompts = prompts.filter(p=>p.topic===topicFilter);
   const blindEl = document.getElementById(key+'-cmp-blind');
   if(blindEl && blindEl.value!=='all') prompts = prompts.filter(p=>p.is_blind===blindEl.value);
   const side = ent.role==='ours' ? 'ours' : 'opp';
+  const rowSide = ent.role==='ours' ? 'candidate' : 'opponent';
   const byCategory = {};
   const byIssueTag = {};
   const models = modelFilter ? [modelFilter] : MODELS;
+  // Visibility/Favorability are PROMPT-LEVEL metrics -- Evertune's own prompt_level_* fields are
+  // identical across every provider/run in a (prompt,date) cell (build_real_dataset.py derives
+  // them as a cross-provider mean). The BUCKET PERCENTAGES below must therefore be accumulated
+  // ONCE PER (prompt,date), not once per individual response, or a heavily-resampled prompt (up to
+  // ~100 real runs in one cell) would dominate the average -- exactly the "these percentages don't
+  // tie out between the comparison chart and the trend chart/table" bug reported 2026-09-06 (both
+  // of those already read prompt_level_* consistently; only this comparison-chart path didn't).
+  // Individual response `items` are still collected per-response (for the "specific responses"
+  // drill-down, which needs real response text) -- they just don't each add their own count
+  // toward the headline percentage anymore.
+  const isPromptLevel = key==='visibility' || key==='favorability';
+  function ensureBucket(dict, k){ if(!dict[k]) dict[k] = {buckets:{}, total:0, items:[]}; return dict[k]; }
+  const addPct = (dict, vals)=>{ Object.entries(vals).forEach(([b,v])=>{ dict.buckets[b]=(dict.buckets[b]||0)+v; }); dict.total += 100; };
   prompts.forEach(p=>{
+    const cat = p.category;
+    const catBucket = ensureBucket(byCategory, cat);
+    const topicBucket = p.topic ? ensureBucket(byIssueTag, p.topic) : null;
     models.forEach(m=>{ dateIdxs.forEach(di=>{
       const dateStr = DATES[di];
       getRun(p,m,dateStr).forEach(run=>{
+        if(isPromptLevel){
+          // Read Evertune's own prompt-level field (identical across every response row in this
+          // prompt+date cell) instead of a per-response value, so this averages the exact same
+          // thing history[]/dailyBucketShare() already average (every response row, prompt-level
+          // value repeated on each) -- no dedup by prompt here, since history/trend don't dedupe
+          // either (a heavily-resampled prompt legitimately gets more weight there too; tying out
+          // means matching that, not "correcting" it into a different, disagreeing computation).
+          if(key==='visibility'){
+            const v = run._row['prompt_level_visibility_score_'+rowSide];
+            if(v===''||v==null) return;
+            // Majority classification for this one item's own display bucket (drill-down list) --
+            // the headline percentage above comes from addPct's fractional accumulation, not this.
+            const item = {prompt:p, score:+v, model:m, bucket: (+v>=50?'1':'0'), date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+            catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
+            const vals = {'1':+v, '0':100-(+v)};
+            addPct(catBucket, vals); if(topicBucket) addPct(topicBucket, vals);
+          } else {
+            const pos = run._row['prompt_level_favorability_pct_positive_'+rowSide];
+            if(pos===''||pos==null) return;
+            const neu = +run._row['prompt_level_favorability_pct_neutral_'+rowSide], neg = +run._row['prompt_level_favorability_pct_negative_'+rowSide];
+            // Plurality classification (whichever of pos/neu/neg is largest) for this one item's
+            // own display bucket -- real percentages, not the old fixed net-score threshold.
+            const bucket = pos>=neu && pos>=neg ? 'pos' : (neg>=neu && neg>=pos ? 'neg' : 'neu');
+            const item = {prompt:p, score:+pos, model:m, bucket, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+            catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
+            const vals = {pos:+pos, neu, neg};
+            addPct(catBucket, vals); if(topicBucket) addPct(topicBucket, vals);
+          }
+          return;
+        }
         const v = run.scores[side][key];
         if(v===null||v===undefined) return;
-        const cat = p.category;
-        const b = bucketOf(key, v);
+        const b = String(v);
         const item = {prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
-        if(!byCategory[cat]) byCategory[cat] = {buckets:{}, total:0, items:[]};
-        byCategory[cat].buckets[b] = (byCategory[cat].buckets[b]||0)+1;
-        byCategory[cat].total++;
-        byCategory[cat].items.push(item);
-        if(p.topic){
-          if(!byIssueTag[p.topic]) byIssueTag[p.topic] = {buckets:{}, total:0, items:[]};
-          byIssueTag[p.topic].buckets[b] = (byIssueTag[p.topic].buckets[b]||0)+1;
-          byIssueTag[p.topic].total++;
-          byIssueTag[p.topic].items.push(item);
-        }
+        catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
+        catBucket.buckets[b] = (catBucket.buckets[b]||0)+1; catBucket.total++;
+        if(topicBucket){ topicBucket.buckets[b] = (topicBucket.buckets[b]||0)+1; topicBucket.total++; }
       });
     }); });
   });
@@ -3092,8 +3142,9 @@ function rollupValueForPromptDay(p, models, d){
     const row = RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d][0];
     const vis = row['prompt_level_visibility_score_candidate'];
     if(vis!=='' && vis!=null) visVals.push(+vis);
-    const pos = row['prompt_level_favorability_pct_positive_candidate'], neg = row['prompt_level_favorability_pct_negative_candidate'];
-    if(pos!=='' && pos!=null) favVals.push((+pos)-(+neg));
+    // % positive, directly -- see runViewFromRow's sideScores comment.
+    const pos = row['prompt_level_favorability_pct_positive_candidate'];
+    if(pos!=='' && pos!=null) favVals.push(+pos);
   });
   const runs = contributingModels.flatMap(m=>getRun(p,m,d));
   const dimAvg = dim => avg(runs.map(r=>r.scores.ours[dim]));
@@ -3102,10 +3153,9 @@ function rollupValueForPromptDay(p, models, d){
     depth: dimAvg('depth'), accuracy: dimAvg('accuracy'),
     consistency: dimAvg('consistency'), narrative: dimAvg('narrative'),
   };
-  const favN = scores.favorability!=null? (scores.favorability+100)/2 : null;
   const scale2 = v => v!=null? v*50 : null;
   const composite = weightedAvgKnown([
-    [scores.visibility, WEIGHTS.visibility], [favN, WEIGHTS.favorability],
+    [scores.visibility, WEIGHTS.visibility], [scores.favorability, WEIGHTS.favorability],
     [scale2(scores.depth), WEIGHTS.depth], [scale2(scores.accuracy), WEIGHTS.accuracy], [scale2(scores.narrative), WEIGHTS.narrative],
   ]);
   return {modelsWithData: contributingModels.length, totalModels: models.length, scores, composite};

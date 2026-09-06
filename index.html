@@ -602,24 +602,100 @@ function collapseFilterbar(bar){
    INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
    ============================================================================ */
 let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null;
+let RACE_IDX_BY_RACE = {};
+let ROWS_BY_RACE = {};
 
+// The two "heavy" assets below (citations.json, dist/text/*.json) are served from external
+// storage in production instead of committed to git -- citations.json is 216MB (over GitHub's
+// 100MB per-file push limit) and dist/text/ is 1.3GB total across 74 files, both far past what a
+// git-backed static-site repo should carry, and both only grow as more weeks of scoring data land.
+// Empty string means "same-origin relative path" (local dev, or before the bucket exists); set to
+// the bucket's public base URL (e.g. 'https://storage.googleapis.com/<bucket>/dashboard-data/')
+// once it exists to serve both from there instead -- everything else (prompt_results_agg.json,
+// roster.json, the two child tables) stays committed to git/Netlify as before, small enough not to
+// need this.
+const HEAVY_DATA_BASE_URL = 'https://storage.googleapis.com/aeo-dashboard-assets-bullhorn/dashboard-data/';
+function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
+
+/* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
+   export_dashboard_json.py, not one combined file -- a single combined file is ~1.4GB at real
+   scale (591k rows), confirmed directly that fetching that whole file just to view ONE detail
+   panel crashes the renderer in this environment. Fetched per-race, on demand, merged into the
+   same flat TEXT object every existing TEXT[row.id] lookup already expects (runViewFromRow,
+   getHealthRun, openConsistencyDetail) -- callers only need to know which ONE race's file to ask
+   for, via ensureTextLoadedForRace(raceId) or the raceName-keyed convenience wrapper below. */
+const textLoadPromisesByRaceId = {};
+function ensureTextLoadedForRace(raceId){
+  if(!textLoadPromisesByRaceId[raceId]){
+    textLoadPromisesByRaceId[raceId] = fetch(heavyAssetUrl('text/'+encodeURIComponent(raceId)+'.json'))
+      .then(r=>r.json()).then(t=>{ Object.assign(TEXT, t); return TEXT; });
+  }
+  return textLoadPromisesByRaceId[raceId];
+}
+// Every real row's `id` is "{race_id}__{row_index}" (set by build_real_dataset.py) -- race_id
+// never contains "__", so this is a safe, cheap way to get the per-race text file's name from any
+// row already in hand, without a separate race-name -> race_id lookup table.
+function raceIdFromRowId(rowId){ return rowId.split('__')[0]; }
+// Convenience for callers that only have a display race NAME (e.g. a PROMPTS entry's `.race`),
+// not a specific row id yet -- every race has at least one row in ROWS_BY_RACE by construction.
+function ensureTextLoadedForRaceName(raceName){
+  const sample = (ROWS_BY_RACE[raceName]||[])[0];
+  if(!sample) return Promise.resolve(TEXT);
+  return ensureTextLoadedForRace(raceIdFromRowId(sample.id));
+}
+/* citations.json is ALSO large at real-data scale (~1M rows across 74 races, ~300MB even
+   columnar) and, unlike every other fetched file, only the Citation Breakout page ever reads it —
+   fetching it eagerly at init (alongside prompt_results_agg.json's own ~380MB) pushed the
+   browser's one-time load past what this environment's renderer could reliably parse without
+   hanging/crashing (confirmed directly). Deferred the same way TEXT is: fetched + turned into
+   CITATION_EVENTS only the first time the Citation Breakout page is actually opened — see
+   ensureCitationsLoaded(), called from the nav-click handler in section 4 below instead of at init. */
+let citationsLoadPromise = null;
+function ensureCitationsLoaded(){
+  if(!citationsLoadPromise){
+    citationsLoadPromise = fetch(heavyAssetUrl('citations.json')).then(r=>r.json()).then(raw=>{
+      CITATIONS_RAW = raw;
+      buildCitationEvents();
+      return CITATION_EVENTS;
+    });
+  }
+  return citationsLoadPromise;
+}
 async function loadAllData(){
   const base='dashboard_data/dist/';
   const j = u => fetch(base+u).then(r=>r.json());
-  [AGG, TEXT, CITATIONS_RAW, ROSTER_RAW, ACCURACY_ISSUES_RAW, NARRATIVE_GAPS_RAW] = await Promise.all([
-    j('prompt_results_agg.json'), j('prompt_results_text.json'), j('citations.json'),
+  TEXT = {};
+  [AGG, ROSTER_RAW, ACCURACY_ISSUES_RAW, NARRATIVE_GAPS_RAW] = await Promise.all([
+    j('prompt_results_agg.json'),
     j('roster.json'), j('accuracy_issues.json'), j('narrative_alignment_gaps.json')
   ]);
 }
+/* export_dashboard_json.py dictionary-encodes any column where most values repeat (confirmed the
+   dominant cost of prompt_results_agg.json/citations.json at real data scale -- e.g. full_query,
+   race, candidate_name repeat across every one of a prompt's ~1-100 real response rows even
+   though only ~2,540 distinct prompts exist): `{v:[...distinct values...], i:[...index per
+   row...]}` instead of the full string repeated per row. A column not worth encoding (e.g. `id`,
+   already close to all-distinct) stays a plain array. Decode once into a plain array per column
+   here rather than on every row access -- every downstream consumer (aggRows/buildCitationEvents)
+   sees exactly the same plain values it always did; encoding is otherwise invisible. */
+function decodeCol(colData){
+  if(Array.isArray(colData)) return colData;
+  const {v, i} = colData;
+  const out = new Array(i.length);
+  for(let k=0;k<i.length;k++) out[k] = v[i[k]];
+  return out;
+}
 function aggRows(){
   const {columns, data, row_count} = AGG;
+  const decoded = {}; for(const c of columns) decoded[c] = decodeCol(data[c]);
   const rows = new Array(row_count);
-  for(let i=0;i<row_count;i++){ const r={}; for(const c of columns) r[c]=data[c][i]; rows[i]=r; }
+  for(let i=0;i<row_count;i++){ const r={}; for(const c of columns) r[c]=decoded[c][i]; rows[i]=r; }
   return rows;
 }
 
 const MODELS = ['ChatGPT Search','Gemini Search','AI Overview'];
 const MODEL_TO_PROVIDER = {'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview'};
+const PROVIDER_TO_MODEL = Object.fromEntries(Object.entries(MODEL_TO_PROVIDER).map(([m,p])=>[p,m]));
 const MODEL_COLORS = {'ChatGPT Search':'#3C8A5B','Gemini Search':'#6B8FC9','AI Overview':'#C9822E'};
 const PARTY_COLORS = {'Democrat':'#2E5EAA','Republican':'#B23B3B','NP':'#8B93A1'};
 function partyColor(party){ return PARTY_COLORS[party] || PARTY_COLORS.NP; }
@@ -760,7 +836,7 @@ function dailyBucketShare(entityId, dim, dayIdx, modelFilter){
   const d = DATES[dayIdx];
   if(!ent || d===undefined) return zero;
   const side = ent.role==='ours' ? 'candidate' : 'opponent';
-  let dayRows = aggRowsCache.filter(r=>r.race===ent.race && r.report_date===d);
+  let dayRows = (ROWS_BY_RACE[ent.race] || []).filter(r=>r.report_date===d);
   if(modelFilter) dayRows = dayRows.filter(r=>r.ai_provider===MODEL_TO_PROVIDER[modelFilter]);
   if(dim==='favorability'){
     const pos=[], neu=[], neg=[];
@@ -781,95 +857,17 @@ function dailyBucketShare(entityId, dim, dayIdx, modelFilter){
   return {'0':100*vals.filter(v=>v==='0').length/total, '1':100*vals.filter(v=>v==='1').length/total, '2':100*vals.filter(v=>v==='2').length/total};
 }
 
-/* ---- Narrative taxonomy: real rolled-up scheme (PROJECT_SPEC.md 6.2, 2026-08-31 state — renamed
-   "Common Critiques"->"Ideological & Partisan Attacks", split "Election Administration" into 3,
-   added Business Licensing & Registration/Constituent Services & Records/5 judicial-only
-   categories, split "Sentencing & Criminal Justice Philosophy" into Sentencing + Criminal Justice
-   Reform), NOT the mockup's originally-invented 21. ---- */
-const GRANULAR_TOPICS = {
-  'Affordability & Cost of Living': ['Grocery/food prices','Housing affordability','Prescription drug costs','Energy/utility costs','Taxes','Inflation'],
-  'Public Safety & Crime': ['Policing/law enforcement','Gun policy','Drug enforcement','Sentencing/law-and-order','Emergency/disaster management'],
-  'Border Security & Immigration': ['Border security/enforcement','Deportation/ICE','Asylum/pathway to citizenship','Immigrant workforce'],
-  'Education': ['K-12 funding','Teacher pay/shortage','Higher ed/student loans','Early childhood education'],
-  'Healthcare': ['ACA/coverage','Medicare/Medicaid','Reproductive rights/abortion','Mental health','Rural hospital access'],
-  'Jobs & the Economy': ['Unemployment/job creation','Small business support','Labor rights/unions','Manufacturing','Trade policy'],
-  'Ideological & Partisan Attacks': ['Too liberal/radical','Too Trump-aligned/MAGA','Party-over-constituents'],
-  'Corruption & Ethics': ['Stock trading','Donor/PAC influence','Ethics violations','Residency/carpetbagger'],
-  'Energy': ['Data centers/grid','Fossil fuel production','Renewables','Nuclear'],
-  'Public Infrastructure': ['Roads & bridges','Broadband','Transit/rail','Water infrastructure'],
-  'Climate & Natural Resources': ['Water quality/contamination','Climate change policy','Conservation/public lands'],
-  'Foreign Policy': ['Israel/Gaza','Ukraine/Russia','China','Defense/military spending'],
-  'Election Security': ['Ballot procedures','Election-security audits & certification','Voter registration & database access/privacy','Resisting federal pressure/interference'],
-  'Voter Access': ['Ease of voting/registration'],
-  'Election Integrity Disputes': ['Voter fraud claims','Voter suppression claims'],
-  'Business Licensing & Registration': ['Business filing/licensing efficiency'],
-  'Constituent Services & Records': ['DMV/vehicle registration','Vital records','Public-records digitization','Transaction wait times/bureaucracy'],
-  'Judicial Experience & Track Record': ['Courtroom/trial experience','Notable cases/rulings','Bar association ratings'],
-  'Judicial Temperament & Fairness': ['Perceived fairness/independence','Good-judge character assessments'],
-  'Sentencing': ['Lenient-sentencing attacks','Tougher-on-crime record'],
-  'Criminal Justice Reform': ['Criminal-justice-reform policy stance'],
-  'Community Involvement': ['Local civic engagement'],
-  'Other': ['Term limits/congressional reform','LGBTQ rights','Veterans (non-healthcare)']
-};
-const ROLLED_UP_TOPICS = Object.keys(GRANULAR_TOPICS);
-/* Core-topic set by party — DASHBOARD_DATA_SOURCES.md Section 5. NP inherits Democrat's set. */
-const CORE_TOPICS_BY_PARTY = {
-  'Democrat': ['Affordability & Cost of Living','Healthcare'], 'NP': ['Affordability & Cost of Living','Healthcare'],
-  'Republican': ['Border Security & Immigration','Public Safety & Crime']
-};
-function coreTopicsForParty(party){ return CORE_TOPICS_BY_PARTY[party] || []; }
-/* ---- Race-type-conditional topic list (added 2026-08-31 — Task 1(E), previously never actually
-   wired up despite the taxonomy itself already having judicial/SOS/Clerk categories): the Key
-   Topics Explorer shouldn't offer Judicial Experience & Track Record as an option for a House race,
-   or Business Licensing & Registration for a judicial one. `race_type` alone isn't fine-grained
-   enough — Secretary of State, County Clerk, and the TX County Judge executive role are ALL tagged
-   "Administrative" in the real data, but County Judge actually uses the same 7 policy pillars as
-   WS1/Template A, not the election-administration topics — so this keys off `office_name` too. ---- */
-const UNIVERSAL_TOPICS = ['Ideological & Partisan Attacks','Corruption & Ethics'];
-const POLICY_FAMILY_TOPICS = ['Affordability & Cost of Living','Public Safety & Crime','Border Security & Immigration','Education','Healthcare','Jobs & the Economy','Energy','Public Infrastructure','Climate & Natural Resources','Foreign Policy'];
-const SOS_FAMILY_TOPICS = ['Election Security','Voter Access','Election Integrity Disputes','Business Licensing & Registration'];
-const CLERK_FAMILY_TOPICS = ['Election Security','Voter Access','Election Integrity Disputes','Constituent Services & Records'];
-const JUDICIAL_FAMILY_TOPICS = ['Judicial Experience & Track Record','Judicial Temperament & Fairness','Sentencing','Criminal Justice Reform','Community Involvement'];
+/* Race-type-conditional grouping used by topicsForCategory's opts.families scope (Comparison
+   chart's Issue sub-filter) -- `race_type` alone isn't fine-grained enough: Secretary of State,
+   County Clerk, and the TX County Judge executive role are ALL tagged "Administrative" in the
+   real data, but County Judge actually uses the same 7 policy pillars as WS1/Template A, not the
+   election-administration topics -- so this keys off `office_name` too. (The Key Topics Explorer,
+   which used to share this taxonomy, was removed 2026-09-03 -- see PROJECT_SPEC.md Part 6.2.) */
 function raceFamily(entOrRow){
   if(entOrRow.race_type==='Judicial') return 'judicial';
   if(entOrRow.office==='Secretary of State') return 'sos';
   if(entOrRow.office==='County Clerk') return 'clerk';
   return 'policy'; // Legislative (WS1 + Template A) and Administrative/County Judge (Template C)
-}
-function topicsForFamilies(families){
-  const set = new Set(UNIVERSAL_TOPICS);
-  families.forEach(f=>{
-    (f==='policy'?POLICY_FAMILY_TOPICS : f==='sos'?SOS_FAMILY_TOPICS : f==='clerk'?CLERK_FAMILY_TOPICS : JUDICIAL_FAMILY_TOPICS).forEach(t=>set.add(t));
-  });
-  set.add('Other');
-  return ROLLED_UP_TOPICS.filter(t=>set.has(t)); // preserve the taxonomy's declared order
-}
-/* Fixed display order shared by BOTH the candidate and opponent topic panels (2026-08-27 feedback:
-   each panel used to sort independently by its own topic counts, which put different topics at
-   the same row position for each side and made side-by-side comparison hard). Both parties' core
-   topics first (Dem's 2, then Rep's 2 — a fixed union, not "whichever side you're looking at"),
-   then the remaining rolled-up topics in their existing declared order, "Other" always last.
-   Every entity's panel lists topics in this exact sequence regardless of that entity's own counts.
-   Now scoped to whichever race families are actually present among the entities being shown — a
-   mixed "All offices" view unions every present family's topics, not the full global list. */
-function narrativeTopicOrderFor(entities){
-  const families = new Set((entities||[]).map(raceFamily));
-  if(!families.size) families.add('policy');
-  const topics = topicsForFamilies(families);
-  const core = [...CORE_TOPICS_BY_PARTY.Democrat, ...CORE_TOPICS_BY_PARTY.Republican].filter(t=>topics.includes(t));
-  return [
-    ...core,
-    ...topics.filter(t=>t!=='Other' && !core.includes(t)),
-    ...(topics.includes('Other') ? ['Other'] : [])
-  ];
-}
-/* Simplified 3-color palette (2026-08-27 feedback, replacing a 14-color palette that was "too many
-   different colors"): gray for anything not core to the given party, blue/red for that party's own
-   core topics. Needs the entity's party since "core" is party-relative (Dem core topics aren't Rep
-   core topics) — callers pass it through from the entity they're rendering. */
-function topicColor(t, party){
-  if(CORE_TOPICS_BY_PARTY[party||'Democrat']?.includes(t)) return partyColor(party);
-  return '#8B93A1';
 }
 
 let DATES = [];
@@ -881,7 +879,7 @@ function buildDateAxis(){
 }
 
 let ROSTER = [], ENTITIES = [], aggRowsCache = [], PROMPTS = [], PROMPTS_BY_RACE = {}, PROMPT_NARR_TESTED = {}, CITATION_EVENTS = [];
-let RUN_INDEX = {}, PROMPT_INDEX = {}, ACC_ISSUES_BY_ROW = {}, NARR_GAPS_BY_ROW = {};
+let RUN_INDEX = {}, PROMPT_INDEX = {}, ROW_BY_ID = {}, ACC_ISSUES_BY_ROW = {}, NARR_GAPS_BY_ROW = {};
 let METRICS = {};
 
 const CITATION_CATEGORIES = [
@@ -894,6 +892,15 @@ const CITATION_CATEGORIES = [
   {key:'Reference Database', label:'Reference Database', color:'#C98A2E'},
   {key:'Social Media', label:'Social Media', color:'#B23B3B'},
   {key:'Other', label:'Other', color:'#C9CDD3'},
+  // Not part of the original 9-category taxonomy — added once real data showed it's the dominant
+  // case, not an edge case: Google AI Overview's own citation export is ~99-100% opaque
+  // `google.com/goto?url=<token>` redirect wrappers per race (89.1% of all real citation rows
+  // corpus-wide), and the real destination domain is not recoverable by decoding the token
+  // (confirmed, flagged to Evertune, not yet fixed on their end — see
+  // scripts/pipeline/evertune_citations.py's module docstring). These rows are kept, not dropped,
+  // so citation VOLUME still reconciles — they're just honestly labeled as unclassifiable rather
+  // than guessed into a real category.
+  {key:'Unresolved (Google wrapper)', label:'Unresolved (Google wrapper)', color:'#8B93A1'},
 ];
 function citationCatColor(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.color : '#999'; }
 function citationCatLabel(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.label : k; }
@@ -913,6 +920,33 @@ function entityById(id){ return ENTITIES.find(e=>e.id===id); }
 function ourEntity(raceIdx){ return entityById('c'+raceIdx); }
 function oppEntity(raceIdx){ return entityById('o'+raceIdx); }
 
+// CITATIONS_RAW is columnar ({columns, data, row_count}, same shape as AGG) -- real-data scale
+// (~1M rows) made row-of-objects too large for the browser's one-time eager JSON.parse to
+// reliably handle (confirmed: caused the initial load to hang/crash in this environment). Called
+// from ensureCitationsLoaded(), not buildFromFetchedData() -- needs ROSTER/RACE_IDX_BY_RACE to
+// already exist, which they do by the time any nav click can reach the Citation Breakout page.
+function buildCitationEvents(){
+  const rawCols = CITATIONS_RAW.data;
+  const cd = {}; for(const c of CITATIONS_RAW.columns) cd[c] = decodeCol(rawCols[c]);
+  CITATION_EVENTS = new Array(CITATIONS_RAW.row_count);
+  for(let i=0;i<CITATIONS_RAW.row_count;i++){
+    const race = cd.race[i];
+    const raceIdx = RACE_IDX_BY_RACE[race];
+    const rosterRow = ROSTER[raceIdx];
+    CITATION_EVENTS[i] = {
+      raceIdx, race, date: cd.report_date[i], domain: cd.domain[i], url: cd.url[i],
+      source_type: cd.source_type[i], count: +cd.source_count[i], catKey: cd.aeo_site_category[i],
+      office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
+    };
+  }
+  // Drop the raw dict-encoded form once expanded -- CITATION_EVENTS is a strict superset of
+  // everything CITATIONS_RAW held, decoded, and nothing downstream ever reads CITATIONS_RAW again.
+  // Keeping both alive at once roughly doubles this data's peak memory footprint for no reason
+  // (226MB raw + a comparable expanded array) -- a real risk on a visitor's lower-memory device
+  // even though it wasn't the direct cause of this environment's own testing-sandbox crashes.
+  CITATIONS_RAW = null;
+}
+
 function buildFromFetchedData(){
   ROSTER = ROSTER_RAW.map(r=>({
     name: r.candidate_name, party: r.candidate_party_affiliation, candidateType: r.candidate_type,
@@ -920,7 +954,7 @@ function buildFromFetchedData(){
     state: r.state, location: r.location, office: r.office_name,
     race: r.race, race_level: r.race_level, race_type: r.race_type
   }));
-  const raceIdxByRace = {}; ROSTER.forEach((r,i)=>raceIdxByRace[r.race]=i);
+  RACE_IDX_BY_RACE = {}; ROSTER.forEach((r,i)=>RACE_IDX_BY_RACE[r.race]=i);
 
   ENTITIES = [];
   ROSTER.forEach((r,i)=>{
@@ -929,10 +963,28 @@ function buildFromFetchedData(){
   });
 
   aggRowsCache = aggRows();
+  // rowsForEntity()/dailyBucketShare() used to re-scan the ENTIRE 591k-row aggRowsCache by race on
+  // every call -- at real data scale, called once per entity (143) per dimension per page (and
+  // again per day for trend charts), this was O(rows x entities) repeated many times over and was
+  // confirmed directly (via console.time instrumentation) to be the dominant cost of the initial
+  // load, 8-13 seconds PER dimension page. Group once here instead -- O(rows) total, not
+  // O(rows x entities) -- and have both call sites look up their race's pre-grouped rows instead
+  // of re-filtering the full array.
+  ROWS_BY_RACE = {};
+  aggRowsCache.forEach(r=>{ (ROWS_BY_RACE[r.race] = ROWS_BY_RACE[r.race]||[]).push(r); });
   buildDateAxis();
-  RUN_INDEX = {}; PROMPT_INDEX = {};
+  // RUN_INDEX holds an ARRAY per (prompt,provider,date) cell, not a single row — real data can
+  // carry anywhere from 0 to ~100 independent runs in one cell (large-sample-size scoring, not a
+  // data error; confirmed directly against Production Output). Overwriting on collision (the old
+  // behavior) would silently keep 1 of up to 100 real runs and discard the rest. ROW_BY_ID is a
+  // flat id->row index for the cases where a specific already-identified row needs a direct
+  // lookup (a UI element the user clicked) rather than re-deriving it from (prompt,model,date),
+  // which alone can no longer disambiguate which of potentially many runs was meant.
+  RUN_INDEX = {}; PROMPT_INDEX = {}; ROW_BY_ID = {};
   aggRowsCache.forEach(r=>{
-    RUN_INDEX[r.prompt_id+'|'+r.ai_provider+'|'+r.report_date] = r;
+    const k = r.prompt_id+'|'+r.ai_provider+'|'+r.report_date;
+    (RUN_INDEX[k] = RUN_INDEX[k]||[]).push(r);
+    ROW_BY_ID[r.id] = r;
     if(!PROMPT_INDEX[r.prompt_id]) PROMPT_INDEX[r.prompt_id] = r;
   });
 
@@ -947,18 +999,8 @@ function buildFromFetchedData(){
     (NARR_GAPS_BY_ROW[k] = NARR_GAPS_BY_ROW[k]||[]).push(g.missing_topic);
   });
 
-  CITATION_EVENTS = CITATIONS_RAW.map(c=>{
-    const raceIdx = raceIdxByRace[c.race];
-    const rosterRow = ROSTER[raceIdx];
-    return {
-      raceIdx, race: c.race, date: c.report_date, domain: c.domain, url: c.url,
-      source_type: c.source_type, count: +c.source_count, catKey: c.aeo_site_category,
-      office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
-    };
-  });
-
   PROMPTS = Object.values(PROMPT_INDEX).map(r=>{
-    const raceIdx = raceIdxByRace[r.race];
+    const raceIdx = RACE_IDX_BY_RACE[r.race];
     const dims = (r.dimensions_assessed||'').split(',').map(s=>s.trim()).map(d=>CAT_TO_DIMKEY[d]||d.toLowerCase()).filter(Boolean);
     return {
       id: r.prompt_id, text: r.full_query, category: r.prompt_category,
@@ -968,7 +1010,7 @@ function buildFromFetchedData(){
       opp: r.opponent_name || null, opp_party: r.opponent_party_affiliation || null, opp_type: r.opponent_type || null,
       state: r.state, location: r.location, office: r.office_name,
       race_level: r.race_level, race_type: r.race_type,
-      is_blind: r.is_blind==='t' ? 'Y' : 'N', target: r.target_candidate, dims
+      is_blind: r.is_blind==='Y' ? 'Y' : 'N', target: r.target_candidate, dims
     };
   });
   PROMPTS_BY_RACE = {};
@@ -996,9 +1038,8 @@ function topicsForCategory(cat, opts){
   return [...new Set(prompts.map(p=>p.topic))].sort();
 }
 // Task 2's narrative_tested field — the vocabulary for the Topic Comparison chart. Distinct from
-// issue_tag (topicsForCategory above) and the key-topics rolled-up taxonomy (ROLLED_UP_TOPICS):
-// narrative_tested spans directional/comparative prompts AND Fair Rebuttal/Critique-Association,
-// across every prompt_category, not just Issue & Policy Positions.
+// issue_tag (topicsForCategory above): narrative_tested spans directional/comparative prompts AND
+// Fair Rebuttal/Critique-Association, across every prompt_category, not just Issue & Policy Positions.
 function narrativeTestedTopics(){ return [...new Set(PROMPTS.flatMap(p=>p.narrativeTested))].sort(); }
 
 function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
@@ -1014,7 +1055,7 @@ function pctScored2(rows, field){
   if(!vals.length) return null;
   return 100*vals.filter(v=>v==='2').length/vals.length;
 }
-function rowsForEntity(ent){ return aggRowsCache.filter(r=>r.race===ent.race); }
+function rowsForEntity(ent){ return ROWS_BY_RACE[ent.race] || []; }
 
 function buildMetrics(){
   METRICS = {};
@@ -1058,16 +1099,11 @@ function buildMetrics(){
     const accVals = rows.map(r=>r['accuracy_score_'+side]).filter(v=>v!==''&&v!=null);
     const n2=accVals.filter(v=>v==='2').length, n1=accVals.filter(v=>v==='1').length, n0=accVals.filter(v=>v==='0').length;
 
-    const topicCounts = {};
-    rows.forEach(r=>{ const t=r['key_topics_'+side+'_rolled_up']; if(t) t.split('|').forEach(x=>{ topicCounts[x]=(topicCounts[x]||0)+1; }); });
-    const core = coreTopicsForParty(e.party);
-    const topics = Object.entries(topicCounts).map(([topic,count])=>({topic, core: core.includes(topic), count})).sort((a,b)=>b.count-a.count);
-
     const gapCounts = {}; let gapDenom = 0;
     rows.forEach(r=>{ const k=r.id+'|'+side; const gaps = NARR_GAPS_BY_ROW[k]; if(gaps){ gapDenom++; gaps.forEach(t=>{ gapCounts[t]=(gapCounts[t]||0)+1; }); } });
     const gaps = Object.entries(gapCounts).map(([topic,n])=>({topic, pctMissing: gapDenom? Math.round(100*n/gapDenom): 0})).sort((a,b)=>b.pctMissing-a.pctMissing);
 
-    METRICS[e.id] = {base, history, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, topics, gaps, coreTopics: core};
+    METRICS[e.id] = {base, history, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, gaps};
   });
 }
 const WEIGHTS = {visibility:0.40,favorability:0.15,depth:0.15,accuracy:0.15,narrative:0.15};
@@ -1194,18 +1230,23 @@ function runComposite(scores){
   ]);
 }
 
-/* ---- real per-run lookup, replacing the old RNG-based getRun() — same output shape.
-   Returns null when no real run exists for this prompt+model+date (real data is sparser than
-   the old synthetic 45-day grid) — callers must handle a null run. ---- */
-function getRun(prompt, model, dateStr){
-  const provider = MODEL_TO_PROVIDER[model];
-  const row = RUN_INDEX[prompt.id+'|'+provider+'|'+dateStr];
-  if(!row) return null;
-  const opp = oppEntity(prompt.raceIdx);
+/* ---- real per-run lookup. A single (prompt,model,date) cell can hold anywhere from 0 to ~100
+   independent real runs (large-sample-size scoring, confirmed directly against Production
+   Output — not a data error, and not "at most one" the way earlier real-data eras behaved).
+   getRun() therefore returns an ARRAY of every real run in the cell (empty if none), not a
+   single run or null — every caller either aggregates across the array or, if it needs one
+   already-specific run a user clicked, should carry that run's own stable `_row.id` through and
+   use getRunById() instead of re-deriving it from (prompt,model,date), which alone can no longer
+   disambiguate which of potentially many runs was meant. ---- */
+function runViewFromRow(row, model, dateStr){
+  const hasOpponent = !!row.opponent_name;
   function sideScores(side){
     const out = {};
     DIM_KEYS.forEach(dim=>{
-      if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? (+v>=50?1:0) : null; return; }
+      // visibility_score_* is a real binary 0/1 on-target flag (not a continuous 0-100 metric —
+      // no broader real vendor export exists beyond that), so pass it through directly instead
+      // of the old dummy-era >=50 threshold, which would have silently zeroed out every real 1.
+      if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? +v : null; return; }
       if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? (+v - +row['favorability_pct_negative_'+side]) : null; return; }
       const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
       const v = row[field];
@@ -1214,38 +1255,67 @@ function getRun(prompt, model, dateStr){
     return out;
   }
   const oursSide = sideScores('candidate');
-  const oppSide = opp ? sideScores('opponent') : {};
-  const accIssue = { ours: (ACC_ISSUES_BY_ROW[row.id+'|candidate']||[])[0]||null, opp: opp? (ACC_ISSUES_BY_ROW[row.id+'|opponent']||[])[0]||null : null };
-  const missingTopics = { ours: NARR_GAPS_BY_ROW[row.id+'|candidate']||[], opp: opp? (NARR_GAPS_BY_ROW[row.id+'|opponent']||[]) : [] };
+  const oppSide = hasOpponent ? sideScores('opponent') : {};
+  // Real rows can carry multiple flagged statements per role (pipe-delimited at ingestion into
+  // one accuracy_issues child row each) -- confirmed 2,178 (prompt_result,role) keys have 2-3, not
+  // just 1. Carry the FULL array here, same shape as missingTopics below, not just [0] -- taking
+  // only the first silently dropped 3,814 of 10,726 real flagged statements from every downstream
+  // consumer (the issues table/count, the Prompt Fanout detail panel).
+  const accIssue = { ours: ACC_ISSUES_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (ACC_ISSUES_BY_ROW[row.id+'|opponent']||[]) : [] };
+  const missingTopics = { ours: NARR_GAPS_BY_ROW[row.id+'|candidate']||[], opp: hasOpponent? (NARR_GAPS_BY_ROW[row.id+'|opponent']||[]) : [] };
   return { model, date: dateStr, scores:{ours:oursSide, opp:oppSide}, accIssue, missingTopics,
            response: (TEXT[row.id] && TEXT[row.id].full_response) || '', _row: row };
 }
+function getRun(prompt, model, dateStr){
+  const provider = MODEL_TO_PROVIDER[model];
+  const rows = RUN_INDEX[prompt.id+'|'+provider+'|'+dateStr] || [];
+  return rows.map(row=>runViewFromRow(row, model, dateStr));
+}
+/* Direct lookup by a specific row's own stable id — for UI elements (a table row, a history
+   entry) that already resolved to one exact real run and need to re-open it later without
+   re-deriving which of potentially many runs in a (prompt,model,date) cell was meant. */
+function getRunById(rowId){
+  const row = ROW_BY_ID[rowId];
+  if(!row) return null;
+  return runViewFromRow(row, PROVIDER_TO_MODEL[row.ai_provider], row.report_date);
+}
 
-/* Real data is sparse and irregular about which dates have a run for a given (prompt, model) — but
-   NOT "at most one," as this function originally assumed (2026-08-31 correction): most (prompt,
-   model) pairs actually have 2-3 real dates of history in this dataset (checked directly against
-   prompt_results_final.csv — only ~22% of prompt×provider combos have exactly one date). Returning
-   only the latest silently dropped roughly half of every real row from every consumer — confirmed
-   on the Accuracy page's flagged-statement count, which undercounted by ~51% (2263 of a true 4620)
-   until this fix. Returns every real run in the date range, oldest to newest, not just one. */
+/* Every real run across every date in [i0,i1], oldest to newest — flattens getRun()'s per-date
+   arrays rather than assuming one run per date (2026-08-31 correction, generalized further once
+   same-date multiplicity was also confirmed real: most (prompt,model) pairs have several real
+   dates of history AND a single date can itself hold many runs — collapsing either dimension
+   silently drops real data, confirmed once on the Accuracy page's flagged-statement count
+   undercounting ~51% before the date-range fix, and would recur far worse on the same-date
+   dimension given up to ~100 runs per cell). */
 function getRunsInRange(prompt, model, i0, i1){
   const out = [];
   for(let i=i0; i<=i1; i++){
-    const run = getRun(prompt, model, DATES[i]);
-    if(run) out.push(run);
+    getRun(prompt, model, DATES[i]).forEach(run=>out.push(run));
   }
   return out;
 }
 
-/* ---- refusal / hypothesis-alignment lookup, replacing getHealthRun() — real is_refusal /
-   response_tests_hypothesis, same output shape. ---- */
+/* ---- refusal / hypothesis-alignment lookup, same array-per-cell shape as getRun() (see above)
+   — also carries the response text directly so a caller that only needs refusal/alignment plus
+   the response doesn't need a second getRun()/getRunById() call against the same row. ---- */
 function getHealthRun(p, m, d){
   const provider = MODEL_TO_PROVIDER[m];
-  const row = RUN_INDEX[p.id+'|'+provider+'|'+d];
-  if(!row) return null;
-  const refused = row.is_refusal === 'Y';
-  const alignment = refused ? null : (row.response_tests_hypothesis || null);
-  return {refused, alignment};
+  const rows = RUN_INDEX[p.id+'|'+provider+'|'+d] || [];
+  return rows.map(row=>{
+    const refused = row.is_refusal === 'Y';
+    // response_tests_hypothesis is a real 'Y'/'N' flag (does the response engage the intended
+    // angle) -- map onto the same on_topic/veered vocabulary every alignment display already uses
+    // (phCollectStats, openPromptHealthDetail's statusHtml) rather than reading the raw letter,
+    // which doesn't match either literal and silently read as "veered" for every real row.
+    let alignment = null;
+    if(!refused && row.response_tests_hypothesis){
+      alignment = row.response_tests_hypothesis === 'Y' ? 'on_topic' : 'veered';
+    }
+    return {
+      refused, alignment,
+      response: (TEXT[row.id] && TEXT[row.id].full_response) || '', _row: row,
+    };
+  });
 }
 
 /* ============================================================================
@@ -1343,16 +1413,25 @@ const PAGE_RERENDER = {
   depth: ()=>renderDimensionPage('depth'),
   accuracy: ()=>{ renderDimensionPage('accuracy'); renderAccuracyPriority(); },
   consistency: ()=>renderDimensionPage('consistency'),
-  narrative: ()=>{ renderDimensionPage('narrative'); renderNarrativeTopics(); },
+  narrative: ()=>{ renderDimensionPage('narrative'); },
   prompthealth: ()=>{ renderPhRefusal(); renderPhTrend(); renderPhAlign(); renderPhFlagged(); },
   citations: ()=>renderCitations()
 };
+let citationsPageBuilt = false;
 document.querySelectorAll('.nav-item').forEach(item=>{
-  item.addEventListener('click', ()=>{
+  item.addEventListener('click', async ()=>{
     document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
     item.classList.add('active');
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById('page-'+item.dataset.page).classList.add('active');
+    if(item.dataset.page==='citations' && !citationsPageBuilt){
+      try{
+        await ensureCitationsLoaded();
+        buildCitationsPage();
+        citationsPageBuilt = true;
+      }catch(e){ console.error('Citation data load failed', e); }
+      return;
+    }
     const rerender = PAGE_RERENDER[item.dataset.page];
     if(rerender){ try{ rerender(); }catch(e){ console.error('Re-render error on nav to '+item.dataset.page, e); } }
   });
@@ -1493,7 +1572,7 @@ function renderFanoutHtml(raceIdx, dimKey){
     const ov=r.run.scores.ours[dimKey], pv=r.run.scores.opp[dimKey];
     const gap = (ov!==null&&pv!==null)? pv-ov : null;
     const nonAccurate = dimKey==='accuracy' && (ov===0||ov===1||pv===0||pv===1);
-    html += `<tr class="${nonAccurate?'clickable':''}" ${nonAccurate?`onclick="showAccuracyDetail(${raceIdx},'${r.p.id}','${r.m}','${r.run.date}')"`:''}>
+    html += `<tr class="${nonAccurate?'clickable':''}" ${nonAccurate?`onclick="showAccuracyDetail('${escXAttr(r.run._row.id)}')"`:''}>
       <td style="max-width:230px;white-space:normal;">${escapeXml(r.p.text)}<br><span class="small-muted">${r.p.category}</span></td>
       <td class="small-muted">${r.m}</td><td class="small-muted">${r.run.date}</td><td>${heat(ov)}</td><td>${heat(pv)}</td>
       <td class="${gap>0?'gap-pos':gap<0?'gap-neg':''}">${gap===null?'—':(gap>0?'+':'')+fmt1(gap)}</td>
@@ -1503,18 +1582,27 @@ function renderFanoutHtml(raceIdx, dimKey){
   html += `</table></div></div>`;
   return html;
 }
-function showAccuracyDetail(raceIdx, promptId, model, date){
-  const p = PROMPTS.find(x=>x.id===promptId);
-  const run = getRun(p, model, date);
+function showAccuracyDetail(rowId){
+  const run = getRunById(rowId);
   if(!run) return;
+  const p = PROMPTS.find(x=>x.id===run._row.prompt_id);
+  if(!p) return;
+  const raceIdx = p.raceIdx;
   const ours = ourEntity(raceIdx), opp = oppEntity(raceIdx);
-  const issue = run.accIssue.ours || run.accIssue.opp;
-  const who = run.accIssue.ours? ours.name : (run.accIssue.opp? opp.name : null);
+  // A run can carry multiple flagged statements per role (see runViewFromRow) -- list every one,
+  // for both roles if both were flagged, not just the first side that happened to have an issue.
+  const sideIssues = [['ours', ours, run.accIssue.ours], ['opp', opp, run.accIssue.opp]]
+    .filter(([,ent,issues])=>ent && issues && issues.length);
+  const calloutHtml = sideIssues.length
+    ? sideIssues.map(([,ent,issues])=>
+        issues.map(issue=>`<div class="callout section-gap"><b>Flag on:</b> ${ent.name}<br><b>Inaccurate statement:</b> ${escapeXml(issue.statement)}<br><b>Category:</b> ${ACCURACY_CATEGORIES.find(c=>c.key===issue.category)?.label||issue.category}<br><b>Why it's inaccurate:</b> ${escapeXml(issue.description)}</div>`).join('')
+      ).join('')
+    : `<div class="callout section-gap">Partially accurate — no single flagged statement, but response left a specific error/omission versus the knowledge base.</div>`;
   openSidePanel(`
     <h3 style="margin-top:6px;">Accuracy flag detail</h3>
-    <div class="small-muted" style="margin-bottom:10px;">${p.category} · ${model} · ${date}</div>
+    <div class="small-muted" style="margin-bottom:10px;">${p.category} · ${run.model} · ${run.date}</div>
     <div class="run-detail"><b>Prompt:</b> ${escapeXml(p.text)}</div>
-    ${who? `<div class="callout section-gap"><b>Flag on:</b> ${who}<br><b>Inaccurate statement:</b> ${escapeXml(issue.statement)}<br><b>Category:</b> ${ACCURACY_CATEGORIES.find(c=>c.key===issue.category)?.label||issue.category}<br><b>Why it's inaccurate:</b> ${escapeXml(issue.description)}</div>` : `<div class="callout section-gap">Partially accurate — no single flagged statement, but response left a specific error/omission versus the knowledge base.</div>`}
+    ${calloutHtml}
     <div class="section-gap"><button class="btn ghost sm" onclick="closeSidePanel()">Close</button></div>
   `);
 }
@@ -1808,7 +1896,7 @@ function buildDimensionPage(key){
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
-    ${key==='narrative' ? topicComparisonHtml() + narrativeExtraHtml() : ''}
+    ${key==='narrative' ? topicComparisonHtml() : ''}
     ${key==='consistency' ? consistencyCandidateSummaryHtml()+consistencyFlaggedHtml() : ''}
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
@@ -1840,46 +1928,16 @@ function buildDimensionPage(key){
     const trendCompareEl = document.getElementById(key+'-trend-compare');
     if(trendCompareEl) trendCompareEl.addEventListener('change', ()=>renderDimensionPage(key));
   }
-  if(key==='narrative'){ wireNarrativeExtra(); wireTopicComparison(); }
+  if(key==='narrative'){ wireTopicComparison(); }
   if(key==='consistency') wireConsistencyFlagged();
   if(hasRootCause) wireDimSource(key);
   renderDimensionPage(key);
 }
-/* TOPIC_COLORS / topicColor() now defined once in section 3 (real 14-category taxonomy). */
-function narrativeExtraHtml(){
-  return `<div class="card section-gap">
-    <div class="card-title">Key topics explorer</div>
-    <div class="card-caption" id="na-caption">Every topic detected in responses, ranked by frequency — not just the topics we specified. Pick a race or a candidate to compare one candidate vs. their opponent, or leave it on "All" to aggregate every matching candidate by party — e.g. all Democrats vs. all Republicans in a state.</div>
-    ${chartFilterBarHtml('na', {})}
-    <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-      <div class="fitem"><label>Race level</label><select id="na-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><input type="checkbox" id="na-compare" checked> <span id="na-compare-label">Compare with opponent</span></label>
-      <button type="button" class="btn ghost sm" id="na-view-toggle" onclick="toggleNaView()">Explore sub-topics →</button>
-    </div>
-    <div class="two-col-panels">
-      <div><div class="card-title" id="na-cand-label" style="color:var(--dem);"></div><div id="na-cand-topics"></div></div>
-      <div id="na-opp-panel"><div class="card-title" id="na-opp-label" style="color:var(--rep);"></div><div id="na-opp-topics"></div></div>
-    </div>
-    <div class="legend-row" id="na-legend"><span><span class="legend-dot" style="background:#2E5EAA"></span>Democrat core topic</span><span><span class="legend-dot" style="background:#B23B3B"></span>Republican core topic</span><span><span class="legend-dot" style="background:#8B93A1"></span>Other topic</span></div>
-  </div>`;
-}
-function wireNarrativeExtra(){
-  window.__naView = 'rolled-up';
-  wireChartFilterBar('na', {}, renderNarrativeTopics);
-  document.getElementById('na-level').addEventListener('change', renderNarrativeTopics);
-  document.getElementById('na-compare').addEventListener('change', renderNarrativeTopics);
-  renderNarrativeTopics();
-}
-function toggleNaView(){
-  window.__naView = window.__naView==='rolled-up' ? 'granular' : 'rolled-up';
-  renderNarrativeTopics();
-}
 /* ---- Topic Comparison (Task 2, added 2026-08-31): pick a narrative_tested topic, see the real
    0/1/2 Narrative Alignment score share — Democrats vs. Republicans by default, narrowing to
-   candidate vs. opponent when a single race is selected, same aggregation pattern as the Key
-   Topics Explorer above. Distinct from that explorer: this reads real per-response scores gated by
+   candidate vs. opponent when a single race is selected. (The Key Topics Explorer this comment
+   used to compare itself against was removed 2026-09-03 -- see PROJECT_SPEC.md Part 6.2.) This
+   chart reads real per-response scores gated by
    whether that response's prompt tests the selected topic (PROMPT_NARR_TESTED), not key-topic
    extraction counts. ---- */
 // Sub-topics scoped to one main topic only (2026-08-31) — a flat list of every sub_topic across
@@ -1926,8 +1984,7 @@ function scoresByTopicForEntities(entities, topic, subTopic){
   const buckets = {'0':0,'1':0,'2':0}; let total=0;
   entities.forEach(ent=>{
     const side = ent.role==='ours' ? 'candidate' : 'opponent';
-    aggRowsCache.forEach(r=>{
-      if(r.race!==ent.race) return;
+    (ROWS_BY_RACE[ent.race] || []).forEach(r=>{
       const tested = PROMPT_NARR_TESTED[r.prompt_id];
       if(!tested || !tested.includes(topic)) return;
       if(subTopic && subTopic!=='all' && r.sub_topic!==subTopic) return;
@@ -1968,131 +2025,6 @@ function renderTopicComparison(){
       ${stackedRowHtml('narrative', r.d.buckets, r.d.total)}
     </div>`).join('') || '<div class="small-muted" style="padding:10px;">No scored responses for this topic in the current filter.</div>';
 }
-function granularBreakdown(entityId, topic, totalCount){
-  const subs = GRANULAR_TOPICS[topic] || ['General'];
-  const rng = seededRng('gran|'+entityId+'|'+topic);
-  const weights = subs.map(()=>0.4+rng());
-  const wsum = weights.reduce((a,b)=>a+b,0);
-  const counts = weights.map(w=>Math.max(1,Math.round(totalCount*w/wsum)));
-  const diff = totalCount - counts.reduce((a,b)=>a+b,0);
-  counts[0] = Math.max(1, counts[0]+diff);
-  return subs.map((s,i)=>({sub:s,count:counts[i]})).sort((a,b)=>b.count-a.count);
-}
-function topicBarsFromCounts(countByTopic, party, order){
-  // Fixed order (per narrativeTopicOrderFor, scoped to the entities in view — 2026-08-31), not
-  // count ranking — so every panel (single candidate or an aggregated party group) lists topics in
-  // the same row position for side-by-side comparison (2026-08-27 feedback). Topics never
-  // triggered still get an (empty) row.
-  const max = Math.max(1, ...Object.values(countByTopic));
-  return order.map(topic=>{
-    const count = countByTopic[topic] || 0;
-    const color = topicColor(topic, party);
-    return `<div class="topic-row">
-      <div class="topic-name">${escXHtml(topic)}</div>
-      <div class="topic-track"><div class="topic-fill" style="width:${count?clamp(100*count/max,4,100):0}%;background:${color};"></div></div>
-      <div class="topic-pct">${count}</div>
-    </div>`;
-  }).join('');
-}
-function topicCountsForEntity(entityId){ return Object.fromEntries(METRICS[entityId].topics.map(t=>[t.topic, t.count])); }
-function topicCountsForGroup(entities){
-  const combined = {};
-  entities.forEach(e=>{ METRICS[e.id].topics.forEach(t=>{ combined[t.topic] = (combined[t.topic]||0) + t.count; }); });
-  return combined;
-}
-function topicBars(entityId){ const ent=entityById(entityId); return topicBarsFromCounts(topicCountsForEntity(entityId), ent.party, narrativeTopicOrderFor([ent])); }
-function topicBarsForGroup(entities, party){ return topicBarsFromCounts(topicCountsForGroup(entities), party, narrativeTopicOrderFor(entities)); }
-function granularFlatListFromCounts(countByTopic, seedFn, order){
-  // Grouped by parent topic in the same order as topicBarsFromCounts (2026-08-27 feedback: "at
-  // least organized in the same order as their parent topics"), not a flat cross-topic sort —
-  // sub-topics within one parent still rank by their own count. Topics with zero occurrences
-  // contribute no sub-topic rows.
-  const flat = [];
-  order.forEach(topic=>{
-    const count = countByTopic[topic] || 0;
-    if(!count) return;
-    seedFn(topic, count).forEach(g=>flat.push({sub:g.sub, count:g.count, parent:topic}));
-  });
-  return flat;
-}
-function granularBarsFromFlat(flat, party){
-  const max = Math.max(1,...flat.map(g=>g.count));
-  return flat.map(g=>{
-    const color = topicColor(g.parent, party);
-    return `<div class="topic-row">
-      <div class="topic-name" style="width:190px;">${escXHtml(g.sub)}<br><span class="small-muted" style="font-weight:400;">${escXHtml(g.parent)}</span></div>
-      <div class="topic-track"><div class="topic-fill" style="width:${clamp(100*g.count/max,4,100)}%;background:${color};"></div></div>
-      <div class="topic-pct">${g.count}</div>
-    </div>`;
-  }).join('') || '<div class="small-muted" style="padding:10px 0;">No granular data available.</div>';
-}
-function granularBars(entityId){
-  const ent = entityById(entityId);
-  const flat = granularFlatListFromCounts(topicCountsForEntity(entityId), (topic,count)=>granularBreakdown(entityId, topic, count), narrativeTopicOrderFor([ent]));
-  return granularBarsFromFlat(flat, ent.party);
-}
-function granularBarsForGroup(entities, party){
-  // Sum each entity's own (seeded, deterministic) granular breakdown rather than re-deriving one
-  // breakdown for the whole group — keeps each entity's sub-topic split internally consistent with
-  // its single-candidate view.
-  const order = narrativeTopicOrderFor(entities);
-  const combined = {}; // "parent|sub" -> count
-  entities.forEach(e=>{
-    const counts = topicCountsForEntity(e.id);
-    order.forEach(topic=>{
-      const count = counts[topic]||0;
-      if(!count) return;
-      granularBreakdown(e.id, topic, count).forEach(g=>{ const k=topic+'|'+g.sub; combined[k]=(combined[k]||0)+g.count; });
-    });
-  });
-  const countByTopic = topicCountsForGroup(entities);
-  const flat = granularFlatListFromCounts(countByTopic, (topic)=>{
-    const subs = GRANULAR_TOPICS[topic]||['General'];
-    return subs.map(sub=>({sub, count: combined[topic+'|'+sub]||0})).filter(r=>r.count>0);
-  }, order);
-  return granularBarsFromFlat(flat, party);
-}
-function renderNarrativeTopics(){
-  const view = window.__naView || 'rolled-up';
-  const isGranular = view==='granular';
-  document.getElementById('na-view-toggle').textContent = isGranular ? '← Back to key topics' : 'Explore sub-topics →';
-  document.getElementById('na-caption').textContent = isGranular
-    ? 'Every granular sub-topic, grouped by its parent topic in the same fixed order as the key-topics view — sub-topics within a parent rank by their own frequency.'
-    : 'Every topic detected in responses, ranked by frequency — not just the topics we specified. Pick a race (or search a candidate) to compare one candidate vs. their opponent, or leave it on "All" to aggregate every matching candidate by party.';
-  const compare = document.getElementById('na-compare').checked;
-  const raceVal = document.getElementById('na-race').value;
-  if(raceVal!=='all'){
-    const idx = parseInt(raceVal,10);
-    const e = ourEntity(idx), opp = oppEntity(idx);
-    if(document.getElementById('na-compare-label')) document.getElementById('na-compare-label').textContent = 'Compare with opponent';
-    document.getElementById('na-cand-label').textContent = e.name+(isGranular?' — sub-topics':' — key topics');
-    document.getElementById('na-cand-topics').innerHTML = isGranular ? granularBars(e.id) : topicBars(e.id);
-    if(compare && opp){
-      document.getElementById('na-opp-panel').style.display='';
-      document.getElementById('na-opp-label').textContent = opp.name+(isGranular?' — sub-topics':' — key topics');
-      document.getElementById('na-opp-topics').innerHTML = isGranular ? granularBars(opp.id) : topicBars(opp.id);
-    } else document.getElementById('na-opp-panel').style.display='none';
-  } else {
-    let idxs = ROSTER.map((r,i)=>i);
-    const state=document.getElementById('na-state').value, office=document.getElementById('na-office').value, level=document.getElementById('na-level').value;
-    const naParty=document.getElementById('na-party').value, naCtype=document.getElementById('na-ctype').value;
-    if(state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===state);
-    if(office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===office);
-    if(level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===level);
-    // Party/Candidate Type now apply here (2026-08-31 fix) — previously both selects rendered and
-    // re-triggered this render but were never read; see aeo_dashboard_party_ctype_filter_gap memory.
-    const groups = partySplitGroups(idxs, {party:naParty, candidateType:naCtype});
-    const primary = groups[0] || {key:'Democrat', label:'Democrats', entities:[]};
-    if(document.getElementById('na-compare-label')) document.getElementById('na-compare-label').textContent = groups[1] ? `Compare with ${groups[1].label}` : 'Compare with Republicans';
-    document.getElementById('na-cand-label').textContent = `${primary.label} (${primary.entities.length})`+(isGranular?' — sub-topics':' — key topics');
-    document.getElementById('na-cand-topics').innerHTML = isGranular ? granularBarsForGroup(primary.entities,primary.key) : topicBarsForGroup(primary.entities,primary.key);
-    if(compare && groups[1]){
-      document.getElementById('na-opp-panel').style.display='';
-      document.getElementById('na-opp-label').textContent = `${groups[1].label} (${groups[1].entities.length})`+(isGranular?' — sub-topics':' — key topics');
-      document.getElementById('na-opp-topics').innerHTML = isGranular ? granularBarsForGroup(groups[1].entities,groups[1].key) : topicBarsForGroup(groups[1].entities,groups[1].key);
-    } else document.getElementById('na-opp-panel').style.display='none';
-  }
-}
 /* ============================================================================
    8.5 DIMENSION ROOT-CAUSE BREAKDOWN (Favorability & Depth "where is it falling short")
    ============================================================================ */
@@ -2120,23 +2052,23 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter){
   prompts.forEach(p=>{
     models.forEach(m=>{ dateIdxs.forEach(di=>{
       const dateStr = DATES[di];
-      const run = getRun(p,m,dateStr);
-      if(!run) return;
-      const v = run.scores[side][key];
-      if(v===null||v===undefined) return;
-      const cat = p.category;
-      const b = bucketOf(key, v);
-      const item = {prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
-      if(!byCategory[cat]) byCategory[cat] = {buckets:{}, total:0, items:[]};
-      byCategory[cat].buckets[b] = (byCategory[cat].buckets[b]||0)+1;
-      byCategory[cat].total++;
-      byCategory[cat].items.push(item);
-      if(p.topic){
-        if(!byIssueTag[p.topic]) byIssueTag[p.topic] = {buckets:{}, total:0, items:[]};
-        byIssueTag[p.topic].buckets[b] = (byIssueTag[p.topic].buckets[b]||0)+1;
-        byIssueTag[p.topic].total++;
-        byIssueTag[p.topic].items.push(item);
-      }
+      getRun(p,m,dateStr).forEach(run=>{
+        const v = run.scores[side][key];
+        if(v===null||v===undefined) return;
+        const cat = p.category;
+        const b = bucketOf(key, v);
+        const item = {prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+        if(!byCategory[cat]) byCategory[cat] = {buckets:{}, total:0, items:[]};
+        byCategory[cat].buckets[b] = (byCategory[cat].buckets[b]||0)+1;
+        byCategory[cat].total++;
+        byCategory[cat].items.push(item);
+        if(p.topic){
+          if(!byIssueTag[p.topic]) byIssueTag[p.topic] = {buckets:{}, total:0, items:[]};
+          byIssueTag[p.topic].buckets[b] = (byIssueTag[p.topic].buckets[b]||0)+1;
+          byIssueTag[p.topic].total++;
+          byIssueTag[p.topic].items.push(item);
+        }
+      });
     }); });
   });
   const byBucket = {}; Object.keys(BUCKET_LABELS).forEach(b=>{ byBucket[b] = {buckets:{},total:0,items:[]}; });
@@ -2373,8 +2305,12 @@ function computeAccuracyIssueRows(){
         // Every real run in range, not just the latest (2026-08-31 fix — see getRunsInRange).
         getRunsInRange(p,m,i0,i1).forEach(run=>{
           [['ours', ourEntity(idx)], ['opp', oppEntity(idx)]].forEach(([side,ent])=>{
-            const issue = run.accIssue[side];
-            if(issue && ent) rows.push({ent, p, m, issue, score:run.scores[side].accuracy, response:run.response, date:run.date});
+            // One row PER flagged statement, not one per (run,side) -- a run can carry 2-3 real
+            // flagged statements for the same role (see runViewFromRow's accIssue comment).
+            if(!ent) return;
+            (run.accIssue[side]||[]).forEach(issue=>{
+              rows.push({ent, p, m, issue, score:run.scores[side].accuracy, response:run.response, date:run.date});
+            });
           });
         });
       });
@@ -2426,10 +2362,6 @@ function buildNarrativeInsights(key){
   let bestGapTopic=null;
   entities.forEach(e=>{ (METRICS[e.id].gaps||[]).forEach(g=>{ if(!bestGapTopic||g.pctMissing>bestGapTopic.pctMissing) bestGapTopic={topic:g.topic,pctMissing:g.pctMissing,name:e.name}; }); });
   if(bestGapTopic) bullets.push(`"${bestGapTopic.topic}" is the narrative topic missing most often — absent from ${bestGapTopic.pctMissing}% of ${bestGapTopic.name}'s responses that should be raising it. Published content that explicitly covers this topic would close the gap.`);
-  const emergentAcc={};
-  entities.forEach(e=>{ METRICS[e.id].topics.filter(t=>!t.core).forEach(t=>{ emergentAcc[t.topic]=(emergentAcc[t.topic]||0)+t.count; }); });
-  const topEmergent = Object.entries(emergentAcc).sort((a,b)=>b[1]-a[1])[0];
-  if(topEmergent) bullets.push(`AI responses are also bringing up "${topEmergent[0]}" on their own, even though it isn't part of the current messaging plan — if it keeps coming up, publishing a clear position on it directly would shape how it gets discussed instead of leaving it to chance.`);
   return bullets;
 }
 const INSIGHT_BUILDERS = {
@@ -2703,8 +2635,7 @@ function renderConsistencyCandidateSummary(){
     (PROMPTS_BY_RACE[i]||[]).forEach(p=>{
       if(!p.dims.includes('consistency')) return;
       MODELS.forEach(m=>{ DATES.forEach(d=>{
-        const run = getRun(p,m,d);
-        if(run && run.scores.ours.consistency!=null) scores.push(run.scores.ours.consistency);
+        getRun(p,m,d).forEach(run=>{ if(run.scores.ours.consistency!=null) scores.push(run.scores.ours.consistency); });
       }); });
     });
     return {raceIdx:i, name:r.name, party:r.party, candidateType:r.candidateType, avgScore: scores.length?avg(scores):null, n:scores.length};
@@ -2740,11 +2671,11 @@ function renderConsistencyFlagged(){
   prompts.forEach(p=>{
     models.forEach(m=>{
       DATES.forEach(d=>{
-        const run = getRun(p,m,d);
-        if(!run) return;
-        const v = run.scores.ours.consistency;
-        if(v===null||v===undefined) return;
-        rows.push({p, model:m, date:d, score:v});
+        getRun(p,m,d).forEach(run=>{
+          const v = run.scores.ours.consistency;
+          if(v===null||v===undefined) return;
+          rows.push({p, model:m, date:d, score:v, rowId: run._row.id});
+        });
       });
     });
   });
@@ -2753,7 +2684,7 @@ function renderConsistencyFlagged(){
   const shown = showAll ? rows : rows.slice(0,30);
   let html = `<table><tr><th>Prompt</th><th>Category</th><th>Model</th><th>Date</th><th>Score</th></tr>`;
   shown.forEach(r=>{
-    html += `<tr class="clickable" onclick="openConsistencyDetail('${escXAttr(r.p.id)}','${escXAttr(r.model)}','${r.date}',${raceIdx})">
+    html += `<tr class="clickable" onclick="openConsistencyDetail('${escXAttr(r.rowId)}',${raceIdx})">
       <td style="max-width:280px;white-space:normal;">${escapeXml(r.p.text)}</td>
       <td class="small-muted">${escXHtml(r.p.category)}</td>
       <td>${escXHtml(r.model)}</td><td class="small-muted">${r.date}</td>
@@ -2766,31 +2697,44 @@ function renderConsistencyFlagged(){
     ? `<button class="btn ghost sm" onclick="window.__consFlagShowAll=!window.__consFlagShowAll;renderConsistencyFlagged();">${showAll?'Show top 30 only':'Show all '+rows.length+' prompt runs'}</button><span class="small-muted"> &nbsp;${rows.length} scored prompt runs for ${escXHtml(ent.name)}.</span>`
     : `<span class="small-muted">${rows.length} scored prompt runs for ${escXHtml(ent.name)}.</span>`;
 }
-function openConsistencyDetail(promptId, model, date, raceIdx){
-  const p = PROMPTS.find(x=>x.id===promptId);
-  const run = getRun(p, model, date);
+async function openConsistencyDetail(rowId, raceIdx){
+  openSidePanel('<div class="small-muted">Loading…</div>');
+  await ensureTextLoadedForRace(raceIdFromRowId(rowId));
+  const run = getRunById(rowId);
   const ent = ourEntity(raceIdx);
-  if(!p || !run){ openSidePanel('<div class="small-muted">No data found for this run.</div>'); return; }
+  if(!run || run.scores.ours.consistency==null){ openSidePanel('<div class="small-muted">No data found for this run.</div>'); return; }
+  const p = PROMPTS.find(x=>x.id===run._row.prompt_id);
+  // Large free-text consistency fields are lazy-loaded (same TEXT store as full_response), not
+  // part of the eagerly-loaded agg row — see export_dashboard_json.py's TEXT_COLS.
+  const textEntry = TEXT[run._row.id] || {};
+  const summary = textEntry.consistency_inconsistency_summary_candidate;
+  const rationale = textEntry.consistency_rationale_candidate;
+  // Every real run sharing this exact (prompt,provider,date) cell is a same-day sample this
+  // response was judged for consistency against — up to ~100 of them (confirmed against
+  // production data). Cap the "showing N of M" list at 3 representative samples, per the design
+  // in DASHBOARD_DATA_SOURCES.md §3.5, rather than dumping the full set.
+  const siblings = p ? getRun(p, run.model, run.date) : [];
+  const others = siblings.filter(s=>s._row.id!==rowId);
+  const shown = others.slice(0,3);
   const html = `
     <div style="margin-bottom:14px;">
       <div class="card-title" style="font-size:16px;margin-bottom:2px;">Consistency score: ${run.scores.ours.consistency}/2</div>
-      <div class="small-muted">${escXHtml(ent.name)} — ${escXHtml(model)} · ${escXHtml(date)}</div>
+      <div class="small-muted">${escXHtml(ent.name)} — ${escXHtml(run.model)} · ${escXHtml(run.date)}${siblings.length>1?` · ${siblings.length} same-day samples`:''}</div>
     </div>
-    <div class="callout" style="margin-bottom:14px;">
-      <div style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Pending: side-by-side same-day samples</div>
-      The real design (see <code>DASHBOARD_DATA_SOURCES.md</code> §3.5) shows up to 3 representative
-      same-day samples side by side, flags "showing 3 of N" when more exist that day, links to the
-      full same-day history, and includes the scoring judge's own written rationale plus a specific
-      summary of what varied between samples. None of that is buildable yet — today's schema (dummy
-      and real alike) stores only one response per prompt+model+date, and the new
-      inconsistency-summary/rationale fields don't exist yet either (both need the production
-      consistency scorer, still blocked on API credentials). What's shown below is the one response
-      that is actually stored for this run.
-    </div>
+    ${summary ? `<div class="callout" style="margin-bottom:14px;">
+      <div style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">What varied between samples</div>
+      ${escapeXml(summary)}
+    </div>` : ''}
+    ${rationale ? `<div class="callout" style="margin-bottom:14px;">
+      <div style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Scoring rationale</div>
+      ${escapeXml(rationale)}
+    </div>` : ''}
     <div class="card-title" style="font-size:12.5px;margin-bottom:6px;">Prompt</div>
-    <div style="font-size:12.5px;margin-bottom:12px;">${escapeXml(p.text)}</div>
-    <div class="card-title" style="font-size:12.5px;margin-bottom:6px;">Stored response sample</div>
-    <div class="run-detail">${escapeXml(run.response)}</div>
+    <div style="font-size:12.5px;margin-bottom:12px;">${p? escapeXml(p.text) : '—'}</div>
+    <div class="card-title" style="font-size:12.5px;margin-bottom:6px;">This response</div>
+    <div class="run-detail" style="margin-bottom:14px;">${escapeXml(run.response)}</div>
+    ${shown.length ? `<div class="card-title" style="font-size:12.5px;margin-bottom:6px;">Showing ${shown.length} of ${others.length} other same-day samples</div>
+      ${shown.map(s=>`<details style="margin-bottom:8px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Sample — consistency ${s.scores.ours.consistency!=null?s.scores.ours.consistency+'/2':'unscored'}</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(s.response)}</div></details>`).join('')}` : ''}
   `;
   openSidePanel(html, {wide:true});
 }
@@ -3077,17 +3021,19 @@ function sortFanout(key){ window.__pfSort.dir = (window.__pfSort.key===key)? -wi
    the same number). Depth/Accuracy/Consistency/Narrative genuinely are scored per response by our
    own pipeline, so those are real averages across however many responses landed that day. ---- */
 function rollupValueForPromptDay(p, models, d){
-  const contributingModels = models.filter(m=>RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d]);
+  const contributingModels = models.filter(m=>(RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d]||[]).length);
   if(!contributingModels.length) return null;
   const visVals=[], favVals=[];
   contributingModels.forEach(m=>{
-    const row = RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d];
+    // prompt_level_* fields are identical across every real run sharing this cell (broadcast at
+    // ingestion), so any one row in the array is representative — no need to average them again.
+    const row = RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d][0];
     const vis = row['prompt_level_visibility_score_candidate'];
     if(vis!=='' && vis!=null) visVals.push(+vis);
     const pos = row['prompt_level_favorability_pct_positive_candidate'], neg = row['prompt_level_favorability_pct_negative_candidate'];
     if(pos!=='' && pos!=null) favVals.push((+pos)-(+neg));
   });
-  const runs = contributingModels.map(m=>getRun(p,m,d)).filter(Boolean);
+  const runs = contributingModels.flatMap(m=>getRun(p,m,d));
   const dimAvg = dim => avg(runs.map(r=>r.scores.ours[dim]));
   const scores = {
     visibility: avg(visVals), favorability: avg(favVals),
@@ -3156,11 +3102,13 @@ function renderFanoutRollup(){
   document.getElementById('pf-table').innerHTML = html;
 }
 function sortFanoutRollup(key){ window.__pfRollupSort.dir = (window.__pfRollupSort.key===key)? -window.__pfRollupSort.dir : -1; window.__pfRollupSort.key=key; renderFanoutRollup(); }
-function openPromptHistory(ri){
+async function openPromptHistory(ri){
+  openSidePanel('<div class="small-muted">Loading…</div>');
   const row = window.__pfRowsCache[ri];
   const p = row.p;
+  await ensureTextLoadedForRaceName(p.race);
   const history = [];
-  MODELS.forEach(m=>{ DATES.forEach(d=>{ const run=getRun(p,m,d); if(run) history.push({m,d,run}); }); });
+  MODELS.forEach(m=>{ DATES.forEach(d=>{ getRun(p,m,d).forEach(run=>history.push({m,d,run})); }); });
   history.sort((a,b)=> b.d.localeCompare(a.d));
   const listHtml = history.slice(0,60).map((h,hi)=>`
     <div class="hist-item" onclick='showRunDetail(${ri}, ${hi})'>
@@ -3264,17 +3212,17 @@ function phCollectStats(prompts, models, rangeDates){
     models.forEach(m=>{
       if(!byModel[m]) byModel[m]={total:0,refused:0,onTopic:0,veered:0};
       rangeDates.forEach(d=>{
-        const run = getHealthRun(p,m,d);
-        if(!run) return;
-        total++; byCat[cCat].total++; byPrompt[p.id].total++; byModel[m].total++;
-        if(!byDate[d]) byDate[d]={total:0,refused:0,veered:0,scored:0};
-        byDate[d].total++;
-        if(run.refused){ refused++; byCat[cCat].refused++; byPrompt[p.id].refused++; byDate[d].refused++; byModel[m].refused++; }
-        else{
-          byDate[d].scored++;
-          if(run.alignment==='on_topic'){ onTopic++; byCat[cCat].onTopic++; byModel[m].onTopic++; }
-          else { veered++; byCat[cCat].veered++; byPrompt[p.id].veered++; byDate[d].veered++; byModel[m].veered++; }
-        }
+        getHealthRun(p,m,d).forEach(run=>{
+          total++; byCat[cCat].total++; byPrompt[p.id].total++; byModel[m].total++;
+          if(!byDate[d]) byDate[d]={total:0,refused:0,veered:0,scored:0};
+          byDate[d].total++;
+          if(run.refused){ refused++; byCat[cCat].refused++; byPrompt[p.id].refused++; byDate[d].refused++; byModel[m].refused++; }
+          else{
+            byDate[d].scored++;
+            if(run.alignment==='on_topic'){ onTopic++; byCat[cCat].onTopic++; byModel[m].onTopic++; }
+            else { veered++; byCat[cCat].veered++; byPrompt[p.id].veered++; byDate[d].veered++; byModel[m].veered++; }
+          }
+        });
       });
     });
   });
@@ -3408,18 +3356,19 @@ function renderPhFlagged(){
   if(flagged.length>30) html += `<div style="margin-top:10px;"><button class="btn ghost sm" onclick="window.__showAllState=window.__showAllState||{};window.__showAllState['ph-table']=!window.__showAllState['ph-table'];renderPhFlagged();">${showAll?'Show top 30 only':'Show all '+flagged.length+' prompts'}</button><span class="small-muted"> &nbsp;${flagged.length} prompts match.</span></div>`;
   document.getElementById('ph-table').innerHTML = html;
 }
-function openPromptHealthDetail(promptId){
+async function openPromptHealthDetail(promptId){
   const p = PROMPTS.find(x=>x.id===promptId);
   if(!p){ openSidePanel('<div class="small-muted">Prompt not found.</div>'); return; }
+  openSidePanel('<div class="small-muted">Loading…</div>');
+  await ensureTextLoadedForRaceName(p.race);
   const f = phSectionFilters('ph-flag');
   const [i0,i1] = dateRangeIdx('ph-flag');
   const rangeDates = DATES.slice(i0,i1+1);
   const runs = [];
   f.models.forEach(m=>{ rangeDates.forEach(d=>{
-    const run = getHealthRun(p,m,d);
-    if(!run) return;
-    const fullRun = getRun(p,m,d); // for the actual response text
-    runs.push({m, d, run, response: fullRun?fullRun.response:''});
+    getHealthRun(p,m,d).forEach(run=>{
+      runs.push({m, d, run, response: run.response});
+    });
   }); });
   runs.sort((a,b)=> b.d.localeCompare(a.d));
   const byModel = {};
@@ -3492,7 +3441,7 @@ function buildCitationsPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">Citation mix</div>
-      <div class="card-caption">Every citation across responses in view, by category.</div>
+      <div class="card-caption">Every citation across responses in view, by category. "Unresolved (Google wrapper)" is typically the largest slice — Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data.</div>
       <div id="cb-stackbar"></div>
     </div>
     <div class="card section-gap">
@@ -3513,7 +3462,10 @@ function cbFilteredEvents(){
   // dates), which don't overlap with prompt_results' dates (CampSight's) at all; indexing into
   // DATES would silently match zero citations. Compare date strings directly instead.
   const startVal = document.getElementById('cb-start').value, endVal = document.getElementById('cb-end').value;
-  const srcTypesOn = {sources_cited: document.getElementById('cb-src-cited').checked, sources_search: document.getElementById('cb-src-search').checked, sources_more: document.getElementById('cb-src-more').checked};
+  // sources_references is a tiny (~18-row) real vendor source_type not covered by any checkbox --
+  // fold it under "Related/more sources" rather than silently dropping it from every view.
+  const moreChecked = document.getElementById('cb-src-more').checked;
+  const srcTypesOn = {sources_cited: document.getElementById('cb-src-cited').checked, sources_search: document.getElementById('cb-src-search').checked, sources_more: moreChecked, sources_references: moreChecked};
   return CITATION_EVENTS.filter(e=>{
     if(office!=='all' && e.office!==office) return false;
     if(state!=='all' && e.state!==state) return false;
@@ -3637,7 +3589,9 @@ async function initDashboard(){
   safe('consistency', ()=>buildDimensionPage('consistency'));
   safe('narrative', ()=>buildDimensionPage('narrative'));
   safe('prompthealth', buildPromptHealthPage);
-  safe('citations', buildCitationsPage);
+  // Citation Breakout is NOT built eagerly here -- its data (citations.json) is deferred, see
+  // ensureCitationsLoaded() -- built lazily on first nav click instead (below, section 4).
+  document.getElementById('page-citations').innerHTML = '<div class="page-head"><div><div class="page-title">Citation Breakout</div></div></div><div class="small-muted" style="padding:40px;text-align:center;">Loading citation data…</div>';
   enhanceSelects();
   collapseAllFilterbars();
   if(loadingEl) loadingEl.remove();

@@ -1556,18 +1556,26 @@ function computeRaceRows(dimKey, filters){
   if(filters.office && filters.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===filters.office);
   if(filters.level && filters.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===filters.level);
   if(filters.race && filters.race!=='all') idxs = idxs.filter(i=>i===parseInt(filters.race,10));
-  // "All races" tables show only the most recent day we have data for, not an all-history average
-  // — averaging over the whole history muddled the numbers with stale data (2026-08-28 feedback).
-  // A race with no run on that exact latest day correctly shows "—" rather than falling back to an
-  // older day, so this stays an honest "most recent data" snapshot, not a padded one.
+  // "All races" tables default to the most recent day only, not an all-history average (2026-08-28
+  // feedback: averaging over the whole history muddled the numbers with stale data) -- widening the
+  // table's own Range filter averages over more days instead (2026-09-06 addition), same convention
+  // the comparison/trend bars already use. A race with no run in scope correctly shows "—" rather
+  // than silently falling back to a wider window.
   const dayIdx = DATES.length-1;
+  const i0 = filters.i0!=null ? filters.i0 : dayIdx, i1 = filters.i1!=null ? filters.i1 : dayIdx;
   return idxs.map(i=>{
     const ours = ourEntity(i), opp = oppEntity(i);
     let ourVal, oppVal;
-    // Favorability (% positive, 0-100) needs no special-casing anymore -- same convention as
-    // every other dimension (higher is better, plain 0-100 range).
     if(dimKey==='composite'){ ourVal = compositeAtDay(ours, dayIdx); oppVal = opp? compositeAtDay(opp, dayIdx): null; }
-    else { ourVal = METRICS[ours.id].history[dimKey][dayIdx]; oppVal = opp? METRICS[opp.id].history[dimKey][dayIdx] : null; }
+    else {
+      // Same underlying computation as the comparison/trend charts (entityBucketTotals), with this
+      // table's own independent Range/Prompt-type filters -- guarantees tie-out by construction
+      // instead of three separately-written implementations staying in sync by coincidence.
+      // Defaults (blind='all', i0=i1=latest day) reproduce the exact prior single-day snapshot.
+      const blindVal = filters.blind || 'all';
+      ourVal = bestShare(dimKey, entityBucketTotals(ours, dimKey, null, [i0,i1], blindVal));
+      oppVal = opp ? bestShare(dimKey, entityBucketTotals(opp, dimKey, null, [i0,i1], blindVal)) : null;
+    }
     const gap = (oppVal!==null && ourVal!==null) ? oppVal-ourVal : null;
     return {raceIdx:i, ours, opp, ourVal, oppVal, gap};
   });
@@ -1685,8 +1693,8 @@ function buildOverviewPage(){
       <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
       ${chartFilterBarHtml('ov-cmp', {})}
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-        <div class="fitem"><label>Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
-        <div class="fitem"><label>Location</label><select id="ov-cmp-location"><option value="all">All</option></select></div>
+        <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+        <div class="fitem"><label title="The specific city, county, or congressional district a race is in -- narrower than State, and options here narrow further based on the State/Race level picked above.">Location</label><select id="ov-cmp-location"><option value="all">All</option></select></div>
       </div>
       <div class="kpis" id="ov-kpis"></div>
       <div id="ov-chart"></div>
@@ -1699,7 +1707,7 @@ function buildOverviewPage(){
         <div class="fitem"><label>Candidate</label><select id="ov-tbl-cand"><option value="all">All</option></select></div>
         <div class="fitem"><label>State</label><select id="ov-tbl-state">${selectOptions(ALL_STATES,'All')}</select></div>
         <div class="fitem"><label>Office</label><select id="ov-tbl-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
-        <div class="fitem"><label>Race level</label><select id="ov-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+        <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="ov-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
       </div>
       <div class="scroll-table" id="ov-table"></div>
       <div class="section-gap" id="ov-table-more"></div>
@@ -1888,6 +1896,7 @@ function chartFilterBarHtml(prefix, opts){
     <div class="fitem"><label>Candidate type</label><select id="${prefix}-ctype">${selectOptions(ALL_CANDIDATE_TYPES,'All')}</select></div>
     <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
     <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
+    ${opts.level ? `<div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="${prefix}-level">${selectOptions(ALL_LEVELS,'All')}</select></div>` : ''}
     ${opts.blind ? `<div class="fitem"><label>Prompt type</label><select id="${prefix}-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
     ${opts.dateRange ? `<div class="fitem"><label>Range start</label><input type="date" id="${prefix}-start"></div><div class="fitem"><label>Range end</label><input type="date" id="${prefix}-end"></div>` : ''}
   </div>`;
@@ -1927,7 +1936,9 @@ function wireCandidateSelect(prefix, onChange){
 }
 function wireChartFilterBar(prefix, opts, onChange){
   opts = opts||{};
-  ['party','ctype','state','race','office'].forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  const fields = ['party','ctype','state','race','office'];
+  if(opts.level) fields.push('level');
+  fields.forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
   if(opts.blind) document.getElementById(prefix+'-blind').addEventListener('change', onChange);
   if(opts.dateRange){
     document.getElementById(prefix+'-start').value = DATES[0];
@@ -1947,7 +1958,7 @@ function buildDimensionPage(key){
       <div class="card">
         <div class="card-title">${DIM_LABELS[key]} — comparison</div>
         <div class="card-caption">${key==='consistency' ? 'Share of same-day-stability outcomes by AI provider — a model\'s own answer stability, not a candidate comparison. Population still respects race/state/office filters.' : IS_BUCKET3[key] ? 'Share of scored responses by outcome. Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race or candidate is selected.' : 'Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.'}</div>
-        ${chartFilterBarHtml(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true})}
+        ${chartFilterBarHtml(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true, level:true})}
         ${IS_BUCKET3[key] ? `<div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="fitem"><label>Prompt category</label><select id="${key}-cmp-cat">${selectOptions(ALL_CATEGORIES,'All categories')}</select></div>
           <div class="fitem" id="${key}-cmp-topic-wrap" style="display:none;"><label>Issue</label><select id="${key}-cmp-topic"><option value="all">All issues</option></select></div>
@@ -1955,7 +1966,7 @@ function buildDimensionPage(key){
         <div id="${key}-cmp"></div>
       </div>
       <div class="card"><div class="card-title">${DIM_LABELS[key]} over time</div><div class="card-caption">${key==='consistency' ? 'Daily % fully consistent, one line per AI provider.' : IS_BUCKET3[key] ? `Daily share of ${[...bucket3Order(key)].reverse().map(b=>bucket3Label(key,b).toLowerCase()).join(' vs. ')} responses for whichever group is selected below.` : 'Daily data; range fields below control the window shown.'}</div>
-        ${chartFilterBarHtml(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true})}
+        ${chartFilterBarHtml(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true, level:true})}
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
@@ -1964,24 +1975,35 @@ function buildDimensionPage(key){
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
       <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
-      <div class="card-caption">Shows only the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}), not an all-history average. Sorted by biggest gap first. Click a race to see every prompt run for it, sorted lowest to highest.</div>
+      <div class="card-caption">Defaults to the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}); use Range to average over more. Sorted by biggest gap first. Click a race to see every prompt run for it, sorted lowest to highest.</div>
       <div class="filterbar" style="margin-bottom:10px;">
         <div class="fitem"><label>Race</label><select id="${key}-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
         <div class="fitem"><label>Candidate</label><select id="${key}-tbl-cand"><option value="all">All</option></select></div>
         <div class="fitem"><label>State</label><select id="${key}-tbl-state">${selectOptions(ALL_STATES,'All')}</select></div>
         <div class="fitem"><label>Office</label><select id="${key}-tbl-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
-        <div class="fitem"><label>Race level</label><select id="${key}-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+        <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="${key}-tbl-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+        ${IS_BUCKET3[key] ? `<div class="fitem"><label>Prompt type</label><select id="${key}-tbl-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
+        <div class="fitem"><label>Range start</label><input type="date" id="${key}-tbl-start"></div>
+        <div class="fitem"><label>Range end</label><input type="date" id="${key}-tbl-end"></div>
       </div>
       <div class="scroll-table" id="${key}-table"></div>
       <div class="section-gap" id="${key}-table-more"></div>
     </div>` : ''}`;
-  wireChartFilterBar(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true}, ()=>renderDimensionPage(key));
-  wireChartFilterBar(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true}, ()=>renderDimensionPage(key));
+  wireChartFilterBar(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true, level:true}, ()=>renderDimensionPage(key));
+  wireChartFilterBar(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true, level:true}, ()=>renderDimensionPage(key));
   if(key!=='consistency'){
     document.getElementById(`${key}-tbl-race`).dataset.xselDone='1'; buildXSel(document.getElementById(`${key}-tbl-race`));
     wireCandidateSelect(key+'-tbl', ()=>renderDimTable(key));
     document.getElementById(`${key}-tbl-race`).addEventListener('change', ()=>renderDimTable(key));
-    ['tbl-state','tbl-office','tbl-level'].forEach(f=>document.getElementById(`${key}-${f}`).addEventListener('change', ()=>renderDimTable(key)));
+    const tblFields = ['tbl-state','tbl-office','tbl-level'];
+    if(IS_BUCKET3[key]) tblFields.push('tbl-blind');
+    tblFields.forEach(f=>document.getElementById(`${key}-${f}`).addEventListener('change', ()=>renderDimTable(key)));
+    // Defaults to the most recent day only (matching the table's prior fixed behavior exactly) --
+    // widening Range averages over more days instead, same convention as the comparison/trend bars.
+    document.getElementById(`${key}-tbl-start`).value = DATES[DATES.length-1];
+    document.getElementById(`${key}-tbl-end`).value = DATES[DATES.length-1];
+    document.getElementById(`${key}-tbl-start`).addEventListener('change', ()=>renderDimTable(key));
+    document.getElementById(`${key}-tbl-end`).addEventListener('change', ()=>renderDimTable(key));
   }
   if(IS_BUCKET3[key]){
     const catSel=document.getElementById(key+'-cmp-cat'); catSel.dataset.xselDone='1'; buildXSel(catSel);
@@ -2016,7 +2038,7 @@ function topicComparisonHtml(){
     <div class="card-caption">Pick a topic to see the real Narrative Alignment score breakdown for Democrats vs. Republicans (or one candidate vs. their opponent, if a race is selected). Covers policy topics, Fair Rebuttal, Critique-Association, and narrative-framing topics like Moderatism or Who Is Better.</div>
     ${chartFilterBarHtml('tc', {})}
     <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-      <div class="fitem"><label>Race level</label><select id="tc-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
+      <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="tc-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
       <div class="fitem"><label>Topic</label><select id="tc-topic"><option value="">Select a topic…</option>${narrativeTestedTopics().map(t=>opt(t,t)).join('')}</select></div>
       <div class="fitem" id="tc-subtopic-wrap" style="display:none;"><label>Sub-topic</label><select id="tc-subtopic"><option value="all">All</option></select></div>
     </div>
@@ -2098,11 +2120,15 @@ function sampleDateRange(i0, i1, maxSamples){
   const out = []; for(let k=0;k<maxSamples;k++) out.push(i0+Math.round(k*stride));
   return [...new Set(out)];
 }
-function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter){
+function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOverride, blindOverride){
   // Uses the comparison chart's own filter bar (date range + prompt type) as the ambient context
-  // for category/root-cause breakdowns — consistent with the comparison chart already sourcing
-  // its category/issue selectors from the same `${key}-cmp-*` bar.
-  const [i0,i1] = dateRangeIdx(key+'-cmp');
+  // for category/root-cause breakdowns by default — consistent with the comparison chart already
+  // sourcing its category/issue selectors from the same `${key}-cmp-*` bar. A caller with its own
+  // independent date-range/blind controls (the "All races" table's own Range/Prompt type filters)
+  // can override both explicitly instead -- same underlying computation either way, which is what
+  // guarantees tie-out between the comparison chart, trend chart, and table by construction rather
+  // than by three separately-written implementations staying in sync by coincidence.
+  const [i0,i1] = rangeOverride || dateRangeIdx(key+'-cmp');
   const dateIdxs = sampleDateRange(i0,i1,9);
   // NOT filtered by p.dims.includes(key) -- confirmed directly against the real data that
   // dimensions_assessed's per-dimension tags don't reliably predict whether a row actually has a
@@ -2116,8 +2142,8 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter){
   // score, which is the only filtering that's actually meaningful here.
   let prompts = PROMPTS_BY_RACE[ent.raceIdx]||[];
   if(topicFilter) prompts = prompts.filter(p=>p.topic===topicFilter);
-  const blindEl = document.getElementById(key+'-cmp-blind');
-  if(blindEl && blindEl.value!=='all') prompts = prompts.filter(p=>p.is_blind===blindEl.value);
+  const blindVal = blindOverride!==undefined ? blindOverride : (document.getElementById(key+'-cmp-blind')||{}).value;
+  if(blindVal && blindVal!=='all') prompts = prompts.filter(p=>p.is_blind===blindVal);
   const side = ent.role==='ours' ? 'ours' : 'opp';
   const rowSide = ent.role==='ours' ? 'candidate' : 'opponent';
   const byCategory = {};
@@ -2197,8 +2223,8 @@ function mergeBucketTotals(list){
   list.forEach(d=>{ if(!d) return; out.total += d.total; Object.entries(d.buckets||{}).forEach(([b,n])=>{ out.buckets[b]=(out.buckets[b]||0)+n; }); });
   return out;
 }
-function entityBucketTotals(ent, key, modelFilter){
-  const data = scoresByCategoryForEntity(ent, key, null, modelFilter);
+function entityBucketTotals(ent, key, modelFilter, rangeOverride, blindOverride){
+  const data = scoresByCategoryForEntity(ent, key, null, modelFilter, rangeOverride, blindOverride);
   return mergeBucketTotals(Object.values(data.byCategory));
 }
 function bucketScoresAcrossEntities(entities, key){
@@ -2221,6 +2247,14 @@ function worstShare(key, t){
   if(!t || !t.total) return null;
   const worstBucket = key==='favorability' ? 'neg' : '0';
   return 100*(t.buckets[worstBucket]||0)/t.total;
+}
+// Same idea as worstShare but the higher-is-better share -- matches base[]/history[]'s own
+// convention exactly (% positive / % mentioned / % scoring 2), used by the "All races" table so it
+// ties out with the comparison/trend charts by construction (same entityBucketTotals() call).
+function bestShare(key, t){
+  if(!t || !t.total) return null;
+  const bestBucket = key==='favorability' ? 'pos' : key==='visibility' ? '1' : '2';
+  return 100*(t.buckets[bestBucket]||0)/t.total;
 }
 function dimSourceHtml(key){
   const noun = {favorability:'sentiment', depth:'depth', accuracy:'accuracy', visibility:'visibility', consistency:'consistency', narrative:'narrative alignment'}[key] || key;
@@ -2408,6 +2442,7 @@ function computeAccuracyIssueRows(){
   let idxs = ROSTER.map((r,i)=>i);
   if(f.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===f.state);
   if(f.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===f.office);
+  if(f.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===f.level);
   if(f.race!=='all') idxs = idxs.filter(i=>i===parseInt(f.race,10));
   const [i0,i1] = dateRangeIdx('accuracy-trend');
   let rows=[];
@@ -2485,7 +2520,7 @@ const INSIGHT_BUILDERS = {
   narrative: buildNarrativeInsights
 };
 
-function dimFilters(key){ return {state:document.getElementById(key+'-state').value, race:document.getElementById(key+'-race').value, office:document.getElementById(key+'-office').value, party:document.getElementById(key+'-party').value, candidateType:document.getElementById(key+'-ctype').value}; }
+function dimFilters(key){ return {state:document.getElementById(key+'-state').value, race:document.getElementById(key+'-race').value, office:document.getElementById(key+'-office').value, level:document.getElementById(key+'-level').value, party:document.getElementById(key+'-party').value, candidateType:document.getElementById(key+'-ctype').value}; }
 function nearestDateIdx(dateStr, roundUp){
   // DATES is sparse (real report dates only) — a date picker lets the user choose any
   // calendar date, so an exact-match lookup would silently snap back to the full range
@@ -2523,6 +2558,7 @@ function renderDimensionPage(key){
       // partySplitGroups helper used by the bucket3 dimensions.
       let idxs = ROSTER.map((r,i)=>i);
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
+      if(fCmp.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fCmp.level);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
       const groups = partySplitGroups(idxs, fCmp);
       barChart(key+'-cmp', [DIM_LABELS[key]], groups.map(g=>({name:g.label,color:partyColor(g.key),values:[avg(g.entities.map(e=>cmpVal(e.id)))]})), {min:range[0],max:range[1],height:220});
@@ -2536,6 +2572,7 @@ function renderDimensionPage(key){
     } else {
       let idxs = ROSTER.map((r,i)=>i);
       if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
+      if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
       if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
       const groups = partySplitGroups(idxs, fTrend);
       lineChart(key+'-trend', labels, groups.map(g=>({name:g.label,color:partyColor(g.key),values:labels.map((d,ix)=>avg(g.entities.map(e=>METRICS[e.id].history[key][i0+ix])))})), {min:range[0],max:range[1],height:220});
@@ -2618,6 +2655,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
     } else {
       let idxs = ROSTER.map((r,i)=>i);
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
+      if(fCmp.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fCmp.level);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
       if(fCmp.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===fCmp.party || (oppEntity(i)&&oppEntity(i).party===fCmp.party));
       if(fCmp.candidateType!=='all') idxs = idxs.filter(i=>ROSTER[i].candidateType===fCmp.candidateType || (oppEntity(i)&&oppEntity(i).candidateType===fCmp.candidateType));
@@ -2636,6 +2674,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
   } else {
     let idxs = ROSTER.map((r,i)=>i);
     if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
+      if(fCmp.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fCmp.level);
     if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
     // Party/Candidate Type now actually apply here (2026-08-31 fix) via the shared partySplitGroups
     // helper — previously both selects rendered and re-triggered this render, but were never read.
@@ -2653,6 +2692,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
     } else {
       let idxs = ROSTER.map((r,i)=>i);
       if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
+      if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
       if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
       entities = idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
     }
@@ -2674,6 +2714,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
     // there's only one segment to plot, so nothing is lost by always showing every surviving group.
     let idxs = ROSTER.map((r,i)=>i);
     if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
+      if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
     if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
     const groups = partySplitGroups(idxs, fTrend);
     const lseries = groups.map(g=>({name:g.label, color:partyColor(g.key), values:labels.map((d,ix)=>groupDailyShare(g.entities,i0+ix,'1'))}));
@@ -2688,6 +2729,7 @@ function renderBucket3Charts(key, fCmp, fTrend){
   } else {
     let idxs = ROSTER.map((r,i)=>i);
     if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
+      if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
     if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
     // Party/Candidate Type now apply here (2026-08-31 fix). Party picks which group is the primary
     // (solid) line — previously always Democrats regardless of the filter; "Compare" still adds the
@@ -2702,7 +2744,9 @@ function renderBucket3Charts(key, fCmp, fTrend){
   }
 }
 function renderDimTable(key){
-  const filters = {state:document.getElementById(key+'-tbl-state').value, office:document.getElementById(key+'-tbl-office').value, level:document.getElementById(key+'-tbl-level').value, race:document.getElementById(key+'-tbl-race').value};
+  const blindEl = document.getElementById(key+'-tbl-blind');
+  const [i0,i1] = dateRangeIdx(key+'-tbl');
+  const filters = {state:document.getElementById(key+'-tbl-state').value, office:document.getElementById(key+'-tbl-office').value, level:document.getElementById(key+'-tbl-level').value, race:document.getElementById(key+'-tbl-race').value, blind: blindEl?blindEl.value:'all', i0, i1};
   renderRaceTable(key+'-table', key, filters);
 }
 
@@ -2999,8 +3043,9 @@ function buildFanoutPage(){
       <div class="fitem"><label>Model</label><select id="pf-model" multiple>${MODELS.map(m=>`<option>${m}</option>`).join('')}</select></div>
       <div class="fitem"><label>Range start</label><input type="date" id="pf-start"></div>
       <div class="fitem"><label>Range end</label><input type="date" id="pf-end"></div>
+      <div class="fitem" style="align-self:flex-end;"><button type="button" class="btn ghost sm" onclick="resetFanoutFilters()">Reset filters</button></div>
     </div>
-    <div class="small-muted section-gap">Tip: ctrl/cmd-click (or shift-click) to select multiple values in any filter above. Leave a filter empty to include everything. Picking one or more races narrows the Candidate list to just those races' candidates and opponents.</div>
+    <div class="small-muted section-gap">Tip: ctrl/cmd-click (or shift-click) to select multiple values in any filter above; a plain click replaces the selection rather than adding to it. Leave a filter empty to include everything. Picking one or more races narrows the Candidate list to just those races' candidates and opponents. Use "Reset filters" to clear everything at once.</div>
     <div class="card section-gap">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
         <div class="card-title" style="margin-bottom:0;">Prompt runs</div>
@@ -3050,6 +3095,21 @@ function pfRepopulateCand(){
   refreshXSel(candSel);
 }
 function multiVals(id){ return Array.from(document.getElementById(id).selectedOptions).map(o=>o.value); }
+// Native <select multiple> has no built-in "click empty space to clear" gesture -- a plain click
+// on an option REPLACES the whole selection with just that one, and deselecting everything
+// requires ctrl/cmd-clicking each already-selected option individually. Confirmed real user
+// friction (2026-09-06 feedback: "once I've selected a filter, it's hard to unselect or reset").
+// One button clears every filter at once instead.
+function resetFanoutFilters(){
+  ['pf-party','pf-ctype','pf-race','pf-cand','pf-office','pf-state','pf-cat','pf-type','pf-model'].forEach(id=>{
+    Array.from(document.getElementById(id).options).forEach(o=>o.selected=false);
+  });
+  document.getElementById('pf-search').value = '';
+  document.getElementById('pf-start').value = DATES[0];
+  document.getElementById('pf-end').value = DATES[DATES.length-1];
+  pfRepopulateCand();
+  renderFanoutTable();
+}
 /* Shared filter read + prompt scoping for both Prompt Fanout views (individual runs and rollup). */
 function pfScoped(){
   const parties = multiVals('pf-party'), ctypes = multiVals('pf-ctype'), cands = multiVals('pf-cand'), races = multiVals('pf-race').map(Number),

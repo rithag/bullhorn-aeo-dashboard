@@ -3266,6 +3266,7 @@ function buildFanoutPage(){
   document.getElementById('pf-end').value = DATES[DATES.length-1];
   document.getElementById('page-fanout').querySelectorAll('select,input').forEach(elm=>elm.addEventListener('change', renderFanoutTable));
   document.getElementById('pf-race').addEventListener('change', pfRepopulateCand);
+  document.getElementById('pf-cand').addEventListener('change', pfAutoSyncSide);
   document.getElementById('pf-search').addEventListener('input', renderFanoutTable);
   window.__pfSort = {key:'composite', dir:1};
   window.__pfRollupSort = {key:'composite', dir:1};
@@ -3297,6 +3298,24 @@ function setFanoutSide(side){
   document.getElementById('pf-side-ours').className = 'btn sm' + (side==='ours'?'':' ghost');
   document.getElementById('pf-side-opp').className = 'btn sm' + (side==='opp'?'':' ghost');
   renderFanoutTable();
+}
+/* Auto-syncs the Viewing toggle to the Candidate filter (2026-09-08 feedback): picking a specific
+   person by name should show THEIR scores, not silently whatever "Viewing" happened to be set to —
+   confirmed real confusion (selecting an opponent by name still showed our candidate's scores,
+   since the filter matches either side but the toggle didn't know that). Only switches when every
+   selected name is unambiguously on one side; leaves the current toggle alone if the Candidate
+   filter is empty or spans both sides (nothing single-sided to sync to). The generic per-filter
+   listener already re-renders on this same change event -- only call setFanoutSide (which
+   re-renders again) when a switch is actually needed, not on every keystroke-equivalent change.
+   */
+function pfAutoSyncSide(){
+  const cands = multiVals('pf-cand');
+  if(!cands.length) return;
+  const roles = new Set();
+  cands.forEach(name=>{ ENTITIES.filter(e=>e.name===name).forEach(e=>roles.add(e.role)); });
+  if(roles.size!==1) return;
+  const side = [...roles][0]==='ours' ? 'ours' : 'opp';
+  if(window.__pfSide !== side) setFanoutSide(side);
 }
 /* Candidate options for Prompt Fanout's multi-select, narrowed to the given race indices (empty
    = every race) — includes opponents, which the old ROSTER-only option list left out entirely

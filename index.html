@@ -837,6 +837,29 @@ function bucket3Legend(key){
   const order = key==='visibility' ? ['1'] : bucket3Order(key);
   return `<div class="legend-row">${order.map(b=>`<span><span class="legend-dot" style="background:${bucket3Color(key,b)}"></span>${bucket3Label(key,b)}</span>`).join('')}</div>`;
 }
+/* Corrected Visibility methodology (2026-09-08 feedback): PROJECT_SPEC.md 6.7 deliberately scores
+   the raw visibility_score_candidate/opponent columns unconditionally (no target gating at all,
+   unlike Depth/Accuracy/Narrative, which already null when a role isn't a named prompt's target) --
+   correct as pipeline OUTPUT (a zero-cost presence check should stay simple), but reporting it
+   unconditionally everywhere on the DASHBOARD conflates two very different situations: a single-
+   target named prompt structurally about the OTHER side only (where near-zero visibility for this
+   role is expected and meaningless to report) and a genuine dual-target/comparison prompt (where
+   both sides are legitimately being asked about, and the raw score is exactly what should be
+   reported). This computes, per response row and role, whether that row should count toward this
+   role's visibility at all -- every other aggregation point below calls this before counting a
+   value, so "Visibility" means the same corrected thing everywhere on the dashboard (Aggregate
+   KPIs, comparison/trend charts, "All races" tables, Prompt Fanout) without touching the underlying
+   CSV/pipeline, which stays unconditional as documented. Blind prompts and dual/open-target named
+   prompts (target_candidate blank, or naming someone other than either tracked side) always count
+   for both roles; a named prompt whose target_candidate names ONLY the other side is excluded for
+   this role. Kept in exact lockstep with tie_out_audit.py's Python replica of the same rule. */
+function visibilityEligible(row, side){
+  if(row.is_blind==='Y') return true;
+  const tc = row.target_candidate;
+  if(!tc) return true;
+  const otherName = side==='candidate' ? row.opponent_name : row.candidate_name;
+  return !(otherName && tc===otherName);
+}
 /* Real per-day bucket share for one entity/dimension — replaces the mockup's synthetic
    smooth-curve-based version. Visibility/Favorability are prompt-level percentages (averaged
    across that day's prompts); Depth/Accuracy/Narrative/Consistency are literal per-response 0/1/2
@@ -863,7 +886,7 @@ function dailyBucketShare(entityId, dim, dayIdx, modelFilter){
     return {pos:avg(pos), neu:avg(neu), neg:avg(neg)};
   }
   if(dim==='visibility'){
-    const vals = dayRows.map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
+    const vals = dayRows.filter(r=>visibilityEligible(r,side)).map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
     if(!vals.length) return zero;
     const one = avg(vals);
     return {'1':one, '0':100-one};
@@ -930,8 +953,12 @@ function citationCatLabel(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); re
    own — it only aggregates at the category level, so one domain's citations are invisible inside
    whatever category it lands in. Add a domain here the moment it goes live; aeo-sites/content/
    sites.yaml's real domains are still 'TBD-*.example' placeholders as of 2026-08-31, so this list
-   starts with just the one already-real domain from that conversation. */
-const OWNED_DOMAINS = ['heartlandsignal.com'];
+   starts with just the one already-real domain from that conversation. Courier network domains
+   (vadogwood.com, iowastartingline.com, keystonenewsroom.com, coppercourier.com, upnorthnewswi.com,
+   gandernewsroom.com) added 2026-09-08 per feedback -- these are Courier's own state/local outlets,
+   not the aeo-sites/ network, but the same "owned/friendly content, track it separately from the
+   9-category breakdown" logic applies. */
+const OWNED_DOMAINS = ['heartlandsignal.com', 'vadogwood.com', 'iowastartingline.com', 'keystonenewsroom.com', 'coppercourier.com', 'upnorthnewswi.com', 'gandernewsroom.com'];
 function normalizeDomain(d){ return (d||'').toLowerCase().replace(/^www\./,''); }
 
 function entityById(id){ return ENTITIES.find(e=>e.id===id); }
@@ -1058,7 +1085,16 @@ function topicsForCategory(cat, opts){
 // Task 2's narrative_tested field — the vocabulary for the Topic Comparison chart. Distinct from
 // issue_tag (topicsForCategory above): narrative_tested spans directional/comparative prompts AND
 // Fair Rebuttal/Critique-Association, across every prompt_category, not just Issue & Policy Positions.
-function narrativeTestedTopics(){ return [...new Set(PROMPTS.flatMap(p=>p.narrativeTested))].sort(); }
+// `level` (optional) scopes to only topics with at least one real tested prompt at that race
+// level (2026-09-08 feedback) -- without this, picking e.g. "Public Transit" under Race Level:
+// District looked like a bug (0 responses for both parties) when it's really that the topic was
+// never tested in any District-level race's prompt catalog at all (only County Commission/Local
+// races test it). Scoping the dropdown itself prevents selecting a combination that can only ever
+// read empty, rather than letting the user find out after the fact.
+function narrativeTestedTopics(level){
+  const prompts = level && level!=='all' ? PROMPTS.filter(p=>p.race_level===level) : PROMPTS;
+  return [...new Set(prompts.flatMap(p=>p.narrativeTested))].sort();
+}
 
 function avg(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
 function stddev(arr){ const v=arr.filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x)); if(v.length<2) return 0; const m=avg(v); return Math.sqrt(avg(v.map(x=>(x-m)*(x-m)))); }
@@ -1078,7 +1114,7 @@ function buildMetrics(){
     const promptLevelVis = {}, promptLevelFav = {};
     rows.forEach(r=>{
       const vis = r['prompt_level_visibility_score_'+side];
-      if(vis!=='' && vis!=null) promptLevelVis[r.prompt_id] = +vis;
+      if(vis!=='' && vis!=null && visibilityEligible(r,side)) promptLevelVis[r.prompt_id] = +vis;
       // Favorability = % of responses scored positive, directly -- Evertune's own field is
       // already a 0-100 percentage, so no net-of-negative computation or rescale is needed
       // anywhere this gets used (per explicit request 2026-09-06; previously computed as
@@ -1111,7 +1147,7 @@ function buildMetrics(){
       DATES.forEach(d=>{
         const dayRows = rows.filter(r=>r.report_date===d);
         if(dim==='visibility'){
-          const vals = dayRows.map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
+          const vals = dayRows.filter(r=>visibilityEligible(r,side)).map(r=>r['prompt_level_visibility_score_'+side]).filter(v=>v!==''&&v!=null).map(Number);
           history[dim].push(avg(vals));
           const one = avg(vals);
           history3[dim].push(one==null ? {'0':0,'1':0} : {'1':one, '0':100-one});
@@ -1294,7 +1330,7 @@ function runViewFromRow(row, model, dateStr){
         // visibility_score_* is a real binary 0/1 on-target flag (not a continuous 0-100 metric —
         // no broader real vendor export exists beyond that), so pass it through directly instead
         // of the old dummy-era >=50 threshold, which would have silently zeroed out every real 1.
-        if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null) ? +v : null; return; }
+        if(dim==='visibility'){ const v=row['visibility_score_'+side]; out.visibility = (v!==''&&v!=null&&visibilityEligible(row,side)) ? +v : null; return; }
         // % positive, directly -- Evertune's own field is already a 0-100 percentage (per
         // explicit request 2026-09-06); no net-of-negative computation needed.
         if(dim==='favorability'){ const v=row['favorability_pct_positive_'+side]; out.favorability = (v!==''&&v!=null) ? +v : null; return; }
@@ -1409,7 +1445,13 @@ function stackedBarChart(containerId, rows, opts){
 function verticalStackedBarChart(containerId, rows, opts){
   opts = opts||{};
   const W = measuredChartWidth(containerId, opts.width||520), H = opts.height||260;
-  const padT=10, padB=40, padL=30, padR=10;
+  // Bug fix (2026-09-08): a segment's own inline %-label only renders when it's tall enough to
+  // hold text (h>20px below), so a thin slice (e.g. Favorability's Positive/Negative, usually
+  // single-digit %) never showed a number at all -- only whichever bucket happened to dominate the
+  // bar (Neutral, for Favorability) ever got a visible %. Extra bottom padding here makes room for
+  // a full per-segment breakdown line under every bar, so every bucket's real % is always visible,
+  // not just the biggest one.
+  const padT=10, padB=54, padL=30, padR=10;
   const plotH = H-padT-padB, plotW = W-padL-padR;
   const barW = Math.min(90, plotW/(rows.length*2));
   const gap = (plotW - barW*rows.length)/(rows.length+1);
@@ -1444,6 +1486,12 @@ function verticalStackedBarChart(containerId, rows, opts){
     svg += `</g>`;
     svg += svgEl('rect',{x:x.toFixed(1),y:padT,width:barW.toFixed(1),height:plotH,rx:4,fill:'none',stroke:'#DFE4EA','stroke-width':1});
     svg += `<text x="${(x+barW/2).toFixed(1)}" y="${(padT+plotH+16).toFixed(1)}" font-size="11" text-anchor="middle" fill="var(--ink)" font-weight="600">${escXHtml(row.label)}</text>`;
+    // Full per-segment %% breakdown, every bucket, regardless of how thin its slice is (see the
+    // padB comment above) -- one small line per segment, stacked, colored to match its slice.
+    row.segments.forEach((seg,si)=>{
+      const pct = Math.round(100*seg.value/total);
+      svg += `<text x="${(x+barW/2).toFixed(1)}" y="${(padT+plotH+29+si*11).toFixed(1)}" font-size="9.5" text-anchor="middle" fill="${seg.color}" font-weight="600">${escXHtml(seg.name)} ${pct}%</text>`;
+    });
   });
   svg += '</svg>';
   document.getElementById(containerId).innerHTML = svg;
@@ -1491,6 +1539,7 @@ document.querySelectorAll('.nav-item').forEach(item=>{
           await ensureCitationsLoaded();
           buildCitationsPage();
           PAGE_BUILT.citations = true;
+          enhanceSelects(); collapseAllFilterbars();
         }catch(e){ console.error('Citation data load failed', e); }
       }
       return;
@@ -1498,6 +1547,14 @@ document.querySelectorAll('.nav-item').forEach(item=>{
     if(!PAGE_BUILT[page] && PAGE_BUILD[page]){
       safe(page, PAGE_BUILD[page]);
       PAGE_BUILT[page] = true;
+      // Bug fix (2026-09-08): collapseAllFilterbars() only ran once at initial load, before any
+      // lazily-built page (every page except Overview, see the "58 SECONDS" comment above) had
+      // inserted its own .filterbar elements into the DOM -- so Prompt Fanout and every dimension
+      // page's filters never got the collapsed "Filters" button treatment Overview already has,
+      // and just showed the raw, uncollapsed select row instead. Re-running both (idempotent via
+      // their own dataset guards) right after each page's first build fixes this generically for
+      // every lazy page at once, no per-page special-casing needed.
+      enhanceSelects(); collapseAllFilterbars();
     }
   });
 });
@@ -1686,11 +1743,8 @@ function buildOverviewPage(){
     <div class="card">
       <div class="card-title">Score by dimension</div>
       <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
-      ${chartFilterBarHtml('ov-cmp', {})}
-      <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-        <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="ov-cmp-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
-        <div class="fitem"><label title="The specific city, county, or congressional district a race is in -- narrower than State, and options here narrow further based on the State/Race level picked above.">Location</label><select id="ov-cmp-location"><option value="all">All</option></select></div>
-      </div>
+      ${chartFilterBarHtml('ov-cmp', {level:true, location:true})}
+      <div style="display:flex;gap:10px;margin-bottom:10px;">${groupByToggleHtml('ov-cmp')}</div>
       <div class="kpis" id="ov-kpis"></div>
       <div id="ov-chart"></div>
     </div>
@@ -1707,11 +1761,9 @@ function buildOverviewPage(){
       <div class="scroll-table" id="ov-table"></div>
       <div class="section-gap" id="ov-table-more"></div>
     </div>`;
-  populateLocationSelect('ov-cmp-location','ov-cmp-state','ov-cmp-level');
-  wireChartFilterBar('ov-cmp', {}, renderOverview);
-  document.getElementById('ov-cmp-location').addEventListener('change', renderOverview);
-  document.getElementById('ov-cmp-state').addEventListener('change', ()=>{ populateLocationSelect('ov-cmp-location','ov-cmp-state','ov-cmp-level'); renderOverview(); });
-  document.getElementById('ov-cmp-level').addEventListener('change', ()=>{ populateLocationSelect('ov-cmp-location','ov-cmp-state','ov-cmp-level'); renderOverview(); });
+  wireChartFilterBar('ov-cmp', {level:true, location:true}, renderOverview);
+  window.__groupByRerender = window.__groupByRerender || {};
+  window.__groupByRerender['ov-cmp'] = renderOverview;
   document.getElementById('ov-tbl-race').dataset.xselDone='1'; buildXSel(document.getElementById('ov-tbl-race'));
   wireCandidateSelect('ov-tbl', renderOverviewTable);
   document.getElementById('ov-tbl-race').addEventListener('change', renderOverviewTable);
@@ -1752,6 +1804,52 @@ function partySplitGroups(idxs, filters){
   if(showParty('Republican')) groups.push({key:'Republican', label:'Republicans', entities:repE});
   if(showParty('NP') && npE.length) groups.push({key:'NP', label:'Non-Partisan', entities:npE});
   return groups;
+}
+/* Candidate Type as the PRIMARY grouping axis (2026-09-08 feedback), mirroring partySplitGroups
+   exactly but swapped: Candidate Type picks which bar(s) appear, Party narrows each bar by that
+   entity's own party. Considers both candidate and opponent per race (whichever side is actually
+   that type), not just "ours" -- an Incumbent bar should include incumbents on either side. Only
+   Incumbent/Challenger exist in the real data (no "Open Seat" rows), so a 2-bar split covers it. */
+function candidateTypeSplitGroups(idxs, filters){
+  filters = filters || {};
+  const partyOk = e => !filters.party || filters.party==='all' || e.party===filters.party;
+  const showType = t => !filters.candidateType || filters.candidateType==='all' || filters.candidateType===t;
+  const allEntities = idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
+  const incE = allEntities.filter(e=>e.candidateType==='Incumbent' && partyOk(e));
+  const chaE = allEntities.filter(e=>e.candidateType==='Challenger' && partyOk(e));
+  const groups = [];
+  if(showType('Incumbent')) groups.push({key:'Incumbent', label:'Incumbents', entities:incE});
+  if(showType('Challenger')) groups.push({key:'Challenger', label:'Challengers', entities:chaE});
+  return groups;
+}
+/* Dispatches to whichever axis is currently the primary grouping for a given chart (2026-09-08) --
+   every comparison/trend chart call site uses this instead of calling partySplitGroups directly,
+   so the "Group by: Party / Candidate Type" toggle works everywhere from one switch. `groupBy` is
+   'party' (default) or 'candidateType'. */
+function splitGroupsFor(idxs, filters, groupBy){
+  return groupBy==='candidateType' ? candidateTypeSplitGroups(idxs, filters) : partySplitGroups(idxs, filters);
+}
+function groupColor(groupBy, key){
+  if(groupBy==='candidateType') return key==='Incumbent' ? '#2E5EAA' : '#B23B3B';
+  return partyColor(key);
+}
+/* Small reusable toggle: "Group by: Party / Candidate Type", namespaced per chart prefix so each
+   chart's choice is independent (matching every other per-chart filter state on this dashboard).
+   Renders as two small buttons; wireGroupByToggle() below wires the click handlers. */
+function groupByToggleHtml(prefix){
+  return `<div class="fitem" style="align-self:flex-end;"><label>Group by</label><div style="display:flex;gap:4px;">
+    <button type="button" class="btn sm" id="${prefix}-groupby-party" onclick="setGroupBy('${prefix}','party')">Party</button>
+    <button type="button" class="btn ghost sm" id="${prefix}-groupby-ctype" onclick="setGroupBy('${prefix}','candidateType')">Candidate Type</button>
+  </div></div>`;
+}
+window.__groupBy = {};
+function groupByFor(prefix){ return window.__groupBy[prefix] || 'party'; }
+function setGroupBy(prefix, groupBy){
+  window.__groupBy[prefix] = groupBy;
+  const partyBtn = document.getElementById(`${prefix}-groupby-party`), ctypeBtn = document.getElementById(`${prefix}-groupby-ctype`);
+  if(partyBtn) partyBtn.className = 'btn sm' + (groupBy==='party'?'':' ghost');
+  if(ctypeBtn) ctypeBtn.className = 'btn sm' + (groupBy==='candidateType'?'':' ghost');
+  window.__groupByRerender && window.__groupByRerender[prefix] && window.__groupByRerender[prefix]();
 }
 function resolveEntitiesForFilters(f){
   if(f.race && f.race!=='all') return [parseInt(f.race,10)];
@@ -1795,6 +1893,14 @@ function renderOverview(){
   const ours = idxs.map(i=>ourEntity(i));
   renderOverviewInsight(ours);
   const compAvg = avg(ours.map(composite));
+  // Bug-report fix (2026-09-08): these KPIs average over EVERY tracked candidate (Democrat +
+  // Non-Partisan), but the comparison chart just below splits that same population into separate
+  // Democrats/Republicans/Non-Partisan bars -- so whenever NP candidates are in view, this row's
+  // numbers silently differ from the chart's "Democrats" bar (confirmed: Depth 44.0 here vs 43.0 on
+  // the Democrats bar, exactly explained by 5 NP candidates averaging 57.5 pulling the combined
+  // number up). Both numbers are individually correct for what they measure -- this caption makes
+  // the difference visible instead of leaving it to look like a tie-out bug.
+  const npCount = ours.filter(e=>e.party==='NP').length;
   document.getElementById('ov-kpis').innerHTML = `
     <div class="kpi hi" title="Composite = Visibility × 40% + Favorability × 15% + Depth × 15% + Accuracy × 15% + Narrative Alignment × 15% (Consistency excluded)."><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
     <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.visibility)))}</div></div>
@@ -1802,6 +1908,10 @@ function renderOverview(){
     <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.depth)))}</div></div>
     <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.accuracy)))}</div></div>
     <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(avg(ours.map(e=>METRICS[e.id].base.narrative)))}</div></div>`;
+  document.getElementById('ov-kpis-note') && document.getElementById('ov-kpis-note').remove();
+  if(npCount>0){
+    document.getElementById('ov-kpis').insertAdjacentHTML('afterend', `<div id="ov-kpis-note" class="small-muted" style="margin:-8px 0 12px;">These KPIs average all ${ours.length} tracked candidates in view, including ${npCount} Non-Partisan — the chart below splits the same candidates by party, so its Democrats bar (and Republicans/Non-Partisan bars) won't exactly match this row.</div>`);
+  }
 
   // chart: if exactly one race resolved, show candidate vs opponent; else Dem vs Rep (within filtered set)
   const dims=['visibility','favorability','depth','accuracy','narrative'];
@@ -1815,16 +1925,25 @@ function renderOverview(){
     series=[{name:o.name,color:'#2E5EAA',values:dims.map(d=>norm(METRICS[o.id].base[d],d))}];
     if(p) series.push({name:p.name,color:'#B23B3B',values:dims.map(d=>norm(METRICS[p.id].base[d],d))});
   } else {
-    // Candidate Type narrows each bar by that entity's own type (2026-08-31 fix); Party's own
-    // narrowing already happened upstream in resolveEntitiesForFilters (idxs), which for this KPI
-    // section deliberately keeps its "our side's declared party" meaning — see
-    // aeo_dashboard_party_ctype_filter_gap memory for why that's fine here (not a Dem-vs-Rep bar
-    // picker) but wrong for the comparison charts on the dimension pages.
-    const ctypeOk = e => f.candidateType==='all' || !f.candidateType || e.candidateType===f.candidateType;
-    const demIdx = idxs.map(i=>ourEntity(i)).filter(e=>e.party==='Democrat' && ctypeOk(e));
-    const repEntities = idxs.map(i=>oppEntity(i)).filter(e=>e&&e.party==='Republican' && ctypeOk(e));
-    series=[{name:'Democrats',color:'#2E5EAA',values:dims.map(d=>norm(avg(demIdx.map(e=>METRICS[e.id].base[d])),d))},
-             {name:'Republicans',color:'#B23B3B',values:dims.map(d=>norm(avg(repEntities.map(e=>METRICS[e.id].base[d])),d))}];
+    // Bug fix (2026-09-08): this used to reuse `idxs` (from resolveEntitiesForFilters(f), which
+    // pre-filters the race POOL by f.party/f.candidateType against "our" (Democrat) entity's own
+    // fields) as the base for splitting into Democrat/Republican bars. That pre-filter is correct
+    // for the KPI row above (an "our side" aggregate, never Republican) but wrong here: narrowing
+    // the pool to "races where OUR candidate is an Incumbent" before ever looking at the opponent
+    // means the Republican bar only ever sees THEIR type in those same races (usually the
+    // opposite type, e.g. Challenger) -- so "Candidate Type: Incumbent" silently returned zero
+    // Republicans. Fixed by building a party/candidateType-neutral pool here (structural filters
+    // only) and letting partySplitGroups apply party/candidateType per-entity, after the split --
+    // the same pattern the dimension pages already use correctly (see partySplitGroups' own
+    // docstring and aeo_dashboard_party_ctype_filter_gap memory).
+    let chartIdxs = ROSTER.map((r,i)=>i);
+    if(f.state!=='all') chartIdxs = chartIdxs.filter(i=>ROSTER[i].state===f.state);
+    if(f.office!=='all') chartIdxs = chartIdxs.filter(i=>ROSTER[i].office===f.office);
+    if(f.level!=='all') chartIdxs = chartIdxs.filter(i=>ROSTER[i].race_level===f.level);
+    if(f.location!=='all') chartIdxs = chartIdxs.filter(i=>ROSTER[i].location===f.location);
+    const groupBy = groupByFor('ov-cmp');
+    const groups = splitGroupsFor(chartIdxs, f, groupBy);
+    series = groups.map(g=>({name:g.label, color:groupColor(groupBy,g.key), values:dims.map(d=>norm(avg(g.entities.map(e=>METRICS[e.id].base[d])),d))}));
   }
   barChart('ov-chart', dimLabels, series, {height:230});
 }
@@ -1892,6 +2011,7 @@ function chartFilterBarHtml(prefix, opts){
     <div class="fitem"><label>State</label><select id="${prefix}-state">${selectOptions(ALL_STATES,'All')}</select></div>
     <div class="fitem"><label>Office</label><select id="${prefix}-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
     ${opts.level ? `<div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="${prefix}-level">${selectOptions(ALL_LEVELS,'All')}</select></div>` : ''}
+    ${opts.location ? `<div class="fitem"><label title="The specific city, county, or congressional district a race is in -- narrower than State, and options here narrow further based on the State/Race level picked above.">Location</label><select id="${prefix}-location"><option value="all">All</option></select></div>` : ''}
     ${opts.blind ? `<div class="fitem"><label>Prompt type</label><select id="${prefix}-blind"><option value="all">All (blind + named)</option><option value="Y">Blind only</option><option value="N">Named only</option></select></div>` : ''}
     ${opts.dateRange ? `<div class="fitem"><label>Range start</label><input type="date" id="${prefix}-start"></div><div class="fitem"><label>Range end</label><input type="date" id="${prefix}-end"></div>` : ''}
   </div>`;
@@ -1933,7 +2053,24 @@ function wireChartFilterBar(prefix, opts, onChange){
   opts = opts||{};
   const fields = ['party','ctype','state','race','office'];
   if(opts.level) fields.push('level');
-  fields.forEach(f=>{ const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el); el.addEventListener('change', onChange); });
+  // Location's own option list narrows based on State/Race level, so those two fields need an
+  // extra populateLocationSelect() step before the normal onChange -- everything else just fires
+  // onChange directly (2026-09-08: generalized from buildOverviewPage's bespoke wiring so any
+  // chart filter bar can opt into a working Location filter via opts.location, not just Overview).
+  fields.forEach(f=>{
+    const el=document.getElementById(`${prefix}-${f}`); el.dataset.xselDone='1'; buildXSel(el);
+    if(opts.location && (f==='state'||f==='level')){
+      el.addEventListener('change', ()=>{ populateLocationSelect(`${prefix}-location`, `${prefix}-state`, opts.level?`${prefix}-level`:null); onChange(); });
+    } else {
+      el.addEventListener('change', onChange);
+    }
+  });
+  if(opts.location){
+    populateLocationSelect(`${prefix}-location`, `${prefix}-state`, opts.level?`${prefix}-level`:null);
+    const locEl = document.getElementById(`${prefix}-location`);
+    locEl.dataset.xselDone='1'; buildXSel(locEl);
+    locEl.addEventListener('change', onChange);
+  }
   if(opts.blind) document.getElementById(prefix+'-blind').addEventListener('change', onChange);
   if(opts.dateRange){
     document.getElementById(prefix+'-start').value = DATES[0];
@@ -1954,6 +2091,7 @@ function buildDimensionPage(key){
         <div class="card-title">${DIM_LABELS[key]} — comparison</div>
         <div class="card-caption">${key==='consistency' ? 'Share of same-day-stability outcomes by AI provider — a model\'s own answer stability, not a candidate comparison. Population still respects race/state/office filters.' : IS_BUCKET3[key] ? 'Share of scored responses by outcome. Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race or candidate is selected.' : 'Dems vs. Republicans by default; narrows to candidate vs. opponent if a single race is selected.'}</div>
         ${chartFilterBarHtml(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true, level:true})}
+        ${key!=='consistency' ? `<div style="margin-bottom:10px;">${groupByToggleHtml(key+'-cmp')}</div>` : ''}
         ${IS_BUCKET3[key] ? `<div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="fitem"><label>Prompt category</label><select id="${key}-cmp-cat">${selectOptions(ALL_CATEGORIES,'All categories')}</select></div>
           <div class="fitem" id="${key}-cmp-topic-wrap" style="display:none;"><label>Issue</label><select id="${key}-cmp-topic"><option value="all">All issues</option></select></div>
@@ -1962,6 +2100,7 @@ function buildDimensionPage(key){
       </div>
       <div class="card"><div class="card-title">${DIM_LABELS[key]} over time</div><div class="card-caption">${key==='consistency' ? 'Daily % fully consistent, one line per AI provider.' : IS_BUCKET3[key] ? `Daily share of ${[...bucket3Order(key)].reverse().map(b=>bucket3Label(key,b).toLowerCase()).join(' vs. ')} responses for whichever group is selected below.` : 'Daily data; range fields below control the window shown.'}</div>
         ${chartFilterBarHtml(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true, level:true})}
+        ${key!=='consistency' ? `<div style="margin-bottom:10px;">${groupByToggleHtml(key+'-trend')}</div>` : ''}
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
@@ -1986,6 +2125,9 @@ function buildDimensionPage(key){
     </div>` : ''}`;
   wireChartFilterBar(key+'-cmp', {blind:IS_BUCKET3[key], dateRange:true, level:true}, ()=>renderDimensionPage(key));
   wireChartFilterBar(key+'-trend', {blind:IS_BUCKET3[key], dateRange:true, level:true}, ()=>renderDimensionPage(key));
+  window.__groupByRerender = window.__groupByRerender || {};
+  window.__groupByRerender[key+'-cmp'] = ()=>renderDimensionPage(key);
+  window.__groupByRerender[key+'-trend'] = ()=>renderDimensionPage(key);
   if(key!=='consistency'){
     document.getElementById(`${key}-tbl-race`).dataset.xselDone='1'; buildXSel(document.getElementById(`${key}-tbl-race`));
     wireCandidateSelect(key+'-tbl', ()=>renderDimTable(key));
@@ -2024,30 +2166,57 @@ function buildDimensionPage(key){
 // every main topic would be unusable (dozens of values, most irrelevant to whatever topic is
 // picked); this is deliberately a two-step cascade, per direct feedback: pick the main topic
 // first, then narrow to a sub_topic scoped to it.
-function subTopicsForNarrativeTopic(topic){
-  return [...new Set(PROMPTS.filter(p=>p.narrativeTested.includes(topic) && p.subTopic).map(p=>p.subTopic))].sort();
+function subTopicsForNarrativeTopic(topic, level){
+  let prompts = PROMPTS.filter(p=>p.narrativeTested.includes(topic) && p.subTopic);
+  if(level && level!=='all') prompts = prompts.filter(p=>p.race_level===level);
+  return [...new Set(prompts.map(p=>p.subTopic))].sort();
 }
 function topicComparisonHtml(){
   return `<div class="card section-gap">
     <div class="card-title">Topic Comparison</div>
     <div class="card-caption">Pick a topic to see the real Narrative Alignment score breakdown for Democrats vs. Republicans (or one candidate vs. their opponent, if a race is selected). Covers policy topics, Fair Rebuttal, Critique-Association, and narrative-framing topics like Moderatism or Who Is Better.</div>
     ${chartFilterBarHtml('tc', {})}
-    <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+    <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
       <div class="fitem"><label title="District = U.S. House races only. Statewide = Secretary of State, Supreme Court, Court of Appeals. Local = everything else, including county/city judicial races (a 'District Court Judge' race is still Local, not District).">Race level</label><select id="tc-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
       <div class="fitem"><label>Topic</label><select id="tc-topic"><option value="">Select a topic…</option>${narrativeTestedTopics().map(t=>opt(t,t)).join('')}</select></div>
       <div class="fitem" id="tc-subtopic-wrap" style="display:none;"><label>Sub-topic</label><select id="tc-subtopic"><option value="all">All</option></select></div>
+      ${groupByToggleHtml('tc')}
     </div>
     ${bucket3Legend('narrative')}
-    <div id="tc-body"></div>
+    <div id="tc-body" style="min-height:260px;"></div>
   </div>`;
+}
+// Re-scopes the Topic dropdown to whatever Race Level is currently picked (2026-09-08 feedback —
+// see narrativeTestedTopics()'s own comment), keeping the current selection if it's still a valid
+// option there, same "keep the pick if still valid" pattern as populateLocationSelect.
+function populateTopicSelect(){
+  const level = document.getElementById('tc-level').value;
+  const topics = narrativeTestedTopics(level);
+  const sel = document.getElementById('tc-topic');
+  const prevVal = sel.value;
+  sel.innerHTML = `<option value="">Select a topic…</option>${topics.map(t=>opt(t,t)).join('')}`;
+  sel.value = topics.includes(prevVal) ? prevVal : '';
+  refreshXSel(sel);
 }
 function wireTopicComparison(){
   wireChartFilterBar('tc', {}, renderTopicComparison);
-  document.getElementById('tc-level').addEventListener('change', renderTopicComparison);
+  window.__groupByRerender = window.__groupByRerender || {};
+  window.__groupByRerender['tc'] = renderTopicComparison;
+  document.getElementById('tc-level').addEventListener('change', ()=>{
+    populateTopicSelect();
+    // Race Level changed -- Topic's own option list just changed too, so re-derive Sub-topic the
+    // same way the Topic handler below does, instead of leaving a now-stale sub-topic list.
+    const topic = document.getElementById('tc-topic').value;
+    const subSel = document.getElementById('tc-subtopic'), wrap = document.getElementById('tc-subtopic-wrap');
+    const subs = topic ? subTopicsForNarrativeTopic(topic, document.getElementById('tc-level').value) : [];
+    if(subs.length){ subSel.innerHTML = `<option value="all">All</option>${subs.map(s=>opt(s,s)).join('')}`; wrap.style.display = ''; }
+    else { subSel.innerHTML = `<option value="all">All</option>`; wrap.style.display = 'none'; }
+    renderTopicComparison();
+  });
   document.getElementById('tc-topic').addEventListener('change', ()=>{
     const topic = document.getElementById('tc-topic').value;
     const subSel = document.getElementById('tc-subtopic'), wrap = document.getElementById('tc-subtopic-wrap');
-    const subs = topic ? subTopicsForNarrativeTopic(topic) : [];
+    const subs = topic ? subTopicsForNarrativeTopic(topic, document.getElementById('tc-level').value) : [];
     if(subs.length){
       subSel.innerHTML = `<option value="all">All</option>${subs.map(s=>opt(s,s)).join('')}`;
       wrap.style.display = '';
@@ -2096,14 +2265,23 @@ function renderTopicComparison(){
     if(level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===level);
     // Candidate Type now applies here too (2026-08-31 fix) — the select rendered and re-triggered
     // this render already, but its value was never read.
-    groups = partySplitGroups(idxs, {party, candidateType:ctype}).map(g=>({label:`${g.label} (${g.entities.length})`, entities:g.entities}));
+    groups = splitGroupsFor(idxs, {party, candidateType:ctype}, groupByFor('tc')).map(g=>({label:`${g.label} (${g.entities.length})`, entities:g.entities}));
   }
-  const rows = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic, subTopic)}));
-  bodyEl.innerHTML = rows.map(r=>`
-    <div class="topic-row" style="margin-bottom:8px;">
-      <div class="topic-name" style="width:190px;">${escXHtml(r.label)}<br><span class="small-muted">n=${r.d.total}</span></div>
-      ${stackedRowHtml('narrative', r.d.buckets, r.d.total)}
-    </div>`).join('') || '<div class="small-muted" style="padding:10px;">No scored responses for this topic in the current filter.</div>';
+  const scored = groups.map(g=>({label:g.label, d: scoresByTopicForEntities(g.entities, topic, subTopic)}));
+  if(!scored.some(r=>r.d.total>0)){
+    bodyEl.innerHTML = '<div class="small-muted" style="padding:10px;">No scored responses for this topic in the current filter.</div>';
+    return;
+  }
+  // Vertical stacked bars (2026-09-08 feedback: was a horizontal stack-track div, no visible %s
+  // except via hover title) -- reuses the same verticalStackedBarChart every dimension-comparison
+  // chart already uses, which now always labels every segment's real %% (see its own 2026-09-08 fix).
+  const order = bucket3Order('narrative');
+  const rows = scored.map(r=>({
+    label: `${r.label}, n=${r.d.total}`,
+    total: r.d.total,
+    segments: order.map(b=>({name:bucket3Label('narrative',b), value:(r.d.buckets[b]||0), color:bucket3Color('narrative',b)})),
+  }));
+  verticalStackedBarChart('tc-body', rows, {height:260});
 }
 /* ============================================================================
    8.5 DIMENSION ROOT-CAUSE BREAKDOWN (Favorability & Depth "where is it falling short")
@@ -2172,6 +2350,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOver
           // either (a heavily-resampled prompt legitimately gets more weight there too; tying out
           // means matching that, not "correcting" it into a different, disagreeing computation).
           if(key==='visibility'){
+            if(!visibilityEligible(run._row, rowSide)) return;
             const v = run._row['prompt_level_visibility_score_'+rowSide];
             if(v===''||v==null) return;
             // Majority classification for this one item's own display bucket (drill-down list) --
@@ -2562,8 +2741,9 @@ function renderDimensionPage(key){
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
       if(fCmp.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fCmp.level);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
-      const groups = partySplitGroups(idxs, fCmp);
-      barChart(key+'-cmp', [DIM_LABELS[key]], groups.map(g=>({name:g.label,color:partyColor(g.key),values:[avg(g.entities.map(e=>cmpVal(e.id)))]})), {min:range[0],max:range[1],height:220});
+      const groupBy = groupByFor(key+'-cmp');
+      const groups = splitGroupsFor(idxs, fCmp, groupBy);
+      barChart(key+'-cmp', [DIM_LABELS[key]], groups.map(g=>({name:g.label,color:groupColor(groupBy,g.key),values:[avg(g.entities.map(e=>cmpVal(e.id)))]})), {min:range[0],max:range[1],height:220});
     }
     const [i0,i1]=dateRangeIdx(key+'-trend'); const labels=DATES.slice(i0,i1+1);
     if(fTrend.race!=='all'){
@@ -2576,8 +2756,9 @@ function renderDimensionPage(key){
       if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
       if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
       if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
-      const groups = partySplitGroups(idxs, fTrend);
-      lineChart(key+'-trend', labels, groups.map(g=>({name:g.label,color:partyColor(g.key),values:labels.map((d,ix)=>avg(g.entities.map(e=>METRICS[e.id].history[key][i0+ix])))})), {min:range[0],max:range[1],height:220});
+      const groupBy = groupByFor(key+'-trend');
+      const groups = splitGroupsFor(idxs, fTrend, groupBy);
+      lineChart(key+'-trend', labels, groups.map(g=>({name:g.label,color:groupColor(groupBy,g.key),values:labels.map((d,ix)=>avg(g.entities.map(e=>METRICS[e.id].history[key][i0+ix])))})), {min:range[0],max:range[1],height:220});
     }
   }
   renderInsightSummary(key);
@@ -2659,9 +2840,16 @@ function renderBucket3Charts(key, fCmp, fTrend){
       if(fCmp.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fCmp.state);
       if(fCmp.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fCmp.level);
       if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
-      if(fCmp.party!=='all') idxs = idxs.filter(i=>ROSTER[i].party===fCmp.party || (oppEntity(i)&&oppEntity(i).party===fCmp.party));
-      if(fCmp.candidateType!=='all') idxs = idxs.filter(i=>ROSTER[i].candidateType===fCmp.candidateType || (oppEntity(i)&&oppEntity(i).candidateType===fCmp.candidateType));
       entities = idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
+      // Bug fix (2026-09-08): this used to pre-filter idxs by "our side's party matches OR the
+      // opponent's party matches" (an OR across both sides, to decide which RACES stay in), then
+      // pushed BOTH that race's entities into `entities` regardless of which one actually matched
+      // — so "Party: Republican" merged the Republican's real data with their Democrat opponent's,
+      // instead of showing Republican-only consistency. Filtering the already-built entity list
+      // directly (each entity against its own party/candidateType) is the same per-entity pattern
+      // every other chart on this page already uses correctly.
+      if(fCmp.party!=='all') entities = entities.filter(e=>e.party===fCmp.party);
+      if(fCmp.candidateType!=='all') entities = entities.filter(e=>e.candidateType===fCmp.candidateType);
     }
     const rows = MODELS.map(m=>({label:m, segments: catOpt
       ? segmentsFor(mergeBucketTotals(entities.map(e=>scoresByCategoryForEntity(e,key,topicOpt,m).byCategory[catOpt])))
@@ -2680,8 +2868,9 @@ function renderBucket3Charts(key, fCmp, fTrend){
     if(fCmp.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fCmp.office);
     // Party/Candidate Type now actually apply here (2026-08-31 fix) via the shared partySplitGroups
     // helper — previously both selects rendered and re-triggered this render, but were never read.
-    const groups = partySplitGroups(idxs, fCmp);
-    const rows = groups.map(g=>rowFor(g.label, groupBuckets(g.entities), key==='visibility'?partyColor(g.key):null));
+    const groupBy = groupByFor(key+'-cmp');
+    const groups = splitGroupsFor(idxs, fCmp, groupBy);
+    const rows = groups.map(g=>rowFor(g.label, groupBuckets(g.entities), key==='visibility'?groupColor(groupBy,g.key):null));
     verticalStackedBarChart(key+'-cmp', rows, {height:260});
   }
 
@@ -2697,6 +2886,11 @@ function renderBucket3Charts(key, fCmp, fTrend){
       if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
       if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
       entities = idxs.flatMap(i=>[ourEntity(i), oppEntity(i)]).filter(Boolean);
+      // Bug fix (2026-09-08): Party/Candidate Type were rendered on this filter bar but never read
+      // at all here (unlike the comparison chart just above, which at least attempted -- if
+      // incorrectly -- to apply them). Same per-entity filter as the comparison chart's fix.
+      if(fTrend.party!=='all') entities = entities.filter(e=>e.party===fTrend.party);
+      if(fTrend.candidateType!=='all') entities = entities.filter(e=>e.candidateType===fTrend.candidateType);
     }
     // One line per model, tracking % fully consistent (bucket '2') — plotting all 3 buckets ×
     // 3 models at once (9 lines) would be unreadable; this directly answers "which model is
@@ -2718,8 +2912,9 @@ function renderBucket3Charts(key, fCmp, fTrend){
     if(fTrend.state!=='all') idxs = idxs.filter(i=>ROSTER[i].state===fTrend.state);
       if(fTrend.level!=='all') idxs = idxs.filter(i=>ROSTER[i].race_level===fTrend.level);
     if(fTrend.office!=='all') idxs = idxs.filter(i=>ROSTER[i].office===fTrend.office);
-    const groups = partySplitGroups(idxs, fTrend);
-    const lseries = groups.map(g=>({name:g.label, color:partyColor(g.key), values:labels.map((d,ix)=>groupDailyShare(g.entities,i0+ix,'1'))}));
+    const groupBy = groupByFor(key+'-trend');
+    const groups = splitGroupsFor(idxs, fTrend, groupBy);
+    const lseries = groups.map(g=>({name:g.label, color:groupColor(groupBy,g.key), values:labels.map((d,ix)=>groupDailyShare(g.entities,i0+ix,'1'))}));
     lineChart(key+'-trend', labels, lseries, {min:0,max:100,height:220});
   } else if(fTrend.race!=='all'){
     const idx = parseInt(fTrend.race,10); const o=ourEntity(idx), p=oppEntity(idx);
@@ -2736,9 +2931,11 @@ function renderBucket3Charts(key, fCmp, fTrend){
     // Party/Candidate Type now apply here (2026-08-31 fix). Party picks which group is the primary
     // (solid) line — previously always Democrats regardless of the filter; "Compare" still adds the
     // next surviving group as a dashed line, disabled when nothing else is left to compare against.
-    const groups = partySplitGroups(idxs, fTrend);
-    const primary = groups[0] || {label:'Democrats', entities:[]};
-    if(trendCompareLabelEl) trendCompareLabelEl.textContent = groups[1] ? `Compare with ${groups[1].label}` : 'Compare with Republicans';
+    const groupBy = groupByFor(key+'-trend');
+    const groups = splitGroupsFor(idxs, fTrend, groupBy);
+    const defaultLabel = groupBy==='candidateType' ? 'Incumbents' : 'Democrats';
+    const primary = groups[0] || {label:defaultLabel, entities:[]};
+    if(trendCompareLabelEl) trendCompareLabelEl.textContent = groups[1] ? `Compare with ${groups[1].label}` : `Compare with ${groupBy==='candidateType'?'Challengers':'Republicans'}`;
     if(trendCompareEl) trendCompareEl.disabled = !groups[1];
     const lseries = order.map(b=>({name:(trendCompare&&groups[1]?primary.label+' — ':'')+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), values:labels.map((d,ix)=>groupDailyShare(primary.entities,i0+ix,b))}));
     if(trendCompare && groups[1]) order.forEach(b=>lseries.push({name:groups[1].label+' — '+(order.length>1?bucket3Label(key,b):'Mentioned'), color:bucket3Color(key,b), dash:'4,3', values:labels.map((d,ix)=>groupDailyShare(groups[1].entities,i0+ix,b))}));
@@ -3051,9 +3248,15 @@ function buildFanoutPage(){
     <div class="card section-gap">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
         <div class="card-title" style="margin-bottom:0;">Prompt runs</div>
-        <div style="display:flex;gap:6px;">
-          <button type="button" class="btn sm" id="pf-view-runs" onclick="setFanoutView('runs')">Individual runs</button>
-          <button type="button" class="btn ghost sm" id="pf-view-rollup" onclick="setFanoutView('rollup')">Rollup by prompt</button>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="btn sm" id="pf-side-ours" onclick="setFanoutSide('ours')">Our candidates</button>
+            <button type="button" class="btn ghost sm" id="pf-side-opp" onclick="setFanoutSide('opp')">Opponents</button>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="btn ghost sm" id="pf-view-runs" onclick="setFanoutView('runs')">Individual runs</button>
+            <button type="button" class="btn sm" id="pf-view-rollup" onclick="setFanoutView('rollup')">Rollup by prompt</button>
+          </div>
         </div>
       </div>
       <div class="card-caption" id="pf-count"></div>
@@ -3066,7 +3269,12 @@ function buildFanoutPage(){
   document.getElementById('pf-search').addEventListener('input', renderFanoutTable);
   window.__pfSort = {key:'composite', dir:1};
   window.__pfRollupSort = {key:'composite', dir:1};
-  window.__pfView = 'runs';
+  window.__pfSide = 'ours';
+  // Default to the rollup view (2026-09-08 feedback): with up to ~100 real runs per prompt, the
+  // individual-runs table showed "one prompt" per many screens of scrolling and was hard to make
+  // sense of -- Rollup by prompt (one row per prompt per day) already existed for exactly this,
+  // it just wasn't the default.
+  window.__pfView = 'rollup';
   renderFanoutTable();
 }
 /* Rollup by prompt / Individual runs toggle — see renderFanoutRollup() below for why this view
@@ -3077,6 +3285,17 @@ function setFanoutView(view){
   window.__pfView = view;
   document.getElementById('pf-view-runs').className = 'btn sm' + (view==='runs'?'':' ghost');
   document.getElementById('pf-view-rollup').className = 'btn sm' + (view==='rollup'?'':' ghost');
+  renderFanoutTable();
+}
+/* Our candidates / Opponents toggle (2026-09-08 feedback) — run.scores.opp already existed in the
+   data model, just never surfaced in this table. Swaps whose scores populate the row instead of
+   adding columns (both sides) or doubling rows (one per side) — Party/Candidate/Candidate Type
+   filters already match either side, so this is what makes "whose score am I looking at" explicit
+   rather than always silently "ours". */
+function setFanoutSide(side){
+  window.__pfSide = side;
+  document.getElementById('pf-side-ours').className = 'btn sm' + (side==='ours'?'':' ghost');
+  document.getElementById('pf-side-opp').className = 'btn sm' + (side==='opp'?'':' ghost');
   renderFanoutTable();
 }
 /* Candidate options for Prompt Fanout's multi-select, narrowed to the given race indices (empty
@@ -3138,14 +3357,19 @@ function renderFanoutTable(){
 }
 function renderFanoutRuns(){
   const {prompts, models, i0, i1} = pfScoped();
+  // Which side's scores populate the table (2026-09-08 feedback: run.scores.opp already existed
+  // in the data, just never surfaced) -- a toggle instead of extra columns/rows, so Party/
+  // Candidate/Candidate Type filters (which already match either side) stay unambiguous: they pick
+  // which people qualify, this picks whose score you're looking at.
+  const side = window.__pfSide || 'ours';
 
   let rows = [];
   // Every real run in range, not just the latest per prompt+model (2026-08-31 fix).
-  prompts.forEach(p=>{ models.forEach(m=>{ getRunsInRange(p,m,i0,i1).forEach(run=>rows.push({p, m, run, composite: runComposite(run.scores.ours)})); }); });
+  prompts.forEach(p=>{ models.forEach(m=>{ getRunsInRange(p,m,i0,i1).forEach(run=>rows.push({p, m, run, composite: runComposite(run.scores[side])})); }); });
 
   const sort = window.__pfSort;
   rows.sort((a,b)=>{
-    const val = r => { if(sort.key==='prompt') return r.p.text; if(sort.key==='composite') return r.composite; const [dim,side]=sort.key.split('_'); return r.run.scores[side][dim]; };
+    const val = r => { if(sort.key==='prompt') return r.p.text; if(sort.key==='composite') return r.composite; return r.run.scores[side][sort.key]; };
     let av=val(a), bv=val(b);
     if(av===null) av = sort.dir===1? Infinity : -Infinity;
     if(bv===null) bv = sort.dir===1? Infinity : -Infinity;
@@ -3153,17 +3377,18 @@ function renderFanoutRuns(){
     return sort.dir*(av-bv);
   });
 
-  document.getElementById('pf-count').textContent = `${rows.length} prompt × model runs in range, sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':(sort.dir===1?'lowest':'highest')+' '+sort.key.replace('_ours','')+' first'}.`;
+  const sideLabel = side==='ours' ? 'our candidates' : 'opponents';
+  document.getElementById('pf-count').textContent = `${rows.length} prompt × model runs in range, showing ${sideLabel}, sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':(sort.dir===1?'lowest':'highest')+' '+sort.key+' first'}.`;
   const sortIcon = k => window.__pfSort.key===k ? (window.__pfSort.dir===1?' ▲':' ▼') : '';
   let html = `<table><tr>
     <th onclick="sortFanout('prompt')">Prompt${sortIcon('prompt')}</th><th>Race</th><th>Category</th><th>Named/Blind</th><th>Model</th>
     <th onclick="sortFanout('composite')">Composite${sortIcon('composite')}</th>
-    <th onclick="sortFanout('visibility_ours')">Visibility${sortIcon('visibility_ours')}</th>
-    <th onclick="sortFanout('favorability_ours')">Favorability${sortIcon('favorability_ours')}</th>
-    <th onclick="sortFanout('depth_ours')">Depth${sortIcon('depth_ours')}</th>
-    <th onclick="sortFanout('accuracy_ours')">Accuracy${sortIcon('accuracy_ours')}</th>
-    <th onclick="sortFanout('consistency_ours')">Consistency${sortIcon('consistency_ours')}</th>
-    <th onclick="sortFanout('narrative_ours')">Narrative${sortIcon('narrative_ours')}</th></tr>`;
+    <th onclick="sortFanout('visibility')">Visibility${sortIcon('visibility')}</th>
+    <th onclick="sortFanout('favorability')">Favorability${sortIcon('favorability')}</th>
+    <th onclick="sortFanout('depth')">Depth${sortIcon('depth')}</th>
+    <th onclick="sortFanout('accuracy')">Accuracy${sortIcon('accuracy')}</th>
+    <th onclick="sortFanout('consistency')">Consistency${sortIcon('consistency')}</th>
+    <th onclick="sortFanout('narrative')">Narrative${sortIcon('narrative')}</th></tr>`;
   const heat=(v,rangeArr)=> v===null?'<span class="small-muted">—</span>':`<span class="heat" style="background:${heatColor(v,rangeArr[0],rangeArr[1])};color:${heatText(v,rangeArr[0],rangeArr[1])}">${fmt1(v)}</span>`;
   rows.slice(0,400).forEach((r,ri)=>{
     html += `<tr class="clickable" onclick='openPromptHistory(${ri})' data-ri="${ri}">
@@ -3173,12 +3398,12 @@ function renderFanoutRuns(){
       <td class="small-muted">${r.p.is_blind==='Y'?'Blind':'Named'}</td>
       <td class="small-muted">${r.m}</td>
       <td><b>${heat(r.composite,[0,100])}</b></td>
-      <td>${heat(r.run.scores.ours.visibility,DIM_RANGE.visibility)}</td>
-      <td>${heat(r.run.scores.ours.favorability,DIM_RANGE.favorability)}</td>
-      <td>${heat(r.run.scores.ours.depth,DIM_RANGE.depth)}</td>
-      <td>${heat(r.run.scores.ours.accuracy,DIM_RANGE.accuracy)}</td>
-      <td>${heat(r.run.scores.ours.consistency,DIM_RANGE.consistency)}</td>
-      <td>${heat(r.run.scores.ours.narrative,DIM_RANGE.narrative)}</td></tr>`;
+      <td>${heat(r.run.scores[side].visibility,DIM_RANGE.visibility)}</td>
+      <td>${heat(r.run.scores[side].favorability,DIM_RANGE.favorability)}</td>
+      <td>${heat(r.run.scores[side].depth,DIM_RANGE.depth)}</td>
+      <td>${heat(r.run.scores[side].accuracy,DIM_RANGE.accuracy)}</td>
+      <td>${heat(r.run.scores[side].consistency,DIM_RANGE.consistency)}</td>
+      <td>${heat(r.run.scores[side].narrative,DIM_RANGE.narrative)}</td></tr>`;
   });
   html += `</table>`;
   document.getElementById('pf-table').innerHTML = html;
@@ -3194,7 +3419,9 @@ function sortFanout(key){ window.__pfSort.dir = (window.__pfSort.key===key)? -wi
    per-response visibility_score/favorability_pct fields here would just be averaging N copies of
    the same number). Depth/Accuracy/Consistency/Narrative genuinely are scored per response by our
    own pipeline, so those are real averages across however many responses landed that day. ---- */
-function rollupValueForPromptDay(p, models, d){
+function rollupValueForPromptDay(p, models, d, side){
+  side = side || 'ours';
+  const rowSide = side==='ours' ? 'candidate' : 'opponent';
   const contributingModels = models.filter(m=>(RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d]||[]).length);
   if(!contributingModels.length) return null;
   const visVals=[], favVals=[];
@@ -3202,14 +3429,14 @@ function rollupValueForPromptDay(p, models, d){
     // prompt_level_* fields are identical across every real run sharing this cell (broadcast at
     // ingestion), so any one row in the array is representative — no need to average them again.
     const row = RUN_INDEX[p.id+'|'+MODEL_TO_PROVIDER[m]+'|'+d][0];
-    const vis = row['prompt_level_visibility_score_candidate'];
-    if(vis!=='' && vis!=null) visVals.push(+vis);
+    const vis = row['prompt_level_visibility_score_'+rowSide];
+    if(vis!=='' && vis!=null && visibilityEligible(row,rowSide)) visVals.push(+vis);
     // % positive, directly -- see runViewFromRow's sideScores comment.
-    const pos = row['prompt_level_favorability_pct_positive_candidate'];
+    const pos = row['prompt_level_favorability_pct_positive_'+rowSide];
     if(pos!=='' && pos!=null) favVals.push(+pos);
   });
   const runs = contributingModels.flatMap(m=>getRun(p,m,d));
-  const dimAvg = dim => avg(runs.map(r=>r.scores.ours[dim]));
+  const dimAvg = dim => avg(runs.map(r=>r.scores[side][dim]));
   const scores = {
     visibility: avg(visVals), favorability: avg(favVals),
     depth: dimAvg('depth'), accuracy: dimAvg('accuracy'),
@@ -3224,11 +3451,12 @@ function rollupValueForPromptDay(p, models, d){
 }
 function renderFanoutRollup(){
   const {prompts, models, i0, i1} = pfScoped();
+  const side = window.__pfSide || 'ours';
   let rows = [];
   prompts.forEach(p=>{
     for(let di=i0; di<=i1; di++){
       const d = DATES[di];
-      const v = rollupValueForPromptDay(p, models, d);
+      const v = rollupValueForPromptDay(p, models, d, side);
       if(v) rows.push({p, date:d, ...v});
     }
   });
@@ -3243,7 +3471,8 @@ function renderFanoutRollup(){
     return sort.dir*(av-bv);
   });
 
-  document.getElementById('pf-count').textContent = `${rows.length} prompt × day rollups in range, each averaged across whichever models ran that day — sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':sort.key==='date'?(sort.dir===1?'earliest':'latest')+' first':(sort.dir===1?'lowest':'highest')+' '+sort.key+' first'}.`;
+  const sideLabel = side==='ours' ? 'our candidates' : 'opponents';
+  document.getElementById('pf-count').textContent = `${rows.length} prompt × day rollups in range, showing ${sideLabel}, each averaged across whichever models ran that day — sorted ${sort.key==='composite'?(sort.dir===1?'worst':'best')+' composite first':sort.key==='prompt'?'alphabetically':sort.key==='date'?(sort.dir===1?'earliest':'latest')+' first':(sort.dir===1?'lowest':'highest')+' '+sort.key+' first'}.`;
   const sortIcon = k => window.__pfRollupSort.key===k ? (window.__pfRollupSort.dir===1?' ▲':' ▼') : '';
   let html = `<table><tr>
     <th onclick="sortFanoutRollup('prompt')">Prompt${sortIcon('prompt')}</th><th>Race</th><th>Category</th><th>Named/Blind</th>
@@ -3284,10 +3513,11 @@ async function openPromptHistory(ri){
   const history = [];
   MODELS.forEach(m=>{ DATES.forEach(d=>{ getRun(p,m,d).forEach(run=>history.push({m,d,run})); }); });
   history.sort((a,b)=> b.d.localeCompare(a.d));
+  const side = window.__pfSide || 'ours';
   const listHtml = history.slice(0,60).map((h,hi)=>`
     <div class="hist-item" onclick='showRunDetail(${ri}, ${hi})'>
       <b>${h.d}</b> · ${h.m}
-      <div class="small-muted">Vis ${fmt1(h.run.scores.ours.visibility)} · Fav ${fmt1(h.run.scores.ours.favorability)} · Depth ${fmt1(h.run.scores.ours.depth)} · Acc ${fmt1(h.run.scores.ours.accuracy)}</div>
+      <div class="small-muted">Vis ${fmt1(h.run.scores[side].visibility)} · Fav ${fmt1(h.run.scores[side].favorability)} · Depth ${fmt1(h.run.scores[side].depth)} · Acc ${fmt1(h.run.scores[side].accuracy)}</div>
     </div>`).join('');
   window.__pfHistoryCache = history;
   openSidePanel(`
@@ -3615,7 +3845,8 @@ function buildCitationsPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">Citation mix</div>
-      <div class="card-caption">Every citation across responses in view, by category. "Unresolved (Google wrapper)" is typically the largest slice — Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data.</div>
+      <div class="card-caption">Every citation across responses in view, by category. "Unresolved (Google wrapper)" is excluded from the %% breakdown below by default — Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data — check the box to add it back in.</div>
+      <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:8px;"><input type="checkbox" id="cb-include-unresolved"> Include "Unresolved (Google wrapper)" in the mix below</label>
       <div id="cb-stackbar"></div>
     </div>
     <div class="card section-gap">
@@ -3627,6 +3858,7 @@ function buildCitationsPage(){
   document.getElementById('cb-start').value = citationDates[0] || '';
   document.getElementById('cb-end').value = citationDates[citationDates.length-1] || '';
   document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; renderCitations(); }));
+  document.getElementById('cb-include-unresolved').addEventListener('change', renderCitations);
   window.__cbDrill = {level:'category'};
   renderCitations();
 }
@@ -3662,15 +3894,31 @@ function renderOwnedDomains(events){
   events.forEach(e=>{ const d = normalizeDomain(e.domain); byDomainAll[d] = (byDomainAll[d]||0)+e.count; });
   const ranked = Object.entries(byDomainAll).sort((a,b)=>b[1]-a[1]);
   const totalDomains = ranked.length;
+  // Per (domain, category) tally too (2026-09-08 feedback: "% of citations a domain has WITHIN
+  // its category", e.g. what share of Local/Regional News citations heartlandsignal.com is) --
+  // a domain's overall rank above can't answer that, since it's computed across every category
+  // pooled together. A domain that appears under more than one category (uncommon for a single-
+  // purpose owned site, but not assumed away) gets its largest category picked as "its" category.
+  const byDomainCategory = {}; // domain -> {category -> count}
+  const byCategoryTotal = {}; // category -> total count across ALL domains
+  events.forEach(e=>{
+    const d = normalizeDomain(e.domain);
+    byDomainCategory[d] = byDomainCategory[d] || {};
+    byDomainCategory[d][e.catKey] = (byDomainCategory[d][e.catKey]||0) + e.count;
+    byCategoryTotal[e.catKey] = (byCategoryTotal[e.catKey]||0) + e.count;
+  });
   el.innerHTML = OWNED_DOMAINS.map(rawDomain=>{
     const d = normalizeDomain(rawDomain);
     const idx = ranked.findIndex(([dom])=>dom===d);
     const count = idx===-1 ? 0 : ranked[idx][1];
     const rankText = idx===-1 ? 'not cited in the current filter' : `#${idx+1} of ${totalDomains} cited domains`;
+    const catCounts = byDomainCategory[d] || {};
+    const topCat = Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0];
+    const catShareText = topCat ? ` · ${fmt1(100*topCat[1]/(byCategoryTotal[topCat[0]]||1))}% of ${citationCatLabel(topCat[0])} citations` : '';
     return `<div class="topic-row" style="margin-bottom:6px;">
       <div class="topic-name" style="width:190px;">${escXHtml(rawDomain)}</div>
       <div class="topic-track"><div class="topic-fill core" style="width:${idx===-1?0:clamp(100*count/(ranked[0]?.[1]||1),2,100)}%;background:var(--brand);"></div></div>
-      <div class="topic-pct" style="width:180px;text-align:right;">${count} citation${count===1?'':'s'} · ${rankText}</div>
+      <div class="topic-pct" style="width:280px;text-align:right;">${count} citation${count===1?'':'s'} · ${rankText}${catShareText}</div>
     </div>`;
   }).join('') || `<div class="small-muted">No domains in OWNED_DOMAINS yet.</div>`;
 }
@@ -3692,7 +3940,14 @@ function renderCitations(){
     <div class="kpi"><div class="kpi-label">Candidate-owned share</div><div class="kpi-value">${total? fmt1(100*(byCat['Candidate/Officeholder-Owned Content']||0)/total):'—'}%</div></div>
     <div class="kpi"><div class="kpi-label">Local + national news share</div><div class="kpi-value">${total? fmt1(100*((byCat['Local/Regional News']||0)+(byCat['National News']||0))/total):'—'}%</div></div>`;
 
-  const segs = CITATION_CATEGORIES.map(c=>({name:c.label, value:byCat[c.key]||0, color:c.color})).filter(s=>s.value>0);
+  // "Unresolved (Google wrapper)" excluded from the mix %% breakdown by default (2026-09-08
+  // feedback) -- it's typically the largest slice and a vendor-side artifact (Google AI Overview's
+  // own citation export mostly returns opaque redirect links, not the real source), so leaving it
+  // in by default drowns out the real category mix. Checkbox adds it back in when wanted; this only
+  // affects the mix chart below, not the KPI cards or owned-domains tracker above.
+  const includeUnresolved = document.getElementById('cb-include-unresolved').checked;
+  const mixCategories = includeUnresolved ? CITATION_CATEGORIES : CITATION_CATEGORIES.filter(c=>c.key!=='Unresolved (Google wrapper)');
+  const segs = mixCategories.map(c=>({name:c.label, value:byCat[c.key]||0, color:c.color})).filter(s=>s.value>0);
   stackedBarChart('cb-stackbar', [{label:'All citations', segments:segs.length?segs:[{name:'None',value:1,color:'#EEF1F4'}]}], {width:700, barH:30, rowGap:0, labelW:0});
 
   const drill = window.__cbDrill || {level:'category'};

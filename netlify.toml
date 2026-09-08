@@ -1,0 +1,20 @@
+[build]
+  functions = "netlify/functions"
+
+# Same-origin rewrite (status 200, not a redirect) so the browser's fetch URL and any relative-
+# path logic in dashboard.html's JS never sees a cross-origin request -- the function itself reads
+# everything after "/data-proxy/" as the requested asset's relative path.
+[[redirects]]
+  from = "/api/data/*"
+  to = "/.netlify/functions/data-proxy/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/login"
+  to = "/.netlify/functions/login"
+  status = 200
+
+[[redirects]]
+  from = "/api/check-auth"
+  to = "/.netlify/functions/check-auth"
+  status = 200

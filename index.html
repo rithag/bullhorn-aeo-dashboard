@@ -289,13 +289,29 @@ function measuredChartWidth(containerId, fallback){
 }
 function svgElOpen(tag,attrs){ let s='<'+tag; for(const k in attrs){ s+=` ${k}="${attrs[k]}"`; } return s+'>'; }
 
+// Splits a category label into (up to) 2 horizontal lines at whichever word boundary leaves the
+// two lines closest in length -- e.g. "Background & Qualifications" -> "Background &" /
+// "Qualifications" (2026-09-08, replaces diagonal-rotated labels, which were hard to read).
+function wrapTwoLines(text){
+  const words = text.split(' ');
+  if(words.length<2) return [text];
+  let best=null;
+  for(let i=1;i<words.length;i++){
+    const l1 = words.slice(0,i).join(' '), l2 = words.slice(i).join(' ');
+    const diff = Math.abs(l1.length-l2.length);
+    if(!best || diff<best.diff) best = {l1,l2,diff};
+  }
+  return [best.l1, best.l2];
+}
 function barChart(containerId, categories, series, opts){
   opts = opts||{}; const W=measuredChartWidth(containerId, opts.width||520), H=opts.height||240;
   const min = opts.min!==undefined?opts.min:0, max = opts.max!==undefined?opts.max:100;
   // Long/many category labels overlap when centered horizontally under narrow bar groups —
-  // rotate them and give the axis more room instead.
+  // rotate them and give the axis more room instead. wrapLabels wraps onto 2 horizontal lines
+  // instead of rotating (easier to read at a glance) -- pick one or the other, not both.
   const rotateLabels = opts.rotateLabels;
-  const padL=38, padB=rotateLabels?96:34, padT=10, padR=10;
+  const wrapLabels = opts.wrapLabels;
+  const padL=38, padB=rotateLabels?96:(wrapLabels?50:34), padT=10, padR=10;
   const plotW = W-padL-padR, plotH = H-padT-padB;
   const groupW = plotW/categories.length;
   const barGap=6, nBars=series.length;
@@ -320,6 +336,9 @@ function barChart(containerId, categories, series, opts){
     });
     if(rotateLabels){
       svg += `<text x="${(gx+groupW/2).toFixed(1)}" y="${(padT+plotH+14).toFixed(1)}" font-size="10" text-anchor="end" fill="#5B6472" transform="rotate(-40 ${(gx+groupW/2).toFixed(1)} ${(padT+plotH+14).toFixed(1)})">${escapeXml(cat)}</text>`;
+    } else if(wrapLabels){
+      const lines = wrapTwoLines(cat);
+      lines.forEach((line,li)=>{ svg += `<text x="${(gx+groupW/2).toFixed(1)}" y="${(H-padB+16+li*12).toFixed(1)}" font-size="10.5" text-anchor="middle" fill="#5B6472">${escapeXml(line)}</text>`; });
     } else {
       svg += `<text x="${(gx+groupW/2).toFixed(1)}" y="${H-10}" font-size="10.5" text-anchor="middle" fill="#5B6472">${escapeXml(cat)}</text>`;
     }
@@ -614,12 +633,13 @@ let ROWS_BY_RACE = {};
 // storage in production instead of committed to git -- citations.json is 216MB (over GitHub's
 // 100MB per-file push limit) and dist/text/ is 1.3GB total across 74 files, both far past what a
 // git-backed static-site repo should carry, and both only grow as more weeks of scoring data land.
-// Empty string means "same-origin relative path" (local dev, or before the bucket exists); set to
-// the bucket's public base URL (e.g. 'https://storage.googleapis.com/<bucket>/dashboard-data/')
-// once it exists to serve both from there instead -- everything else (prompt_results_agg.json,
-// roster.json, the two child tables) stays committed to git/Netlify as before, small enough not to
-// need this.
-const HEAVY_DATA_BASE_URL = 'https://storage.googleapis.com/aeo-dashboard-assets-bullhorn/dashboard-data/';
+// Empty string means "same-origin relative path" (local dev, or before the bucket exists).
+// 2026-09-08: the bucket went private (login gate added, see initDashboard()/checkAuth() below) --
+// this now points at the Netlify Function proxy (/api/data/* -> data-proxy.js), which validates
+// the session cookie and redirects to a short-lived GCS V4 signed URL, rather than the bucket's
+// old public base URL directly. Everything else (prompt_results_agg.json, roster.json, the two
+// child tables) stays committed to git/Netlify as before, small enough not to need this.
+const HEAVY_DATA_BASE_URL = '/api/data/';
 function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
@@ -3836,7 +3856,7 @@ function renderPhRefusal(){
     <div class="kpi"><div class="kpi-label">Prompts in view</div><div class="kpi-value">${prompts.length}</div></div>
     <div class="kpi"><div class="kpi-label">Flagged for review</div><div class="kpi-value">${Object.values(s.byPrompt).filter(x=>x.total && (x.refused/x.total>0.22 || x.veered/Math.max(1,x.total-x.refused)>0.30)).length}</div><div class="kpi-sub">high refusal or veer rate</div></div>`;
   const cats = Object.keys(s.byCat).sort();
-  barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>s.byCat[c].total? 100*s.byCat[c].refused/s.byCat[c].total : null)}], {min:0,max:60,height:280,width:560,rotateLabels:true});
+  barChart('ph-refusal-chart', cats, [{name:'Refusal rate %', color:'var(--bad)', values:cats.map(c=>s.byCat[c].total? 100*s.byCat[c].refused/s.byCat[c].total : null)}], {min:0,max:60,height:280,width:560,wrapLabels:true});
   renderPhModelChart(s, f.models);
 }
 /* Own toggle (refusal / veer / response rate), independent of the flagged-prompt table's own sort
@@ -4167,8 +4187,50 @@ function renderCitations(){
    11. INIT — waits for real data (loadAllData + buildFromFetchedData) before
    building any page, since every buildXPage() reads ROSTER/PROMPTS/METRICS.
    ============================================================================ */
+// Added 2026-09-08 alongside the login gate: the dashboard now requires a valid session cookie
+// (set by /api/login) before any real data loads -- see dashboard_deploy/netlify/functions/. This
+// only checks status; it never sees or stores the password itself, just the resulting cookie.
+async function checkAuthed(){
+  try {
+    const r = await fetch('/api/check-auth', { credentials: 'same-origin' });
+    return r.ok;
+  } catch(e) {
+    return false;
+  }
+}
+
+function renderLoginForm(loadingEl, errorMsg){
+  loadingEl.innerHTML = `
+    <form id="login-form" style="display:flex;flex-direction:column;gap:12px;width:280px;padding:28px;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+      <div style="font-weight:600;font-size:16px;color:#222;">Bullhorn AEO Dashboard</div>
+      <input id="login-password" type="password" placeholder="Password" autofocus style="padding:8px 10px;font-size:14px;border:1px solid #ccc;border-radius:5px;">
+      ${errorMsg ? `<div style="color:#B23B3B;font-size:13px;">${escXHtml(errorMsg)}</div>` : ''}
+      <button type="submit" style="padding:9px;font-size:14px;font-weight:600;border:none;border-radius:5px;background:#2563eb;color:#fff;cursor:pointer;">Sign in</button>
+    </form>`;
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = document.getElementById('login-password').value;
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({password}),
+      });
+      if (r.ok) { window.location.reload(); }
+      else { renderLoginForm(loadingEl, 'Incorrect password.'); }
+    } catch(err) {
+      renderLoginForm(loadingEl, 'Login failed — check your connection and try again.');
+    }
+  });
+}
+
 async function initDashboard(){
   const loadingEl = document.getElementById('data-loading');
+  if (!(await checkAuthed())) {
+    renderLoginForm(loadingEl, null);
+    return;
+  }
   try {
     await loadAllData();
     buildFromFetchedData();

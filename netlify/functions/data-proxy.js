@@ -18,9 +18,10 @@ exports.handler = async (event) => {
     return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'unauthorized' }) };
   }
 
-  // event.path is the full function path including the splat, e.g.
-  // "/.netlify/functions/data-proxy/text/AZ-01.json" -> relPath "text/AZ-01.json".
-  const relPath = decodeURIComponent((event.path || '').replace(/^.*\/data-proxy\/?/, ''));
+  // event.path reflects the ORIGINAL public request path for a status-200 rewrite rule (not the
+  // rewritten /.netlify/functions/data-proxy/... target) -- confirmed empirically against the
+  // live deploy, e.g. "/api/data/citations.json" -> relPath "citations.json".
+  const relPath = decodeURIComponent((event.path || '').replace(/^.*\/api\/data\/?/, ''));
   if (!relPath) {
     return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'missing path' }) };
   }

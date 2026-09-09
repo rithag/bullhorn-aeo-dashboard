@@ -686,6 +686,20 @@ function ensureCitationsLoaded(){
   }
   return citationsLoadPromise;
 }
+// topic_key_labels.json is tiny (~182 entries, a few KB) — safe to fetch eagerly the same moment
+// citations.json is, no need for the same defer-until-page-open treatment. Only the Citation
+// Breakout page's "Citations by prompt" search card reads TOPIC_KEY_LABELS.
+let topicKeyLabelsLoadPromise = null;
+let TOPIC_KEY_LABELS = {};
+function ensureTopicKeyLabelsLoaded(){
+  if(!topicKeyLabelsLoadPromise){
+    topicKeyLabelsLoadPromise = fetch(heavyAssetUrl('topic_key_labels.json')).then(r=>r.json()).then(raw=>{
+      TOPIC_KEY_LABELS = raw;
+      return TOPIC_KEY_LABELS;
+    }).catch(e=>{ console.error('topic_key_labels load failed', e); return {}; });
+  }
+  return topicKeyLabelsLoadPromise;
+}
 async function loadAllData(){
   const base='dashboard_data/dist/';
   const j = u => fetch(base+u).then(r=>r.json());
@@ -1081,7 +1095,7 @@ function buildCitationEvents(){
       // human-readable policy-topic field used on the Narrative Alignment page), falling back to
       // "Uncategorized"/"No Topic Tested" when a citation's prompt text didn't exact-match any
       // catalog row (phrasing drift / since-edited rows) -- still counted, just honestly unlabeled.
-      promptCategory: cd.prompt_category[i], topic: cd.topic[i],
+      promptCategory: cd.prompt_category[i], topic: cd.topic[i], topicKey: cd.topic_key[i] || null,
       office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
     };
   }
@@ -4081,7 +4095,6 @@ function buildCitationsPage(){
       <div class="fitem"><label>Office</label><select id="cb-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
       <div class="fitem"><label>State</label><select id="cb-state">${selectOptions(ALL_STATES,'All')}</select></div>
       <div class="fitem"><label>Race</label><select id="cb-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx,r.label)).join('')}</select></div>
-      <div class="fitem"><label>Topic</label><select id="cb-topic">${selectOptions(citationTopicOptions(),'All')}</select></div>
       <div class="fitem"><label>Range start</label><input type="date" id="cb-start"></div>
       <div class="fitem"><label>Range end</label><input type="date" id="cb-end"></div>
       <div class="fitem">
@@ -4093,6 +4106,7 @@ function buildCitationsPage(){
         </div>
       </div>
     </div>
+    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-unresolved"> Include "Unresolved (Google wrapper)" citations — excluded by default everywhere on this page (Citation mix, Citations by prompt type, Citations by prompt) since Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data.</label>
     <div class="kpis" id="cb-kpis"></div>
     <div class="card section-gap">
       <div class="card-title">Owned domains tracker</div>
@@ -4101,15 +4115,26 @@ function buildCitationsPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">Citation mix</div>
-      <div class="card-caption">Every citation across responses in view, by category. "Unresolved (Google wrapper)" is excluded from the %% breakdown below by default — Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data — check the box to add it back in.</div>
-      <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:8px;"><input type="checkbox" id="cb-include-unresolved"> Include "Unresolved (Google wrapper)" in the mix below</label>
+      <div class="card-caption">Every citation across responses in view, by category.</div>
       <div id="cb-stackbar"></div>
     </div>
     <div class="card section-gap">
       <div class="card-title">Citations by prompt type</div>
-      <div class="card-caption">Which kind of question is driving citation volume, most-cited first — respects every filter above, including Topic. Click a row to see which domains dominate that prompt type.</div>
+      <div class="card-caption">Which kind of question is driving citation volume, most-cited first. Click a row to see which domains dominate that prompt type, broken down by source type; click a domain for its individual URLs.</div>
+      <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div class="fitem"><label>Prompt type</label><select id="cb-pt-type-filter">${selectOptions(CITATION_PROMPT_TYPES.map(t=>t.key),'All')}</select></div>
+        <div class="fitem"><label>Topic</label><select id="cb-pt-topic-filter">${selectOptions(citationTopicOptions(),'All')}</select></div>
+      </div>
       <div class="breadcrumbs" id="cb-pt-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
       <div id="cb-prompttype"></div>
+    </div>
+    <div class="card section-gap">
+      <div class="card-title">Citations by prompt</div>
+      <div class="card-caption">Search for a prompt template (bundled across every race that shares it, e.g. the same policy-area question asked in all 10 WS1 races) to see which sources are driving citation influence on it specifically.</div>
+      <div class="subfilter-row" style="margin-bottom:10px;"><div class="fitem" style="width:100%;max-width:480px;"><label>Search prompts</label><input type="text" id="cb-prompt-search" placeholder="e.g. affordability, qualifications, who is running…" style="width:100%;padding:6px 8px;font-size:12px;border:1px solid #ccc;border-radius:5px;"></div></div>
+      <div id="cb-prompt-search-results"></div>
+      <div class="breadcrumbs" id="cb-ps-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
+      <div id="cb-prompt-search-detail"></div>
     </div>
     <div class="card section-gap">
       <div class="breadcrumbs" id="cb-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
@@ -4119,15 +4144,23 @@ function buildCitationsPage(){
   const citationDates = [...new Set(CITATION_EVENTS.map(e=>e.date))].sort();
   document.getElementById('cb-start').value = citationDates[0] || '';
   document.getElementById('cb-end').value = citationDates[citationDates.length-1] || '';
-  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; renderCitations(); }));
-  document.getElementById('cb-include-unresolved').addEventListener('change', renderCitations);
+  // Page-wide filters (top filterbar) reset every card's drill state, since they change the whole
+  // underlying population. The prompt-type card's own local filters (subfilter-row, below) only
+  // reset that card's drill — they don't touch cb-drill/cb-ps, which aren't scoped by them.
+  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; window.__cbPsDrill = {level:'domain'}; renderCitations(); }));
+  document.getElementById('cb-include-unresolved').addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; window.__cbPsDrill = {level:'domain'}; renderCitations(); });
+  document.getElementById('cb-pt-type-filter').addEventListener('change', ()=>{ window.__cbPromptDrill = {level:'type'}; renderCitations(); });
+  document.getElementById('cb-pt-topic-filter').addEventListener('change', ()=>{ window.__cbPromptDrill = {level:'type'}; renderCitations(); });
+  document.getElementById('cb-prompt-search').addEventListener('input', renderPromptSearch);
   window.__cbDrill = {level:'category'};
   window.__cbPromptDrill = {level:'type'};
+  window.__cbPsSelected = null; // selected topic_key for the "Citations by prompt" search card
+  window.__cbPsDrill = {level:'domain'};
+  ensureTopicKeyLabelsLoaded().then(renderPromptSearch);
   renderCitations();
 }
 function cbFilteredEvents(){
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
-  const topic = document.getElementById('cb-topic').value;
   // NOT dateRangeIdx('cb')/DATES here — citations have their own date range (Evertune's sample
   // dates), which don't overlap with prompt_results' dates (CampSight's) at all; indexing into
   // DATES would silently match zero citations. Compare date strings directly instead.
@@ -4140,7 +4173,6 @@ function cbFilteredEvents(){
     if(office!=='all' && e.office!==office) return false;
     if(state!=='all' && e.state!==state) return false;
     if(race!=='all' && String(e.raceIdx)!==race) return false;
-    if(topic!=='all' && e.topic!==topic) return false;
     if(startVal && e.date<startVal) return false;
     if(endVal && e.date>endVal) return false;
     if(!srcTypesOn[e.source_type]) return false;
@@ -4227,6 +4259,7 @@ function renderCitations(){
   stackedBarChart('cb-stackbar', [{label:'All citations', segments:segs.length?segs:[{name:'None',value:1,color:'#EEF1F4'}]}], {width:700, barH:30, rowGap:0, labelW:0});
 
   renderCitationsByPromptType(events, total);
+  renderPromptSearch(); // re-scope the prompt-search card's results to whatever page-wide filters/toggle just changed
 
   const drill = window.__cbDrill || {level:'category'};
   const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
@@ -4273,16 +4306,77 @@ function renderCitations(){
   }
 }
 
+function cbIncludeUnresolved(){ return document.getElementById('cb-include-unresolved').checked; }
+// Excludes "Unresolved (Google wrapper)" rows by default (shared toggle, see cb-include-unresolved
+// in buildCitationsPage) -- applies to Citations by prompt type and Citations by prompt, same as
+// Citation mix already did. Owned domains tracker and the site-category drill are untouched by
+// this: the category drill NEEDS to show the Unresolved bucket as its own row to be honest about
+// where the volume goes, it's just excluded from the %% mix chart specifically.
+function excludeUnresolvedUnlessIncluded(events){
+  return cbIncludeUnresolved() ? events : events.filter(e=>e.catKey!=='Unresolved (Google wrapper)');
+}
+
+// Shared 2-level (domain -> url) drill renderer, reused by both Citations by prompt type and
+// Citations by prompt (search) -- domain level shows each domain's source_type composition inline
+// (2026-09-09 feedback: "sources broken down by source type"), clicking a domain shows its
+// individual URLs (2026-09-09 feedback: "see the individual URLs cited"). `events` must already be
+// fully filtered (page filters + local filters + Google-wrapper exclusion) by the caller.
+function renderDomainUrlDrill(containerId, events, drillState, color, onDomainClick){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(drillState.level==='url'){
+    const domEvents = events.filter(e=>normalizeDomain(e.domain)===drillState.domain);
+    const byUrl = {};
+    domEvents.forEach(e=>{ byUrl[e.url]=(byUrl[e.url]||0)+e.count; });
+    const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
+    el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drillState.domain)}</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
+      (rows.length ? rows.map(r=>`<tr><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') : `<tr><td colspan="2" class="small-muted">No URLs for this domain in the current filters.</td></tr>`) + `</table></div>`;
+    return;
+  }
+  const byDom = {}; // normalized domain -> {total, bySrc:{sources_cited,sources_search,sources_more}}
+  events.forEach(e=>{
+    const d = normalizeDomain(e.domain);
+    byDom[d] = byDom[d] || {total:0, bySrc:{}};
+    byDom[d].total += e.count;
+    const st = e.source_type==='sources_references' ? 'sources_more' : e.source_type; // fold the tiny real vendor type in, same as the top filterbar's checkboxes do
+    byDom[d].bySrc[st] = (byDom[d].bySrc[st]||0) + e.count;
+  });
+  const rows = Object.entries(byDom).map(([domain,v])=>({domain,...v})).sort((a,b)=>b.total-a.total).slice(0,25);
+  const max = Math.max(1,...rows.map(r=>r.total));
+  const srcLabel = {sources_cited:'cited', sources_search:'search', sources_more:'more'};
+  el.innerHTML = rows.length ? rows.map(r=>{
+    const breakdown = ['sources_cited','sources_search','sources_more'].map(k=>r.bySrc[k]?`${r.bySrc[k]} ${srcLabel[k]}`:null).filter(Boolean).join(' · ');
+    return `<div class="topic-row" style="cursor:pointer;" data-domain="${escXAttr(r.domain)}">
+      <div class="topic-name" style="width:190px;">${escXHtml(r.domain)}</div>
+      <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.total/max,2,100)}%;background:${color};"></div></div>
+      <div class="topic-pct" style="width:260px;text-align:right;">${r.total}${breakdown?' · '+breakdown:''}</div>
+    </div>`;
+  }).join('') : `<div class="small-muted">No domains for the current filters.</div>`;
+  el.querySelectorAll('[data-domain]').forEach(row=>row.addEventListener('click', ()=>onDomainClick(row.getAttribute('data-domain'))));
+}
+
 // Independent of the category/domain/url drill above (cb-drill/__cbDrill) -- this slices the same
 // filtered event set by prompt_category (renamed "prompt type" here for the reader, same string
 // CATEGORY_PLAIN_LABEL/CATEGORY_BUCKET use elsewhere) instead of site category, so it needs its
-// own 2-level drill state (__cbPromptDrill: 'type' -> 'domain') rather than reusing __cbDrill's,
-// which is keyed by site-category and would collide in meaning.
+// own 3-level drill state (__cbPromptDrill: 'type' -> 'domain' -> 'url') rather than reusing
+// __cbDrill's, which is keyed by site-category and would collide in meaning. Has its own local
+// Prompt type/Topic filters (subfilter-row on this card, 2026-09-09 -- moved off the page-wide
+// filterbar since having Topic live up there while Prompt type only existed as this chart's axis
+// was confusing) layered on top of the page-wide-filtered `events` passed in.
 function renderCitationsByPromptType(events, total){
+  const typeFilter = document.getElementById('cb-pt-type-filter').value;
+  const topicFilter = document.getElementById('cb-pt-topic-filter').value;
+  events = excludeUnresolvedUnlessIncluded(events).filter(e=>
+    (typeFilter==='all' || e.promptCategory===typeFilter) && (topicFilter==='all' || e.topic===topicFilter));
+  const localTotal = events.reduce((s,e)=>s+e.count,0);
+
   const drill = window.__cbPromptDrill || {level:'type'};
   const crumbs = [cbCrumb('Prompt types', "window.__cbPromptDrill={level:'type'};renderCitations();", drill.level==='type')];
-  if(drill.level==='domain'){
-    crumbs.push(' / '+cbCrumb(citationPromptTypeLabel(drill.typeKey), null, true));
+  if(drill.level==='domain'||drill.level==='url'){
+    crumbs.push(' / '+cbCrumb(citationPromptTypeLabel(drill.typeKey), `window.__cbPromptDrill={level:'domain',typeKey:'${drill.typeKey}'};renderCitations();`, drill.level==='domain'));
+  }
+  if(drill.level==='url'){
+    crumbs.push(' / '+cbCrumb(drill.domain, null, true));
   }
   document.getElementById('cb-pt-crumbs').innerHTML = crumbs.join('');
 
@@ -4297,22 +4391,61 @@ function renderCitationsByPromptType(events, total){
       <div class="topic-row" style="cursor:pointer;" onclick="window.__cbPromptDrill={level:'domain',typeKey:'${r.key}'};renderCitations();">
         <div class="topic-name" style="width:280px;">${escXHtml(r.label)}</div>
         <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
-        <div class="topic-pct" style="width:70px;">${r.count}${total? ' ('+fmt1(100*r.count/total)+'%)':''}</div>
-      </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
-  } else if(drill.level==='domain'){
+        <div class="topic-pct" style="width:70px;">${r.count}${localTotal? ' ('+fmt1(100*r.count/localTotal)+'%)':''}</div>
+      </div>`).join('') + (localTotal? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
+  } else {
     const typeEvents = events.filter(e=>e.promptCategory===drill.typeKey);
-    const byDom = {};
-    typeEvents.forEach(e=>{ const d=normalizeDomain(e.domain); byDom[d]=(byDom[d]||0)+e.count; });
-    const rows = Object.entries(byDom).map(([domain,count])=>({domain,count})).sort((a,b)=>b.count-a.count).slice(0,25);
-    const max = Math.max(1,...rows.map(r=>r.count));
-    const color = citationPromptTypeColor(drill.typeKey);
-    el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top domains for "${escXHtml(citationPromptTypeLabel(drill.typeKey))}" prompts</div>` + (rows.length? rows.map(r=>`
-      <div class="topic-row">
-        <div class="topic-name" style="width:280px;">${escXHtml(r.domain)}</div>
-        <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${color};"></div></div>
-        <div class="topic-pct" style="width:54px;">${r.count}</div>
-      </div>`).join('') : `<div class="small-muted">No domains for this prompt type in the current filters.</div>`);
+    renderDomainUrlDrill('cb-prompttype', typeEvents, drill, citationPromptTypeColor(drill.typeKey),
+      (domain)=>{ window.__cbPromptDrill = {level:'url', typeKey:drill.typeKey, domain}; renderCitations(); });
   }
+}
+
+// "Citations by prompt" (2026-09-09 request): search a prompt TEMPLATE, not one literal per-race
+// prompt instance -- bundled across every race sharing it (topic_key), per explicit follow-up
+// ("we have the same policy area prompts across all 10 WS1 races"). TOPIC_KEY_LABELS (fetched via
+// ensureTopicKeyLabelsLoaded) supplies one representative example_text per topic_key for matching/
+// display, since topic_key strings themselves (e.g. "flex_state_issue_1") aren't human-searchable.
+// window.__cbPsSelected holds the chosen topic_key (null = no selection yet); window.__cbPsDrill is
+// the same 'domain'/'url' shape renderDomainUrlDrill expects.
+function renderPromptSearch(){
+  const resultsEl = document.getElementById('cb-prompt-search-results');
+  const detailEl = document.getElementById('cb-prompt-search-detail');
+  const crumbsEl = document.getElementById('cb-ps-crumbs');
+  if(!resultsEl) return; // page not built yet (ensureTopicKeyLabelsLoaded can resolve after navigating away)
+  const q = (document.getElementById('cb-prompt-search').value||'').trim().toLowerCase();
+
+  if(q){
+    const matches = Object.entries(TOPIC_KEY_LABELS)
+      .filter(([tk,v])=>v.example_text.toLowerCase().includes(q) || v.prompt_category.toLowerCase().includes(q))
+      .slice(0,20);
+    resultsEl.innerHTML = matches.length ? matches.map(([tk,v])=>`
+      <div class="topic-row" style="cursor:pointer;" data-tk="${escXAttr(tk)}">
+        <div style="flex:1;"><div style="font-size:12.5px;">${escXHtml(v.example_text)}</div><div class="small-muted">${escXHtml(v.prompt_category)} · asked in ${v.n_prompts} race${v.n_prompts===1?'':'s'}</div></div>
+      </div>`).join('') : `<div class="small-muted">No prompt templates match "${escXHtml(q)}".</div>`;
+    resultsEl.querySelectorAll('[data-tk]').forEach(row=>row.addEventListener('click', ()=>{
+      window.__cbPsSelected = row.getAttribute('data-tk');
+      window.__cbPsDrill = {level:'domain'};
+      renderPromptSearch();
+    }));
+  } else {
+    resultsEl.innerHTML = '';
+  }
+
+  if(!window.__cbPsSelected){
+    crumbsEl.innerHTML = '';
+    detailEl.innerHTML = '';
+    return;
+  }
+  const tk = window.__cbPsSelected;
+  const label = TOPIC_KEY_LABELS[tk];
+  const drill = window.__cbPsDrill || {level:'domain'};
+  const crumbs = [cbCrumb(label ? label.example_text : tk, "window.__cbPsDrill={level:'domain'};renderPromptSearch();", drill.level==='domain')];
+  if(drill.level==='url'){ crumbs.push(' / '+cbCrumb(drill.domain, null, true)); }
+  crumbsEl.innerHTML = crumbs.join('');
+
+  const events = excludeUnresolvedUnlessIncluded(cbFilteredEvents()).filter(e=>e.topicKey===tk);
+  renderDomainUrlDrill('cb-prompt-search-detail', events, drill, 'var(--brand)',
+    (domain)=>{ window.__cbPsDrill = {level:'url', domain}; renderPromptSearch(); });
 }
 
 /* ============================================================================

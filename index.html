@@ -980,6 +980,33 @@ const CITATION_CATEGORIES = [
 function citationCatColor(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.color : '#999'; }
 function citationCatLabel(k){ const c=CITATION_CATEGORIES.find(c=>c.key===k); return c? c.label : k; }
 
+// "Type of prompt" breakdown for Citation Breakout (2026-09-09) -- reuses the same 5-value
+// prompt_category taxonomy as CATEGORY_BUCKET/CATEGORY_PLAIN_LABEL above, so this reads
+// consistently with every other page's language for "type of prompt". 'Uncategorized' covers
+// citation rows whose prompt text didn't exact-match a catalog row at ingestion (see
+// evertune_citations.py) -- kept visible rather than folded into an existing bucket, same
+// "label honestly, don't guess" precedent as CITATION_CATEGORIES' Google-wrapper handling.
+const CITATION_PROMPT_TYPES = [
+  {key:'Issue & Policy Positions', label:'Issue & Policy Positions', color:'#2E5EAA'},
+  {key:'Political Narratives & Attack Lines', label:'Political Narratives & Attack Lines', color:'#B23B3B'},
+  {key:'Head-to-Head Comparison', label:'Head-to-Head Comparison', color:'#4F8B8B'},
+  {key:'Background & Qualifications', label:'Background & Qualifications', color:'#8B7FB0'},
+  {key:'Ballot & Voting Logistics', label:'Ballot & Voting Logistics', color:'#C98A2E'},
+  {key:'Uncategorized', label:'Uncategorized', color:'#C9CDD3'},
+];
+function citationPromptTypeColor(k){ const c=CITATION_PROMPT_TYPES.find(c=>c.key===k); return c? c.color : '#999'; }
+function citationPromptTypeLabel(k){ const c=CITATION_PROMPT_TYPES.find(c=>c.key===k); return c? c.label : k; }
+// Topic options aren't a fixed list (narrative_tested's vocabulary is race-type-conditional, same
+// reason issueTagCategories() above is derived rather than hardcoded) -- built from whatever's
+// actually present in the loaded citation data. "No Topic Tested" (most Ballot & Voting Logistics
+// and many Background/Comparison prompts have no narrative_tested value at all) is real, common,
+// and sorted to the end rather than alphabetically, since it isn't really a "topic" like the rest.
+function citationTopicOptions(){
+  const topics = [...new Set(CITATION_EVENTS.map(e=>e.topic).filter(Boolean))];
+  topics.sort((a,b)=> (a==='No Topic Tested')-(b==='No Topic Tested') || a.localeCompare(b));
+  return topics;
+}
+
 /* Owned Domains Tracker (2026-08-31, Citation Breakout) — a short, hand-maintained watchlist of
    domains WE publish (the aeo-sites/ network + any other owned property), distinct from the
    "Candidate/Officeholder-Owned Content" citation category (which means the candidate's own site,
@@ -1015,6 +1042,14 @@ function buildCitationEvents(){
     CITATION_EVENTS[i] = {
       raceIdx, race, date: cd.report_date[i], domain: cd.domain[i], url: cd.url[i],
       source_type: cd.source_type[i], count: +cd.source_count[i], catKey: cd.aeo_site_category[i],
+      // promptCategory/topic (2026-09-09): joined at ingestion (scripts/pipeline/evertune_citations.py)
+      // from the citation row's literal prompt text against our own WS1/WS2 catalogs, NOT Evertune's
+      // own `topic` column (their older, pre-consolidation 9-value bucket) -- promptCategory is our
+      // 5-value structural taxonomy ("type of prompt"), topic is narrative_tested (the same
+      // human-readable policy-topic field used on the Narrative Alignment page), falling back to
+      // "Uncategorized"/"No Topic Tested" when a citation's prompt text didn't exact-match any
+      // catalog row (phrasing drift / since-edited rows) -- still counted, just honestly unlabeled.
+      promptCategory: cd.prompt_category[i], topic: cd.topic[i],
       office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
     };
   }
@@ -4014,6 +4049,7 @@ function buildCitationsPage(){
       <div class="fitem"><label>Office</label><select id="cb-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
       <div class="fitem"><label>State</label><select id="cb-state">${selectOptions(ALL_STATES,'All')}</select></div>
       <div class="fitem"><label>Race</label><select id="cb-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx,r.label)).join('')}</select></div>
+      <div class="fitem"><label>Topic</label><select id="cb-topic">${selectOptions(citationTopicOptions(),'All')}</select></div>
       <div class="fitem"><label>Range start</label><input type="date" id="cb-start"></div>
       <div class="fitem"><label>Range end</label><input type="date" id="cb-end"></div>
       <div class="fitem">
@@ -4038,6 +4074,12 @@ function buildCitationsPage(){
       <div id="cb-stackbar"></div>
     </div>
     <div class="card section-gap">
+      <div class="card-title">Citations by prompt type</div>
+      <div class="card-caption">Which kind of question is driving citation volume, most-cited first — respects every filter above, including Topic. Click a row to see which domains dominate that prompt type.</div>
+      <div class="breadcrumbs" id="cb-pt-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
+      <div id="cb-prompttype"></div>
+    </div>
+    <div class="card section-gap">
       <div class="breadcrumbs" id="cb-crumbs" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>
       <div id="cb-drill"></div>
     </div>`;
@@ -4045,13 +4087,15 @@ function buildCitationsPage(){
   const citationDates = [...new Set(CITATION_EVENTS.map(e=>e.date))].sort();
   document.getElementById('cb-start').value = citationDates[0] || '';
   document.getElementById('cb-end').value = citationDates[citationDates.length-1] || '';
-  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; renderCitations(); }));
+  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; renderCitations(); }));
   document.getElementById('cb-include-unresolved').addEventListener('change', renderCitations);
   window.__cbDrill = {level:'category'};
+  window.__cbPromptDrill = {level:'type'};
   renderCitations();
 }
 function cbFilteredEvents(){
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
+  const topic = document.getElementById('cb-topic').value;
   // NOT dateRangeIdx('cb')/DATES here — citations have their own date range (Evertune's sample
   // dates), which don't overlap with prompt_results' dates (CampSight's) at all; indexing into
   // DATES would silently match zero citations. Compare date strings directly instead.
@@ -4064,6 +4108,7 @@ function cbFilteredEvents(){
     if(office!=='all' && e.office!==office) return false;
     if(state!=='all' && e.state!==state) return false;
     if(race!=='all' && String(e.raceIdx)!==race) return false;
+    if(topic!=='all' && e.topic!==topic) return false;
     if(startVal && e.date<startVal) return false;
     if(endVal && e.date>endVal) return false;
     if(!srcTypesOn[e.source_type]) return false;
@@ -4138,6 +4183,8 @@ function renderCitations(){
   const segs = mixCategories.map(c=>({name:c.label, value:byCat[c.key]||0, color:c.color})).filter(s=>s.value>0);
   stackedBarChart('cb-stackbar', [{label:'All citations', segments:segs.length?segs:[{name:'None',value:1,color:'#EEF1F4'}]}], {width:700, barH:30, rowGap:0, labelW:0});
 
+  renderCitationsByPromptType(events, total);
+
   const drill = window.__cbDrill || {level:'category'};
   const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
   if(drill.level==='domain'||drill.level==='url'){
@@ -4180,6 +4227,48 @@ function renderCitations(){
     const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
     drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drill.domain)}</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
       rows.map(r=>`<tr><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') + `</table></div>`;
+  }
+}
+
+// Independent of the category/domain/url drill above (cb-drill/__cbDrill) -- this slices the same
+// filtered event set by prompt_category (renamed "prompt type" here for the reader, same string
+// CATEGORY_PLAIN_LABEL/CATEGORY_BUCKET use elsewhere) instead of site category, so it needs its
+// own 2-level drill state (__cbPromptDrill: 'type' -> 'domain') rather than reusing __cbDrill's,
+// which is keyed by site-category and would collide in meaning.
+function renderCitationsByPromptType(events, total){
+  const drill = window.__cbPromptDrill || {level:'type'};
+  const crumbs = [cbCrumb('Prompt types', "window.__cbPromptDrill={level:'type'};renderCitations();", drill.level==='type')];
+  if(drill.level==='domain'){
+    crumbs.push(' / '+cbCrumb(citationPromptTypeLabel(drill.typeKey), null, true));
+  }
+  document.getElementById('cb-pt-crumbs').innerHTML = crumbs.join('');
+
+  const el = document.getElementById('cb-prompttype');
+  if(drill.level==='type'){
+    const byType = {};
+    events.forEach(e=>{ byType[e.promptCategory] = (byType[e.promptCategory]||0)+e.count; });
+    const rows = CITATION_PROMPT_TYPES.map(t=>({key:t.key,label:t.label,color:t.color,count:byType[t.key]||0}))
+      .sort((a,b)=> (a.key==='Uncategorized')-(b.key==='Uncategorized') || b.count-a.count);
+    const max = Math.max(1,...rows.map(r=>r.count));
+    el.innerHTML = rows.map(r=>`
+      <div class="topic-row" style="cursor:pointer;" onclick="window.__cbPromptDrill={level:'domain',typeKey:'${r.key}'};renderCitations();">
+        <div class="topic-name" style="width:280px;">${escXHtml(r.label)}</div>
+        <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
+        <div class="topic-pct" style="width:70px;">${r.count}${total? ' ('+fmt1(100*r.count/total)+'%)':''}</div>
+      </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
+  } else if(drill.level==='domain'){
+    const typeEvents = events.filter(e=>e.promptCategory===drill.typeKey);
+    const byDom = {};
+    typeEvents.forEach(e=>{ const d=normalizeDomain(e.domain); byDom[d]=(byDom[d]||0)+e.count; });
+    const rows = Object.entries(byDom).map(([domain,count])=>({domain,count})).sort((a,b)=>b.count-a.count).slice(0,25);
+    const max = Math.max(1,...rows.map(r=>r.count));
+    const color = citationPromptTypeColor(drill.typeKey);
+    el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top domains for "${escXHtml(citationPromptTypeLabel(drill.typeKey))}" prompts</div>` + (rows.length? rows.map(r=>`
+      <div class="topic-row">
+        <div class="topic-name" style="width:280px;">${escXHtml(r.domain)}</div>
+        <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${color};"></div></div>
+        <div class="topic-pct" style="width:54px;">${r.count}</div>
+      </div>`).join('') : `<div class="small-muted">No domains for this prompt type in the current filters.</div>`);
   }
 }
 

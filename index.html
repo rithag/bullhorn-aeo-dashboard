@@ -4120,7 +4120,7 @@ function buildCitationsPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">Citations by prompt type</div>
-      <div class="card-caption">Which kind of question is driving citation volume, most-cited first. Click a row to see which domains dominate that prompt type, broken down by source type; click a domain for its individual URLs.</div>
+      <div class="card-caption">Which kind of question is driving citation volume, most-cited first. Click a row to see which domains dominate that prompt type, broken down by source type; click a domain for its individual URLs. Prompt type and Topic below apply page-wide, same as every filter above — including to the KPIs, Owned domains tracker, Citation mix, and category drill.</div>
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div class="fitem"><label>Prompt type</label><select id="cb-pt-type-filter">${selectOptions(CITATION_PROMPT_TYPES.map(t=>t.key),'All')}</select></div>
         <div class="fitem"><label>Topic</label><select id="cb-pt-topic-filter">${selectOptions(citationTopicOptions(),'All')}</select></div>
@@ -4144,23 +4144,39 @@ function buildCitationsPage(){
   const citationDates = [...new Set(CITATION_EVENTS.map(e=>e.date))].sort();
   document.getElementById('cb-start').value = citationDates[0] || '';
   document.getElementById('cb-end').value = citationDates[citationDates.length-1] || '';
-  // Page-wide filters (top filterbar) reset every card's drill state, since they change the whole
-  // underlying population. The prompt-type card's own local filters (subfilter-row, below) only
-  // reset that card's drill — they don't touch cb-drill/cb-ps, which aren't scoped by them.
-  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; window.__cbPsDrill = {level:'domain'}; renderCitations(); }));
-  document.getElementById('cb-include-unresolved').addEventListener('change', ()=>{ window.__cbDrill = {level:'category'}; window.__cbPromptDrill = {level:'type'}; window.__cbPsDrill = {level:'domain'}; renderCitations(); });
-  document.getElementById('cb-pt-type-filter').addEventListener('change', ()=>{ window.__cbPromptDrill = {level:'type'}; renderCitations(); });
-  document.getElementById('cb-pt-topic-filter').addEventListener('change', ()=>{ window.__cbPromptDrill = {level:'type'}; renderCitations(); });
-  document.getElementById('cb-prompt-search').addEventListener('input', renderPromptSearch);
+  // Every filter here is page-wide (Prompt type/Topic included, even though their controls sit on
+  // the Citations-by-prompt-type card below rather than in .filterbar -- see cbFilteredEvents), so
+  // ANY of them changing must reset every card's drill state the same way, not just the card whose
+  // control happens to live nearest it. One shared function so that invariant can't drift out of
+  // sync between listeners again (2026-09-09 audit: this exact class of bug -- a drill not resetting
+  // on a page-wide change -- had already occurred once with __cbPsDrill before this fix).
+  function resetCbDrillsAndRender(){
+    window.__cbDrill = {level:'category'};
+    window.__cbPromptDrill = {level:'type'};
+    window.__cbPsDrill = {level:'domain'};
+    renderCitations();
+  }
+  document.getElementById('page-citations').querySelectorAll('.filterbar select,.filterbar input').forEach(elm=>elm.addEventListener('change', resetCbDrillsAndRender));
+  ['cb-include-unresolved','cb-pt-type-filter','cb-pt-topic-filter'].forEach(id=>document.getElementById(id).addEventListener('change', resetCbDrillsAndRender));
+  document.getElementById('cb-prompt-search').addEventListener('input', renderPromptSearchResults);
   window.__cbDrill = {level:'category'};
   window.__cbPromptDrill = {level:'type'};
   window.__cbPsSelected = null; // selected topic_key for the "Citations by prompt" search card
   window.__cbPsDrill = {level:'domain'};
-  ensureTopicKeyLabelsLoaded().then(renderPromptSearch);
+  ensureTopicKeyLabelsLoaded().then(renderPromptSearchResults);
   renderCitations();
 }
 function cbFilteredEvents(){
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
+  // Prompt type / Topic controls live on the Citations-by-prompt-type card (not the filterbar
+  // above) purely for visual placement (2026-09-09 feedback: having Topic filter the whole page
+  // from a control that lived at the very top, while Prompt type only existed as that one chart's
+  // axis, was confusing) -- but both are genuine PAGE-WIDE filters, same as they need to be to keep
+  // matching this function's pre-existing contract (cb-topic used to live in .filterbar and scope
+  // every section: KPIs, Owned domains, Citation mix, the category drill -- moving its control must
+  // not silently narrow what it actually filters, that's a real regression, not just a UI change).
+  const typeFilter = document.getElementById('cb-pt-type-filter').value;
+  const topicFilter = document.getElementById('cb-pt-topic-filter').value;
   // NOT dateRangeIdx('cb')/DATES here — citations have their own date range (Evertune's sample
   // dates), which don't overlap with prompt_results' dates (CampSight's) at all; indexing into
   // DATES would silently match zero citations. Compare date strings directly instead.
@@ -4173,6 +4189,8 @@ function cbFilteredEvents(){
     if(office!=='all' && e.office!==office) return false;
     if(state!=='all' && e.state!==state) return false;
     if(race!=='all' && String(e.raceIdx)!==race) return false;
+    if(typeFilter!=='all' && e.promptCategory!==typeFilter) return false;
+    if(topicFilter!=='all' && e.topic!==topicFilter) return false;
     if(startVal && e.date<startVal) return false;
     if(endVal && e.date>endVal) return false;
     if(!srcTypesOn[e.source_type]) return false;
@@ -4253,13 +4271,12 @@ function renderCitations(){
   // own citation export mostly returns opaque redirect links, not the real source), so leaving it
   // in by default drowns out the real category mix. Checkbox adds it back in when wanted; this only
   // affects the mix chart below, not the KPI cards or owned-domains tracker above.
-  const includeUnresolved = document.getElementById('cb-include-unresolved').checked;
-  const mixCategories = includeUnresolved ? CITATION_CATEGORIES : CITATION_CATEGORIES.filter(c=>c.key!=='Unresolved (Google wrapper)');
+  const mixCategories = cbIncludeUnresolved() ? CITATION_CATEGORIES : CITATION_CATEGORIES.filter(c=>c.key!=='Unresolved (Google wrapper)');
   const segs = mixCategories.map(c=>({name:c.label, value:byCat[c.key]||0, color:c.color})).filter(s=>s.value>0);
   stackedBarChart('cb-stackbar', [{label:'All citations', segments:segs.length?segs:[{name:'None',value:1,color:'#EEF1F4'}]}], {width:700, barH:30, rowGap:0, labelW:0});
 
   renderCitationsByPromptType(events, total);
-  renderPromptSearch(); // re-scope the prompt-search card's results to whatever page-wide filters/toggle just changed
+  renderPromptSearchDetail(events); // reuse the already-computed page-wide events, don't recompute
 
   const drill = window.__cbDrill || {level:'category'};
   const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
@@ -4321,7 +4338,7 @@ function excludeUnresolvedUnlessIncluded(events){
 // (2026-09-09 feedback: "sources broken down by source type"), clicking a domain shows its
 // individual URLs (2026-09-09 feedback: "see the individual URLs cited"). `events` must already be
 // fully filtered (page filters + local filters + Google-wrapper exclusion) by the caller.
-function renderDomainUrlDrill(containerId, events, drillState, color, onDomainClick){
+function renderDomainUrlDrill(containerId, events, drillState, color, onDomainClick, domainTitle, emptyMessage){
   const el = document.getElementById(containerId);
   if(!el) return;
   if(drillState.level==='url'){
@@ -4344,14 +4361,15 @@ function renderDomainUrlDrill(containerId, events, drillState, color, onDomainCl
   const rows = Object.entries(byDom).map(([domain,v])=>({domain,...v})).sort((a,b)=>b.total-a.total).slice(0,25);
   const max = Math.max(1,...rows.map(r=>r.total));
   const srcLabel = {sources_cited:'cited', sources_search:'search', sources_more:'more'};
-  el.innerHTML = rows.length ? rows.map(r=>{
+  const titleHtml = domainTitle ? `<div class="card-title" style="margin-bottom:8px;">${escXHtml(domainTitle)}</div>` : '';
+  el.innerHTML = titleHtml + (rows.length ? rows.map(r=>{
     const breakdown = ['sources_cited','sources_search','sources_more'].map(k=>r.bySrc[k]?`${r.bySrc[k]} ${srcLabel[k]}`:null).filter(Boolean).join(' · ');
     return `<div class="topic-row" style="cursor:pointer;" data-domain="${escXAttr(r.domain)}">
       <div class="topic-name" style="width:190px;">${escXHtml(r.domain)}</div>
       <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.total/max,2,100)}%;background:${color};"></div></div>
       <div class="topic-pct" style="width:260px;text-align:right;">${r.total}${breakdown?' · '+breakdown:''}</div>
     </div>`;
-  }).join('') : `<div class="small-muted">No domains for the current filters.</div>`;
+  }).join('') : `<div class="small-muted">${escXHtml(emptyMessage || 'No domains for the current filters.')}</div>`);
   el.querySelectorAll('[data-domain]').forEach(row=>row.addEventListener('click', ()=>onDomainClick(row.getAttribute('data-domain'))));
 }
 
@@ -4359,15 +4377,12 @@ function renderDomainUrlDrill(containerId, events, drillState, color, onDomainCl
 // filtered event set by prompt_category (renamed "prompt type" here for the reader, same string
 // CATEGORY_PLAIN_LABEL/CATEGORY_BUCKET use elsewhere) instead of site category, so it needs its
 // own 3-level drill state (__cbPromptDrill: 'type' -> 'domain' -> 'url') rather than reusing
-// __cbDrill's, which is keyed by site-category and would collide in meaning. Has its own local
-// Prompt type/Topic filters (subfilter-row on this card, 2026-09-09 -- moved off the page-wide
-// filterbar since having Topic live up there while Prompt type only existed as this chart's axis
-// was confusing) layered on top of the page-wide-filtered `events` passed in.
+// __cbDrill's, which is keyed by site-category and would collide in meaning. Prompt type/Topic are
+// real page-wide filters (applied inside cbFilteredEvents, same as office/state/race/date/source-
+// type) even though their controls live on this card, not the page-wide filterbar -- `events` here
+// is already fully filtered by the caller; this function only removes Unresolved (Google wrapper).
 function renderCitationsByPromptType(events, total){
-  const typeFilter = document.getElementById('cb-pt-type-filter').value;
-  const topicFilter = document.getElementById('cb-pt-topic-filter').value;
-  events = excludeUnresolvedUnlessIncluded(events).filter(e=>
-    (typeFilter==='all' || e.promptCategory===typeFilter) && (topicFilter==='all' || e.topic===topicFilter));
+  events = excludeUnresolvedUnlessIncluded(events);
   const localTotal = events.reduce((s,e)=>s+e.count,0);
 
   const drill = window.__cbPromptDrill || {level:'type'};
@@ -4382,9 +4397,14 @@ function renderCitationsByPromptType(events, total){
 
   const el = document.getElementById('cb-prompttype');
   if(drill.level==='type'){
+    // The Prompt type filter (if set to one specific value) already reduced `events` to just that
+    // type via cbFilteredEvents -- every OTHER row would show a guaranteed 0 and lead nowhere if
+    // clicked, so only show the type(s) the current filter actually admits, not the full fixed list.
+    const typeFilter = document.getElementById('cb-pt-type-filter').value;
     const byType = {};
     events.forEach(e=>{ byType[e.promptCategory] = (byType[e.promptCategory]||0)+e.count; });
-    const rows = CITATION_PROMPT_TYPES.map(t=>({key:t.key,label:t.label,color:t.color,count:byType[t.key]||0}))
+    const rows = CITATION_PROMPT_TYPES.filter(t=>typeFilter==='all' || t.key===typeFilter)
+      .map(t=>({key:t.key,label:t.label,color:t.color,count:byType[t.key]||0}))
       .sort((a,b)=> (a.key==='Uncategorized')-(b.key==='Uncategorized') || b.count-a.count);
     const max = Math.max(1,...rows.map(r=>r.count));
     el.innerHTML = rows.map(r=>`
@@ -4395,8 +4415,11 @@ function renderCitationsByPromptType(events, total){
       </div>`).join('') + (localTotal? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
   } else {
     const typeEvents = events.filter(e=>e.promptCategory===drill.typeKey);
+    const typeLabel = citationPromptTypeLabel(drill.typeKey);
     renderDomainUrlDrill('cb-prompttype', typeEvents, drill, citationPromptTypeColor(drill.typeKey),
-      (domain)=>{ window.__cbPromptDrill = {level:'url', typeKey:drill.typeKey, domain}; renderCitations(); });
+      (domain)=>{ window.__cbPromptDrill = {level:'url', typeKey:drill.typeKey, domain}; renderCitations(); },
+      drill.level==='domain' ? `Top domains for "${typeLabel}" prompts` : null,
+      `No domains for "${typeLabel}" prompts in the current filters.`);
   }
 }
 
@@ -4407,30 +4430,36 @@ function renderCitationsByPromptType(events, total){
 // display, since topic_key strings themselves (e.g. "flex_state_issue_1") aren't human-searchable.
 // window.__cbPsSelected holds the chosen topic_key (null = no selection yet); window.__cbPsDrill is
 // the same 'domain'/'url' shape renderDomainUrlDrill expects.
-function renderPromptSearch(){
+//
+// Split into two functions (2026-09-09 audit fix) so that typing in the search box -- which only
+// affects the match list below, never the selected template's detail view -- doesn't repeatedly
+// re-filter the ~3M-row CITATION_EVENTS array on every keystroke. renderPromptSearchResults() is
+// wired to the search input's 'input' event and only touches TOPIC_KEY_LABELS (182 entries, cheap).
+// renderPromptSearchDetail(pageEvents) only re-runs when the selection changes (click) or when the
+// page-wide filters/toggle change (renderCitations passes its own already-computed `events` through
+// instead of this function recomputing cbFilteredEvents() a second time).
+function renderPromptSearchResults(){
   const resultsEl = document.getElementById('cb-prompt-search-results');
+  if(!resultsEl) return; // page not built yet
+  const q = (document.getElementById('cb-prompt-search').value||'').trim().toLowerCase();
+  if(!q){ resultsEl.innerHTML = ''; return; }
+  const matches = Object.entries(TOPIC_KEY_LABELS)
+    .filter(([tk,v])=>v.example_text.toLowerCase().includes(q) || v.prompt_category.toLowerCase().includes(q))
+    .slice(0,20);
+  resultsEl.innerHTML = matches.length ? matches.map(([tk,v])=>`
+    <div class="topic-row" style="cursor:pointer;" data-tk="${escXAttr(tk)}">
+      <div style="flex:1;"><div style="font-size:12.5px;">${escXHtml(v.example_text)}</div><div class="small-muted">${escXHtml(v.prompt_category)} · asked in ${v.n_prompts} race${v.n_prompts===1?'':'s'}</div></div>
+    </div>`).join('') : `<div class="small-muted">No prompt templates match "${escXHtml(q)}".</div>`;
+  resultsEl.querySelectorAll('[data-tk]').forEach(row=>row.addEventListener('click', ()=>{
+    window.__cbPsSelected = row.getAttribute('data-tk');
+    window.__cbPsDrill = {level:'domain'};
+    renderPromptSearchDetail(cbFilteredEvents());
+  }));
+}
+function renderPromptSearchDetail(pageEvents){
   const detailEl = document.getElementById('cb-prompt-search-detail');
   const crumbsEl = document.getElementById('cb-ps-crumbs');
-  if(!resultsEl) return; // page not built yet (ensureTopicKeyLabelsLoaded can resolve after navigating away)
-  const q = (document.getElementById('cb-prompt-search').value||'').trim().toLowerCase();
-
-  if(q){
-    const matches = Object.entries(TOPIC_KEY_LABELS)
-      .filter(([tk,v])=>v.example_text.toLowerCase().includes(q) || v.prompt_category.toLowerCase().includes(q))
-      .slice(0,20);
-    resultsEl.innerHTML = matches.length ? matches.map(([tk,v])=>`
-      <div class="topic-row" style="cursor:pointer;" data-tk="${escXAttr(tk)}">
-        <div style="flex:1;"><div style="font-size:12.5px;">${escXHtml(v.example_text)}</div><div class="small-muted">${escXHtml(v.prompt_category)} · asked in ${v.n_prompts} race${v.n_prompts===1?'':'s'}</div></div>
-      </div>`).join('') : `<div class="small-muted">No prompt templates match "${escXHtml(q)}".</div>`;
-    resultsEl.querySelectorAll('[data-tk]').forEach(row=>row.addEventListener('click', ()=>{
-      window.__cbPsSelected = row.getAttribute('data-tk');
-      window.__cbPsDrill = {level:'domain'};
-      renderPromptSearch();
-    }));
-  } else {
-    resultsEl.innerHTML = '';
-  }
-
+  if(!detailEl) return; // page not built yet
   if(!window.__cbPsSelected){
     crumbsEl.innerHTML = '';
     detailEl.innerHTML = '';
@@ -4438,14 +4467,16 @@ function renderPromptSearch(){
   }
   const tk = window.__cbPsSelected;
   const label = TOPIC_KEY_LABELS[tk];
+  const labelText = label ? label.example_text : tk;
   const drill = window.__cbPsDrill || {level:'domain'};
-  const crumbs = [cbCrumb(label ? label.example_text : tk, "window.__cbPsDrill={level:'domain'};renderPromptSearch();", drill.level==='domain')];
+  const crumbs = [cbCrumb(labelText, "window.__cbPsDrill={level:'domain'};renderPromptSearchDetail(cbFilteredEvents());", drill.level==='domain')];
   if(drill.level==='url'){ crumbs.push(' / '+cbCrumb(drill.domain, null, true)); }
   crumbsEl.innerHTML = crumbs.join('');
 
-  const events = excludeUnresolvedUnlessIncluded(cbFilteredEvents()).filter(e=>e.topicKey===tk);
+  const events = excludeUnresolvedUnlessIncluded(pageEvents).filter(e=>e.topicKey===tk);
   renderDomainUrlDrill('cb-prompt-search-detail', events, drill, 'var(--brand)',
-    (domain)=>{ window.__cbPsDrill = {level:'url', domain}; renderPromptSearch(); });
+    (domain)=>{ window.__cbPsDrill = {level:'url', domain}; renderPromptSearchDetail(cbFilteredEvents()); },
+    null, `No citations for "${labelText}" in the current filters.`);
 }
 
 /* ============================================================================

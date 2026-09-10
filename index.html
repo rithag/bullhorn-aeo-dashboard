@@ -399,7 +399,12 @@ function sentColor(v){ const pct=clamp((v+100)/200,0,1); const r=Math.round(210-
    already-enhanced selects are skipped) if a page ever adds new filterbars.
    ============================================================================ */
 function escXHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function escXAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+// Also escapes single quotes (2026-09-10 audit hardening): several call sites embed this inside a
+// single-quoted JS string literal within a double-quoted onclick="..." attribute (e.g. the citation
+// drills' "back to url" breadcrumb links) -- domain values can't structurally contain one (DNS
+// syntax), so this wasn't reachable with today's data, but escaping it here removes the class of
+// bug entirely rather than relying on that happening to hold for every current and future caller.
+function escXAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function enhanceSelects(root){
   (root||document).querySelectorAll('.filterbar select').forEach(sel=>{
     if(sel.dataset.xselDone) return;
@@ -1086,7 +1091,12 @@ function buildCitationEvents(){
     const raceIdx = RACE_IDX_BY_RACE[race];
     const rosterRow = ROSTER[raceIdx];
     CITATION_EVENTS[i] = {
-      raceIdx, race, date: cd.report_date[i], domain: cd.domain[i], url: cd.url[i],
+      // domain falls back to a placeholder label (2026-09-10 audit fix) -- real data has a handful
+      // of rows where Evertune's own `domain` field is blank (e.g. a bare "/user@host.com" mailto-
+      // looking url with no parseable host) -- these still carry real citation volume/category, so
+      // they stay in every count, but an empty string rendered as a domain/table row looks like a
+      // blank, broken UI row rather than an honestly-labeled edge case.
+      raceIdx, race, date: cd.report_date[i], domain: cd.domain[i] || '(no domain)', url: cd.url[i],
       source_type: cd.source_type[i], count: +cd.source_count[i], catKey: cd.aeo_site_category[i],
       // promptCategory/topic (2026-09-09): joined at ingestion (scripts/pipeline/evertune_citations.py)
       // from the citation row's literal prompt text against our own WS1/WS2 catalogs, NOT Evertune's
@@ -1096,6 +1106,12 @@ function buildCitationEvents(){
       // "Uncategorized"/"No Topic Tested" when a citation's prompt text didn't exact-match any
       // catalog row (phrasing drift / since-edited rows) -- still counted, just honestly unlabeled.
       promptCategory: cd.prompt_category[i], topic: cd.topic[i], topicKey: cd.topic_key[i] || null,
+      // promptId (2026-09-10): the literal per-race prompt INSTANCE ("WS1-0551"), distinct from
+      // topicKey's cross-race template identity -- added so the URL drill can point to the specific
+      // prompt(s) that cited a URL, not just its topic/template bucket. Empty string for citation
+      // rows whose literal prompt text didn't exact-match the catalog (same rows topicKey is also
+      // blank for) -- kept as null here, same convention as topicKey just above.
+      promptId: cd.prompt_id[i] || null,
       office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
     };
   }
@@ -4262,7 +4278,7 @@ function renderCitations(){
   events.forEach(e=>{ byCat[e.catKey] = (byCat[e.catKey]||0)+e.count; });
   document.getElementById('cb-kpis').innerHTML = `
     <div class="kpi hi"><div class="kpi-label">Total citations</div><div class="kpi-value">${total}</div><div class="kpi-sub">in current filter view</div></div>
-    <div class="kpi"><div class="kpi-label">Unique domains</div><div class="kpi-value">${new Set(events.map(e=>e.domain)).size}</div></div>
+    <div class="kpi"><div class="kpi-label">Unique domains</div><div class="kpi-value">${new Set(events.map(e=>normalizeDomain(e.domain))).size}</div></div>
     <div class="kpi"><div class="kpi-label">Candidate-owned share</div><div class="kpi-value">${total? fmt1(100*(byCat['Candidate/Officeholder-Owned Content']||0)/total):'—'}%</div></div>
     <div class="kpi"><div class="kpi-label">Local + national news share</div><div class="kpi-value">${total? fmt1(100*((byCat['Local/Regional News']||0)+(byCat['National News']||0))/total):'—'}%</div></div>`;
 
@@ -4280,12 +4296,16 @@ function renderCitations(){
 
   const drill = window.__cbDrill || {level:'category'};
   const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
-  if(drill.level==='domain'||drill.level==='url'){
+  if(drill.level==='domain'||drill.level==='url'||drill.level==='prompt'){
     const catInfo = CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
     crumbs.push(' / '+cbCrumb(catInfo.label, `window.__cbDrill={level:'domain',catKey:'${drill.catKey}'};renderCitations();`, drill.level==='domain'));
   }
-  if(drill.level==='url'){
-    crumbs.push(' / '+cbCrumb(drill.domain, null, true));
+  if(drill.level==='url'||drill.level==='prompt'){
+    const backToUrl = drill.level==='prompt' ? `window.__cbDrill={level:'url',catKey:'${drill.catKey}',domain:'${escXAttr(drill.domain)}'};renderCitations();` : null;
+    crumbs.push(' / '+cbCrumb(drill.domain, backToUrl, drill.level==='url'));
+  }
+  if(drill.level==='prompt'){
+    crumbs.push(' / '+cbCrumb(drill.url, null, true));
   }
   document.getElementById('cb-crumbs').innerHTML = crumbs.join('');
 
@@ -4302,8 +4322,12 @@ function renderCitations(){
       </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
   } else if(drill.level==='domain'){
     const catEvents = events.filter(e=>e.catKey===drill.catKey);
+    // normalizeDomain (2026-09-10 audit fix): this drill used to group by the raw domain string,
+    // the only one of this page's 3 domain drills that didn't -- a www./case variant of the same
+    // domain would double-count as two separate rows here while collapsing correctly into one
+    // everywhere else on this page (Owned domains tracker, Citations by prompt type/prompt).
     const byDom = {};
-    catEvents.forEach(e=>{ byDom[e.domain]=(byDom[e.domain]||0)+e.count; });
+    catEvents.forEach(e=>{ const d=normalizeDomain(e.domain); byDom[d]=(byDom[d]||0)+e.count; });
     const rows = Object.entries(byDom).map(([domain,count])=>({domain,count})).sort((a,b)=>b.count-a.count);
     const max = Math.max(1,...rows.map(r=>r.count));
     const catInfo = CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
@@ -4314,12 +4338,19 @@ function renderCitations(){
         <div class="topic-pct" style="width:54px;">${r.count}</div>
       </div>`).join('') : `<div class="small-muted">No domains in this category for the current filters.</div>`);
   } else if(drill.level==='url'){
-    const domEvents = events.filter(e=>e.catKey===drill.catKey && e.domain===drill.domain);
+    const domEvents = events.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain);
     const byUrl = {};
     domEvents.forEach(e=>{ byUrl[e.url]=(byUrl[e.url]||0)+e.count; });
     const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
-    drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drill.domain)}</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
-      rows.map(r=>`<tr><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') + `</table></div>`;
+    drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drill.domain)}</div>` + (rows.length ? `<div class="card-caption">Click a URL to see which specific prompts cited it.</div>` : '') + `<div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
+      (rows.length ? rows.map((r,i)=>`<tr class="clickable" data-url-idx="${i}"><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') : `<tr><td colspan="2" class="small-muted">No URLs for this domain in the current filters.</td></tr>`) + `</table></div>`;
+    drillEl.querySelectorAll('[data-url-idx]').forEach((row,i)=>row.addEventListener('click', ()=>{
+      window.__cbDrill = {level:'prompt', catKey:drill.catKey, domain:drill.domain, url:rows[i].url};
+      renderCitations();
+    }));
+  } else if(drill.level==='prompt'){
+    const urlEvents = events.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain && e.url===drill.url);
+    renderCitationUrlPrompts(drillEl, urlEvents, drill.url, CITATION_CATEGORIES.find(c=>c.key===drill.catKey).color);
   }
 }
 
@@ -4333,21 +4364,57 @@ function excludeUnresolvedUnlessIncluded(events){
   return cbIncludeUnresolved() ? events : events.filter(e=>e.catKey!=='Unresolved (Google wrapper)');
 }
 
-// Shared 2-level (domain -> url) drill renderer, reused by both Citations by prompt type and
-// Citations by prompt (search) -- domain level shows each domain's source_type composition inline
-// (2026-09-09 feedback: "sources broken down by source type"), clicking a domain shows its
-// individual URLs (2026-09-09 feedback: "see the individual URLs cited"). `events` must already be
-// fully filtered (page filters + local filters + Google-wrapper exclusion) by the caller.
-function renderDomainUrlDrill(containerId, events, drillState, color, onDomainClick, domainTitle, emptyMessage){
+// Terminal drill level (after category/type/template -> domain -> url): which literal prompts drove
+// citations of this one URL, and how many times each. Requires prompt_id preserved all the way
+// through evertune_citations.py's per-race ingestion (previously discarded post-aggregation --
+// citation rows only carried the coarser prompt_category/topic/topic_key, not the literal per-race
+// prompt instance) -- 2026-09-10 request: "point to the specific prompts that URLs are cited in".
+// PROMPT_INDEX (built in buildFromFetchedData from the same WS1/WS2 prompt_id the citation join
+// already resolves against) supplies the literal prompt text -- citations.json itself doesn't repeat
+// full_query per row, which would meaningfully bloat an already ~300MB+ file for a field most
+// citation views don't need.
+function renderCitationUrlPrompts(el, urlEvents, url, color){
+  const byPrompt = {};
+  urlEvents.forEach(e=>{
+    const key = e.promptId || '';
+    byPrompt[key] = (byPrompt[key]||0) + e.count;
+  });
+  const rows = Object.entries(byPrompt).map(([promptId,count])=>{
+    const row = promptId ? PROMPT_INDEX[promptId] : null;
+    return {promptId, count, text: row ? row.full_query : '(prompt text unavailable — citation not matched to a catalog prompt)', race: row ? row.race : null};
+  }).sort((a,b)=>b.count-a.count);
+  const max = Math.max(1,...rows.map(r=>r.count));
+  el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Prompts citing ${escXHtml(url)}</div>` + (rows.length ? rows.map(r=>`
+    <div class="topic-row">
+      <div class="topic-name" style="width:420px;white-space:normal;">${escXHtml(r.text)}${r.race?` <span class="small-muted">(${escXHtml(r.race)})</span>`:''}</div>
+      <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${color};"></div></div>
+      <div class="topic-pct" style="width:60px;">${r.count}</div>
+    </div>`).join('') : `<div class="small-muted">No prompt data for this URL in the current filters.</div>`);
+}
+
+// Shared 2-level (domain -> url, optionally -> prompt) drill renderer, reused by both Citations by
+// prompt type and Citations by prompt (search) -- domain level shows each domain's source_type
+// composition inline (2026-09-09 feedback: "sources broken down by source type"), clicking a domain
+// shows its individual URLs (2026-09-09 feedback: "see the individual URLs cited"), and (2026-09-10)
+// clicking a URL shows the specific prompts that cited it, when the caller supplies `onUrlClick`.
+// `events` must already be fully filtered (page filters + local filters + Google-wrapper exclusion)
+// by the caller.
+function renderDomainUrlDrill(containerId, events, drillState, color, onDomainClick, onUrlClick, domainTitle, emptyMessage){
   const el = document.getElementById(containerId);
   if(!el) return;
+  if(drillState.level==='prompt'){
+    const urlEvents = events.filter(e=>normalizeDomain(e.domain)===drillState.domain && e.url===drillState.url);
+    renderCitationUrlPrompts(el, urlEvents, drillState.url, color);
+    return;
+  }
   if(drillState.level==='url'){
     const domEvents = events.filter(e=>normalizeDomain(e.domain)===drillState.domain);
     const byUrl = {};
     domEvents.forEach(e=>{ byUrl[e.url]=(byUrl[e.url]||0)+e.count; });
     const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
-    el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drillState.domain)}</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
-      (rows.length ? rows.map(r=>`<tr><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') : `<tr><td colspan="2" class="small-muted">No URLs for this domain in the current filters.</td></tr>`) + `</table></div>`;
+    el.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top URLs on ${escXHtml(drillState.domain)}</div>` + (onUrlClick ? `<div class="card-caption">Click a URL to see which specific prompts cited it.</div>` : '') + `<div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>` +
+      (rows.length ? rows.map((r,i)=>`<tr${onUrlClick?` class="clickable" data-url-idx="${i}"`:''}><td style="max-width:420px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${r.count}</td></tr>`).join('') : `<tr><td colspan="2" class="small-muted">No URLs for this domain in the current filters.</td></tr>`) + `</table></div>`;
+    if(onUrlClick) el.querySelectorAll('[data-url-idx]').forEach((row,i)=>row.addEventListener('click', ()=>onUrlClick(rows[i].url)));
     return;
   }
   const byDom = {}; // normalized domain -> {total, bySrc:{sources_cited,sources_search,sources_more}}
@@ -4387,11 +4454,15 @@ function renderCitationsByPromptType(events, total){
 
   const drill = window.__cbPromptDrill || {level:'type'};
   const crumbs = [cbCrumb('Prompt types', "window.__cbPromptDrill={level:'type'};renderCitations();", drill.level==='type')];
-  if(drill.level==='domain'||drill.level==='url'){
+  if(drill.level==='domain'||drill.level==='url'||drill.level==='prompt'){
     crumbs.push(' / '+cbCrumb(citationPromptTypeLabel(drill.typeKey), `window.__cbPromptDrill={level:'domain',typeKey:'${drill.typeKey}'};renderCitations();`, drill.level==='domain'));
   }
-  if(drill.level==='url'){
-    crumbs.push(' / '+cbCrumb(drill.domain, null, true));
+  if(drill.level==='url'||drill.level==='prompt'){
+    const backToUrl = drill.level==='prompt' ? `window.__cbPromptDrill={level:'url',typeKey:'${drill.typeKey}',domain:'${escXAttr(drill.domain)}'};renderCitations();` : null;
+    crumbs.push(' / '+cbCrumb(drill.domain, backToUrl, drill.level==='url'));
+  }
+  if(drill.level==='prompt'){
+    crumbs.push(' / '+cbCrumb(drill.url, null, true));
   }
   document.getElementById('cb-pt-crumbs').innerHTML = crumbs.join('');
 
@@ -4418,6 +4489,7 @@ function renderCitationsByPromptType(events, total){
     const typeLabel = citationPromptTypeLabel(drill.typeKey);
     renderDomainUrlDrill('cb-prompttype', typeEvents, drill, citationPromptTypeColor(drill.typeKey),
       (domain)=>{ window.__cbPromptDrill = {level:'url', typeKey:drill.typeKey, domain}; renderCitations(); },
+      (url)=>{ window.__cbPromptDrill = {level:'prompt', typeKey:drill.typeKey, domain:drill.domain, url}; renderCitations(); },
       drill.level==='domain' ? `Top domains for "${typeLabel}" prompts` : null,
       `No domains for "${typeLabel}" prompts in the current filters.`);
   }
@@ -4470,12 +4542,17 @@ function renderPromptSearchDetail(pageEvents){
   const labelText = label ? label.example_text : tk;
   const drill = window.__cbPsDrill || {level:'domain'};
   const crumbs = [cbCrumb(labelText, "window.__cbPsDrill={level:'domain'};renderPromptSearchDetail(cbFilteredEvents());", drill.level==='domain')];
-  if(drill.level==='url'){ crumbs.push(' / '+cbCrumb(drill.domain, null, true)); }
+  if(drill.level==='url'||drill.level==='prompt'){
+    const backToUrl = drill.level==='prompt' ? `window.__cbPsDrill={level:'url',domain:'${escXAttr(drill.domain)}'};renderPromptSearchDetail(cbFilteredEvents());` : null;
+    crumbs.push(' / '+cbCrumb(drill.domain, backToUrl, drill.level==='url'));
+  }
+  if(drill.level==='prompt'){ crumbs.push(' / '+cbCrumb(drill.url, null, true)); }
   crumbsEl.innerHTML = crumbs.join('');
 
   const events = excludeUnresolvedUnlessIncluded(pageEvents).filter(e=>e.topicKey===tk);
   renderDomainUrlDrill('cb-prompt-search-detail', events, drill, 'var(--brand)',
     (domain)=>{ window.__cbPsDrill = {level:'url', domain}; renderPromptSearchDetail(cbFilteredEvents()); },
+    (url)=>{ window.__cbPsDrill = {level:'prompt', domain:drill.domain, url}; renderPromptSearchDetail(cbFilteredEvents()); },
     null, `No citations for "${labelText}" in the current filters.`);
 }
 

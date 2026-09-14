@@ -860,8 +860,8 @@ const HAS_ROOT_CAUSE_SECTION = {visibility:true, favorability:true, depth:true, 
 // Bug fix (2026-09-08 feedback): 'narrative' was never added here when every other dimension got
 // flipped to best-outcome-first -- bucket3Order()'s fallback (['0','1','2']) is worst-first, so
 // Topic Comparison's stacked bars (the one real consumer of bucket3Order for narrative -- Topic
-// Comparison is narrative-only) drew "Missing key topics" (0) at the bottom and "Fully aligned" (2)
-// at the top, backwards from every other dimension's chart.
+// Comparison is narrative-only) drew "No candidate-topic association" (0) at the bottom and
+// "Fully aligned" (2) at the top, backwards from every other dimension's chart.
 const BUCKET3_ORDER = {favorability:['pos','neu','neg'], depth:['2','1','0'], accuracy:['2','1','0'], visibility:['1','0'], consistency:['2','1','0'], narrative:['2','1','0']};
 const BUCKET3_COLORS = {pos:'#3C8A5B', neu:'#9AA3AF', neg:'#B23B3B', '2':'#3C8A5B', '1':'#9AA3AF', '0':'#B23B3B'};
 const BUCKET3_COLORS_OVERRIDE = {visibility: {'1':'#3C8A5B', '0':'#B23B3B'}};
@@ -871,7 +871,7 @@ const BUCKET3_LABELS = {
   accuracy: {'2':'Fully accurate', '1':'Partially accurate', '0':'Inaccurate'},
   visibility: {'1':'Mentioned', '0':'Not mentioned'},
   consistency: {'2':'Consistent', '1':'Partially consistent', '0':'Inconsistent'},
-  narrative: {'2':'Fully aligned', '1':'Partially aligned', '0':'Missing key topics'}
+  narrative: {'2':'Fully aligned', '1':'Partially aligned', '0':'No candidate-topic association'}
 };
 function bucket3Label(key,b){ return (BUCKET3_LABELS[key]||{})[b] || b; }
 function bucket3Color(key,b){ return (BUCKET3_COLORS_OVERRIDE[key]&&BUCKET3_COLORS_OVERRIDE[key][b]) || BUCKET3_COLORS[b] || '#999'; }
@@ -1038,7 +1038,7 @@ function citationTopicOptions(){
    gandernewsroom.com) added 2026-09-08 per feedback -- these are Courier's own state/local outlets,
    not the aeo-sites/ network, but the same "owned/friendly content, track it separately from the
    9-category breakdown" logic applies. */
-const OWNED_DOMAINS = ['heartlandsignal.com', 'vadogwood.com', 'iowastartingline.com', 'keystonenewsroom.com', 'coppercourier.com', 'upnorthnewswi.com', 'gandernewsroom.com'];
+const OWNED_DOMAINS = ['heartlandsignal.com', 'vadogwood.com', 'iowastartingline.com', 'keystonenewsroom.com', 'coppercourier.com', 'upnorthnewswi.com', 'gandernewsroom.com', 'localvoterguide.com'];
 function normalizeDomain(d){ return (d||'').toLowerCase().replace(/^www\./,''); }
 
 /* Owned Domains Tracker admin gate (2026-09-09) -- a DETERRENT, not real protection: OWNED_DOMAINS

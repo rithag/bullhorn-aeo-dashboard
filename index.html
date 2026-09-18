@@ -1027,18 +1027,29 @@ function citationTopicOptions(){
 }
 
 /* Owned Domains Tracker (2026-08-31, Citation Breakout) — a short, hand-maintained watchlist of
-   domains WE publish (the aeo-sites/ network + any other owned property), distinct from the
-   "Candidate/Officeholder-Owned Content" citation category (which means the candidate's own site,
-   not ours). The 9-category breakdown above can't answer "how is our own content doing" on its
-   own — it only aggregates at the category level, so one domain's citations are invisible inside
-   whatever category it lands in. Add a domain here the moment it goes live; aeo-sites/content/
-   sites.yaml's real domains are still 'TBD-*.example' placeholders as of 2026-08-31, so this list
-   starts with just the one already-real domain from that conversation. Courier network domains
-   (vadogwood.com, iowastartingline.com, keystonenewsroom.com, coppercourier.com, upnorthnewswi.com,
-   gandernewsroom.com) added 2026-09-08 per feedback -- these are Courier's own state/local outlets,
-   not the aeo-sites/ network, but the same "owned/friendly content, track it separately from the
-   9-category breakdown" logic applies. */
-const OWNED_DOMAINS = ['heartlandsignal.com', 'vadogwood.com', 'iowastartingline.com', 'keystonenewsroom.com', 'coppercourier.com', 'upnorthnewswi.com', 'gandernewsroom.com', 'localvoterguide.com'];
+   domains WE (or a partner) publish, distinct from the "Candidate/Officeholder-Owned Content"
+   citation category (which means the candidate's own site, not ours). The 9-category breakdown
+   above can't answer "how is our own content doing" on its own — it only aggregates at the
+   category level, so one domain's citations are invisible inside whatever category it lands in.
+   Grouped (2026-09-18) once aeo-sites/content/sites.yaml's 37 domains went live -- a flat list of
+   45 individual bars (37 aeo-sites + 6 Courier + Heartland Signal + the voter-guide partner site)
+   was unreadable, so domains are bucketed by network/tier below; renderOwnedDomains() shows one
+   row per group (aggregate citations + how many of the group's domains were actually cited) that
+   expands on click into its individual domains, reusing the original per-domain row. A
+   single-domain group (Heartland Signal, the partner site) still effectively shows per-domain
+   detail once expanded. Add a domain to the right group's `domains` array the moment it goes
+   live -- most new aeo-sites domains belong in aeoLocal/aeoBlog/aeoState/aeoNational depending on
+   its `tier` in content/sites.yaml. */
+const OWNED_DOMAIN_GROUPS = [
+  { key: 'heartland', label: 'Heartland Signal', domains: ['heartlandsignal.com'] },
+  { key: 'courier', label: 'Courier Network', domains: ['vadogwood.com', 'iowastartingline.com', 'keystonenewsroom.com', 'coppercourier.com', 'upnorthnewswi.com', 'gandernewsroom.com'] },
+  { key: 'aeo-local', label: 'AEO Election Network — Local', domains: ['eauclairebeacon.com', 'iowacitybeacon.com', 'desmoinesmetrocourier.com', 'lehighvalleycourier.com', 'scrantonbeacon.com', 'harrisburgbeacon.com', 'kalamazoobeacon.com', 'paradisevalleybeacon.com', 'tucsonmetrobeacon.com', 'henricocourier.com'] },
+  { key: 'aeo-blog', label: 'AEO Election Network — Blog', domains: ['driftlesstake.com', 'hawkeyewatch.com', 'capitalcitywatch.com', 'allentownwatch.com', 'electriccitywatch.com', 'rivertowntake.com', 'lakeshoretake.com', 'deserttake.com', 'oldpueblowatch.com', 'henricotake.com'] },
+  { key: 'aeo-state', label: 'AEO Election Network — State', domains: ['badgerstatereport.com', 'hawkeyestatereport.com', 'keystonestatebulletin.com', 'wolverinestatereport.com', 'grandcanyonstatereport.com', 'olddominionstatereport.com', 'tarheelstatereport.com', 'silverstatereport.com', 'lonestarstatereport.com', 'centennialstatereport.com', 'peachstatebulletin.com', 'magnoliastatereport.com'] },
+  { key: 'aeo-national', label: 'AEO Election Network — National', domains: ['democraticwomenhouse.com', 'battlegroundhousewatch.com', 'republicanincumbentwatch.com', 'publicsafetydemocrats.com', 'affordabilitydemocrats.com'] },
+  { key: 'partner', label: 'Partner sites', domains: ['localvoterguide.com'] },
+];
+const OWNED_DOMAINS = OWNED_DOMAIN_GROUPS.flatMap(g => g.domains);
 function normalizeDomain(d){ return (d||'').toLowerCase().replace(/^www\./,''); }
 
 /* Owned Domains Tracker admin gate (2026-09-09) -- a DETERRENT, not real protection: OWNED_DOMAINS
@@ -4140,7 +4151,7 @@ function buildCitationsPage(){
     <div class="kpis" id="cb-kpis"></div>
     <div class="card section-gap">
       <div class="card-title">Owned domains tracker</div>
-      <div class="card-caption">Citation count and rank among ALL cited domains (not just within one category) for domains we publish — respects the filters above. Add a domain to <code>OWNED_DOMAINS</code> in dashboard.html the moment it goes live.</div>
+      <div class="card-caption">Citation count and rank among ALL cited domains (not just within one category) for domains we or a partner publish — respects the filters above. Grouped by network/tier since it now covers 45 domains; click a group to see its individual sites. Add a domain to the right group in <code>OWNED_DOMAIN_GROUPS</code> in dashboard.html the moment it goes live.</div>
       <div id="cb-owned"></div>
     </div>
     <div class="card section-gap">
@@ -4263,7 +4274,15 @@ function renderOwnedDomains(events){
     byDomainCategory[d][e.catKey] = (byDomainCategory[d][e.catKey]||0) + e.count;
     byCategoryTotal[e.catKey] = (byCategoryTotal[e.catKey]||0) + e.count;
   });
-  el.innerHTML = OWNED_DOMAINS.map(rawDomain=>{
+  const domainCount = rawDomain => {
+    const d = normalizeDomain(rawDomain);
+    const idx = ranked.findIndex(([dom])=>dom===d);
+    return idx===-1 ? 0 : ranked[idx][1];
+  };
+  // Per-domain row -- unchanged from the pre-grouping version; a single-domain group renders
+  // straight into this with no header/caret, a multi-domain group's members render as indented
+  // sub-rows once that group is expanded.
+  const domainRow = (rawDomain, indent) => {
     const d = normalizeDomain(rawDomain);
     const idx = ranked.findIndex(([dom])=>dom===d);
     const count = idx===-1 ? 0 : ranked[idx][1];
@@ -4271,12 +4290,31 @@ function renderOwnedDomains(events){
     const catCounts = byDomainCategory[d] || {};
     const topCat = Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0];
     const catShareText = topCat ? ` · ${fmt1(100*topCat[1]/(byCategoryTotal[topCat[0]]||1))}% of ${citationCatLabel(topCat[0])} citations` : '';
-    return `<div class="topic-row" style="margin-bottom:6px;">
-      <div class="topic-name" style="width:190px;">${escXHtml(rawDomain)}</div>
+    return `<div class="topic-row" style="margin-bottom:6px;${indent?'padding-left:20px;':''}">
+      <div class="topic-name" style="width:${190-(indent?20:0)}px;">${escXHtml(rawDomain)}</div>
       <div class="topic-track"><div class="topic-fill core" style="width:${idx===-1?0:clamp(100*count/(ranked[0]?.[1]||1),2,100)}%;background:var(--brand);"></div></div>
       <div class="topic-pct" style="width:280px;text-align:right;">${count} citation${count===1?'':'s'} · ${rankText}${catShareText}</div>
     </div>`;
-  }).join('') || `<div class="small-muted">No domains in OWNED_DOMAINS yet.</div>`;
+  };
+  // Group-level aggregate: which basis a group's own bar is scaled against (the biggest group
+  // total, not the biggest single domain -- a group bar and a domain bar are different units and
+  // shouldn't compete on the same scale) is computed up front, once, for all groups.
+  const groupTotals = OWNED_DOMAIN_GROUPS.map(g => g.domains.reduce((s,dom)=>s+domainCount(dom),0));
+  const maxGroupTotal = Math.max(1, ...groupTotals);
+  window.__ownedDomainsExpanded = window.__ownedDomainsExpanded || {};
+  el.innerHTML = OWNED_DOMAIN_GROUPS.map((g,gi)=>{
+    if(g.domains.length===1) return domainRow(g.domains[0], false);
+    const total = groupTotals[gi];
+    const citedN = g.domains.filter(dom=>domainCount(dom)>0).length;
+    const expanded = !!window.__ownedDomainsExpanded[g.key];
+    const header = `<div class="topic-row" style="margin-bottom:6px;cursor:pointer;font-weight:700;" onclick="window.__ownedDomainsExpanded['${g.key}']=!window.__ownedDomainsExpanded['${g.key}'];renderCitations();">
+      <div class="topic-name" style="width:190px;">${expanded?'▾':'▸'} ${escXHtml(g.label)} <span style="font-weight:400;color:var(--ink-faint);">(${g.domains.length})</span></div>
+      <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*total/maxGroupTotal,2,100)}%;background:var(--brand);"></div></div>
+      <div class="topic-pct" style="width:280px;text-align:right;font-weight:400;">${total} citation${total===1?'':'s'} · ${citedN} of ${g.domains.length} sites cited</div>
+    </div>`;
+    const subRows = expanded ? g.domains.map(dom=>domainRow(dom, true)).join('') : '';
+    return header + subRows;
+  }).join('') || `<div class="small-muted">No domains in OWNED_DOMAIN_GROUPS yet.</div>`;
 }
 function renderCitations(){
   const events = cbFilteredEvents();

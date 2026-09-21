@@ -642,8 +642,11 @@ let ROWS_BY_RACE = {};
 // 2026-09-08: the bucket went private (login gate added, see initDashboard()/checkAuth() below) --
 // this now points at the Netlify Function proxy (/api/data/* -> data-proxy.js), which validates
 // the session cookie and redirects to a short-lived GCS V4 signed URL, rather than the bucket's
-// old public base URL directly. Everything else (prompt_results_agg.json, roster.json, the two
-// child tables) stays committed to git/Netlify as before, small enough not to need this.
+// old public base URL directly. roster.json and the two child tables stay committed to git/Netlify,
+// small enough not to need this.
+// 2026-09-21: prompt_results_agg.json moved here too -- it crossed GitHub's 100MB push limit
+// (114.5MB, up from 97.7MB the week before) as this week's scoring data landed, the same growth
+// pattern that already forced citations.json/text/*.json onto GCS. It'll only keep growing.
 const HEAVY_DATA_BASE_URL = '/api/data/';
 function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
 
@@ -708,9 +711,10 @@ function ensureTopicKeyLabelsLoaded(){
 async function loadAllData(){
   const base='dashboard_data/dist/';
   const j = u => fetch(base+u).then(r=>r.json());
+  const jHeavy = u => fetch(heavyAssetUrl(u)).then(r=>r.json());
   TEXT = {};
   [AGG, ROSTER_RAW, ACCURACY_ISSUES_RAW, NARRATIVE_GAPS_RAW] = await Promise.all([
-    j('prompt_results_agg.json'),
+    jHeavy('prompt_results_agg.json'),
     j('roster.json'), j('accuracy_issues.json'), j('narrative_alignment_gaps.json')
   ]);
 }

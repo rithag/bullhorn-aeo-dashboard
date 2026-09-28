@@ -4293,7 +4293,7 @@ function buildSiteAnalyticsPage(){
     <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div><div id="sa-impressions"></div></div></div>
     <div class="row-eq section-gap"><div class="card"><div class="card-title">Average Google position over time</div><div class="card-caption">Impression-weighted average position for selected domains. Lower is better; position is not available when there are no impressions.</div><div id="sa-position"></div></div><div class="card"><div class="card-title">Citation mix by provider</div><div class="card-caption">Share of selected Evertune citation occurrences by sampled search surface.</div><div id="sa-provider-mix"></div><div class="legend-row" id="sa-provider-legend"></div></div></div>
     <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div><div id="sa-citations"></div></div>
-    <div class="card section-gap"><div class="card-title">Published-article citation penetration</div><div class="card-caption">For one candidate and prompt, the share of individual non-refusal raw model responses whose structured source list contains at least one of our published canonical articles. Homepages and topic pages are excluded. The rate is withheld unless the exact raw batch has completed our refusal scoring.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Candidate</label><select id="acp-candidate"></select></div><div class="fitem"><label>Prompt</label><select id="acp-prompt"></select></div></div><div id="acp-content"></div></div>
+    <div class="card section-gap"><div class="card-title">Published-article citation penetration</div><div class="card-caption">For one candidate and prompt, the share of individual non-refusal raw model responses whose structured source list contains at least one of our published canonical articles. Homepages and topic pages are excluded. The date range applies to both the numerator and denominator; the rate is withheld where the exact raw runs lack refusal scoring.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Candidate</label><select id="acp-candidate"></select></div><div class="fitem"><label>Prompt</label><select id="acp-prompt"></select></div><div class="fitem"><label>From</label><input id="acp-start" type="date"></div><div class="fitem"><label>To</label><input id="acp-end" type="date"></div></div><div id="acp-content"></div></div>
     <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
@@ -4368,7 +4368,7 @@ function acpProviderLabel(provider){
 function acpCandidateKey(row){ return row.race_id+'||'+row.candidate; }
 function buildArticleCitationPenetration(){
   const asset=SITE_ANALYTICS.article_citation_penetration||{};
-  const content=document.getElementById('acp-content'), candidateSelect=document.getElementById('acp-candidate'), promptSelect=document.getElementById('acp-prompt');
+  const content=document.getElementById('acp-content'), candidateSelect=document.getElementById('acp-candidate'), promptSelect=document.getElementById('acp-prompt'), startInput=document.getElementById('acp-start'), endInput=document.getElementById('acp-end');
   if(!asset.available || !(asset.records||[]).length){
     content.innerHTML=`<div class="small-muted">${escXHtml(asset.reason||'Article citation penetration has not been built for this refresh.')}</div>`;
     return;
@@ -4376,6 +4376,9 @@ function buildArticleCitationPenetration(){
   const candidates=[...new Map(asset.records.map(r=>[acpCandidateKey(r),{key:acpCandidateKey(r),candidate:r.candidate,race:r.race}])).values()]
     .sort((a,b)=>(a.candidate+' '+a.race).localeCompare(b.candidate+' '+b.race));
   candidateSelect.innerHTML=candidates.map(c=>`<option value="${escXAttr(c.key)}">${escXHtml(c.candidate)} · ${escXHtml(c.race)}</option>`).join('');
+  const dates=(asset.available_dates||[]).slice().sort();
+  startInput.min=endInput.min=dates[0]||''; startInput.max=endInput.max=dates[dates.length-1]||'';
+  startInput.value=dates[0]||''; endInput.value=dates[dates.length-1]||'';
   const refreshPrompts=()=>{
     const candidateKey=candidateSelect.value;
     const prompts=[...new Map(asset.records.filter(r=>acpCandidateKey(r)===candidateKey).map(r=>[r.prompt_id,{id:r.prompt_id,text:r.prompt}])).values()]
@@ -4385,6 +4388,8 @@ function buildArticleCitationPenetration(){
   };
   candidateSelect.addEventListener('change',()=>{refreshPrompts();renderArticleCitationPenetration();});
   promptSelect.addEventListener('change',renderArticleCitationPenetration);
+  startInput.addEventListener('change',renderArticleCitationPenetration);
+  endInput.addEventListener('change',renderArticleCitationPenetration);
   refreshPrompts();
   renderArticleCitationPenetration();
 }
@@ -4393,7 +4398,8 @@ function renderArticleCitationPenetration(){
   const content=document.getElementById('acp-content');
   if(!content || !asset.available) return;
   const candidateKey=document.getElementById('acp-candidate').value, promptId=document.getElementById('acp-prompt').value;
-  const rows=(asset.records||[]).filter(r=>acpCandidateKey(r)===candidateKey && r.prompt_id===promptId);
+  const start=document.getElementById('acp-start').value, end=document.getElementById('acp-end').value;
+  const rows=(asset.records||[]).filter(r=>acpCandidateKey(r)===candidateKey && r.prompt_id===promptId && (!start||r.date>=start) && (!end||r.date<=end));
   const total=rows.reduce((sum,r)=>sum+(+r.total_responses||0),0);
   const cited=rows.reduce((sum,r)=>sum+(+r.cited_responses||0),0);
   const rate=total ? 100*cited/total : 0;
@@ -4403,12 +4409,16 @@ function renderArticleCitationPenetration(){
     x.cited_responses+=+a.cited_responses||0;
   }));
   const articleRows=Object.values(articles).sort((a,b)=>b.cited_responses-a.cited_responses||a.url.localeCompare(b.url));
-  const providerRows=rows.slice().sort((a,b)=>a.provider.localeCompare(b.provider));
-  const sourceNote=asset.raw_response_folder ? `Latest raw response batch: ${escXHtml(asset.raw_response_folder)}.` : 'Latest retained raw response batch.';
+  const sourceAppearances=articleRows.reduce((sum,a)=>sum+(+a.cited_responses||0),0);
+  const providers={};
+  rows.forEach(r=>{const p=providers[r.provider]||(providers[r.provider]={provider:r.provider,total_responses:0,cited_responses:0});p.total_responses+=+r.total_responses||0;p.cited_responses+=+r.cited_responses||0;});
+  const providerRows=Object.values(providers).sort((a,b)=>a.provider.localeCompare(b.provider));
+  const cohortNote=start&&end ? `Selected scored-response range: ${escXHtml(start)}–${escXHtml(end)}.` : '';
+  const sourceNote=asset.raw_response_folder ? `${cohortNote} Raw delivery: ${escXHtml(asset.raw_response_folder)}.` : (cohortNote||'Retained raw response batch.');
   content.innerHTML=`
-    <div class="kpis" style="margin-top:14px;"><div class="kpi hi"><div class="kpi-label">Article citation penetration</div><div class="kpi-value">${rate.toFixed(1)}%</div><div class="kpi-sub">${saNum(cited)} of ${saNum(total)} non-refusal responses</div></div><div class="kpi"><div class="kpi-label">Published articles cited</div><div class="kpi-value">${articleRows.length}</div><div class="kpi-sub">distinct canonical articles in cited responses</div></div></div>
+    <div class="kpis" style="margin-top:14px;"><div class="kpi hi"><div class="kpi-label">Article citation penetration</div><div class="kpi-value">${rate.toFixed(1)}%</div><div class="kpi-sub">${saNum(cited)} of ${saNum(total)} non-refusal responses</div></div><div class="kpi"><div class="kpi-label">Published articles cited</div><div class="kpi-value">${articleRows.length}</div><div class="kpi-sub">distinct canonical articles in cited responses</div></div><div class="kpi"><div class="kpi-label">Article source appearances</div><div class="kpi-value">${saNum(sourceAppearances)}</div><div class="kpi-sub">can exceed cited responses when one answer cites multiple articles</div></div></div>
     <div class="row-eq"><div><div class="card-title">Provider breakout</div><div class="card-caption">Each provider has its own non-refusal response denominator.</div><div class="scroll-table"><table><tr><th>Provider</th><th>Cited responses</th><th>Non-refusal responses</th><th>Penetration</th></tr>${providerRows.map(r=>`<tr><td>${escXHtml(acpProviderLabel(r.provider))}</td><td>${saNum(r.cited_responses)}</td><td>${saNum(r.total_responses)}</td><td>${r.total_responses?(100*r.cited_responses/r.total_responses).toFixed(1):'0.0'}%</td></tr>`).join('')}</table></div></div><div><div class="card-title">Published articles cited</div><div class="card-caption">A response can cite more than one article, so article rows may sum to more than the cited-response numerator.</div><div class="scroll-table"><table><tr><th>Article</th><th>Responses citing</th><th>Share of non-refusal responses</th></tr>${articleRows.length?articleRows.map(a=>`<tr><td style="max-width:420px;white-space:normal;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${escXHtml(a.title||a.url)}</a><div class="small-muted">${escXHtml(a.domain)}</div></td><td>${saNum(a.cited_responses)}</td><td>${total?(100*a.cited_responses/total).toFixed(1):'0.0'}%</td></tr>`).join(''):'<tr><td colspan="3" class="small-muted">No published AEO article appears in the retained responses for this prompt.</td></tr>'}</table></div></div></div>
-    <div class="small-muted" style="margin-top:10px;">${sourceNote} ${asset.refusal_excluded_responses ? `${saNum(asset.refusal_excluded_responses)} confirmed refusals were excluded before rates were calculated. ` : ''}${asset.unmatched_catalog_responses ? `${saNum(asset.unmatched_catalog_responses)} raw responses did not exact-match a catalog prompt and are excluded from named-prompt rates.` : 'All retained raw responses matched a catalog prompt.'} This response-level rate is intentionally separate from the aggregate Sources-URL citation-occurrence charts above and should not be numerically reconciled to those counts.</div>`;
+    <div class="small-muted" style="margin-top:10px;">${sourceNote} ${asset.refusal_excluded_responses ? `${saNum(asset.refusal_excluded_responses)} confirmed refusals were excluded before rates were calculated. ` : ''}${asset.withheld_unclassified_refusal_responses ? `${saNum(asset.withheld_unclassified_refusal_responses)} unclassified and ${saNum(asset.withheld_classified_nonrefusal_responses||0)} otherwise-eligible responses across ${saNum(asset.incomplete_candidate_prompt_date_count||0)} incomplete candidate–prompt–date combinations are withheld rather than using partial denominators. ` : ''}${asset.unmatched_catalog_responses ? `${saNum(asset.unmatched_catalog_responses)} raw responses did not exact-match a catalog prompt and are excluded from named-prompt rates.` : 'All retained raw responses matched a catalog prompt.'} This response-level rate is intentionally separate from the aggregate Sources-URL citation-occurrence charts above and should not be numerically reconciled to those counts.</div>`;
 }
 function renderSiteCitationDrill(events){
   const drill=window.__saDrill||{level:'site'}, el=document.getElementById('sa-citation-drill'), crumbs=document.getElementById('sa-citation-crumbs');

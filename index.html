@@ -34,6 +34,20 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,
 .page-desc{font-size:13px;color:var(--ink-soft);margin-top:3px;max-width:680px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:16px 18px;}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
+.metric-guide{margin-bottom:14px;padding:0;overflow:hidden;}
+.metric-guide summary{cursor:pointer;list-style:none;padding:13px 16px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.metric-guide summary::-webkit-details-marker{display:none;}
+.metric-guide summary:after{content:'⌄';color:var(--ink-faint);font-size:16px;font-weight:400;}
+.metric-guide[open] summary{border-bottom:1px solid var(--border);}
+.metric-guide[open] summary:after{transform:rotate(180deg);}
+.metric-guide-sub{display:block;font-size:11px;color:var(--ink-soft);font-weight:400;margin-top:2px;}
+.metric-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 16px;}
+.metric-guide-item{border:1px solid var(--border);border-radius:9px;padding:10px 11px;background:#FAFBFC;}
+.metric-guide-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:700;margin-bottom:4px;}
+.metric-guide-item strong{font-size:12px;display:block;margin-bottom:4px;}
+.metric-guide-item p{font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin:0;}
+.metric-guide-note{border-top:1px solid var(--border);padding:10px 16px 13px;color:var(--ink-soft);font-size:11.5px;line-height:1.45;}
+@media (max-width:760px){.metric-guide-grid{grid-template-columns:1fr;}}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
 .kpi.hi{border-color:var(--brand);background:var(--brand-soft);}
 .kpi-label{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
@@ -4244,8 +4258,24 @@ function buildSiteAnalyticsPage(){
   const dates=[sc.start_date,sc.end_date,...citationDates].filter(Boolean).sort();
   const minDate=dates[0]||'', maxDate=dates[dates.length-1]||'';
   page.innerHTML=`
-    <div class="page-head"><div><div class="page-title">Site Analytics</div><div class="page-desc">Protected cross-site reporting for the 37 AEO domains. Traffic is Google Search Console web data across all indexable pages on the selected domains; citations are Evertune source-count events.</div></div></div>
+    <div class="page-head"><div><div class="page-title">Site Analytics</div><div class="page-desc">Protected cross-site reporting for the 37 AEO domains. Each measure below has a distinct source and meaning; none is used as a proxy for another.</div></div></div>
     ${saStatusNotice()}
+    <details class="card metric-guide" open>
+      <summary><span>Measurement guide<span class="metric-guide-sub">What every number means, its source, and what it does not measure</span></span></summary>
+      <div class="metric-guide-grid">
+        <div class="metric-guide-item">
+          <div class="metric-guide-label">Google Search Console · user search activity</div>
+          <strong>Google Search visibility and traffic</strong>
+          <p><b>Impressions</b> are times a URL on the selected domains appeared to a person in Google web search. <b>Clicks</b> are person-initiated visits from those results. <b>CTR</b> is clicks divided by impressions. These measures cover every indexable page on each selected domain—not only the article inventory.</p>
+        </div>
+        <div class="metric-guide-item">
+          <div class="metric-guide-label">Evertune exports · sampled model outputs</div>
+          <strong>Observed LLM citation occurrences</strong>
+          <p>A count of times an owned URL appears in Evertune’s sampled model source lists, filtered by citation type. <b>Citation footprint</b> is the number of selected sites and canonical articles with at least one such occurrence. Neither measure is a site visit, referral, impression, crawl, or count of unique people.</p>
+        </div>
+      </div>
+      <div class="metric-guide-note"><b>Do not compare raw totals as if they were the same behavior.</b> Google Search Console measures people seeing and clicking Google results; Evertune measures source occurrences within research samples. The date range and source filters always control the displayed values.</div>
+    </details>
     <div class="filterbar">
       <div class="fitem"><label>Sites (one or multiple)</label><select id="sa-sites" multiple size="7">${sites.map(s=>`<option value="${escXAttr(s.id)}" selected>${escXHtml(s.name)} · ${escXHtml(s.domain)}</option>`).join('')}</select></div>
       <div class="fitem"><label>Range start</label><input type="date" id="sa-start" value="${escXAttr(minDate)}" min="${escXAttr(minDate)}" max="${escXAttr(maxDate)}"></div>
@@ -4254,8 +4284,8 @@ function buildSiteAnalyticsPage(){
       <div class="fitem"><label>&nbsp;</label><div style="display:flex;gap:6px;"><button class="btn ghost sm" type="button" id="sa-all">All sites</button><button class="btn ghost sm" type="button" id="sa-none">Clear</button></div></div>
     </div>
     <div class="kpis" id="sa-kpis"></div>
-    <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">Google Search Console web clicks across selected sites.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google Search Console web impressions across selected sites.</div><div id="sa-impressions"></div></div></div>
-    <div class="card section-gap"><div class="card-title">LLM citations over time</div><div class="card-caption">Evertune citation volume across the selected sites and citation types.</div><div id="sa-citations"></div></div>
+    <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div><div id="sa-impressions"></div></div></div>
+    <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div><div id="sa-citations"></div></div>
     <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
@@ -4275,10 +4305,17 @@ function renderSiteAnalytics(){
   const labels=saDays(range.start,range.end);
   const maxFor=(values)=>Math.max(1,...values,0);
   const clickValues=labels.map(d=>clickByDay[d]||0), impressionValues=labels.map(d=>impressionByDay[d]||0), citationValues=labels.map(d=>citationByDay[d]||0);
+  const totalClicks=clickValues.reduce((s,v)=>s+v,0), totalImpressions=impressionValues.reduce((s,v)=>s+v,0);
+  const citedSites=new Set(events.map(e=>e.site_id)).size;
+  const publishedUrls=new Set(SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id)).map(a=>a.site_id+'||'+a.url));
+  const citedPublishedUrls=new Set(events.filter(e=>publishedUrls.has(e.site_id+'||'+e.url)).map(e=>e.site_id+'||'+e.url)).size;
+  const ctr=totalImpressions ? 100*totalClicks/totalImpressions : 0;
   document.getElementById('sa-kpis').innerHTML=`
-    <div class="kpi hi"><div class="kpi-label">Total impressions</div><div class="kpi-value">${saNum(impressionValues.reduce((s,v)=>s+v,0))}</div><div class="kpi-sub">selected sites · selected date range</div></div>
-    <div class="kpi"><div class="kpi-label">Total clicks</div><div class="kpi-value">${saNum(clickValues.reduce((s,v)=>s+v,0))}</div><div class="kpi-sub">selected sites · selected date range</div></div>
-    <div class="kpi"><div class="kpi-label">Total LLM citations</div><div class="kpi-value">${saNum(eventCitationTotal)}</div><div class="kpi-sub">all selected Evertune citation types</div></div>
+    <div class="kpi hi"><div class="kpi-label">Google impressions</div><div class="kpi-value">${saNum(totalImpressions)}</div><div class="kpi-sub">people seeing selected domains in Google web search</div></div>
+    <div class="kpi"><div class="kpi-label">Google clicks</div><div class="kpi-value">${saNum(totalClicks)}</div><div class="kpi-sub">person-initiated Google result visits</div></div>
+    <div class="kpi"><div class="kpi-label">Organic CTR</div><div class="kpi-value">${ctr.toFixed(1)}%</div><div class="kpi-sub">clicks ÷ impressions</div></div>
+    <div class="kpi"><div class="kpi-label">Observed LLM citations</div><div class="kpi-value">${saNum(eventCitationTotal)}</div><div class="kpi-sub">Evertune source-list occurrences</div></div>
+    <div class="kpi"><div class="kpi-label">Citation footprint</div><div class="kpi-value">${citedSites} sites · ${citedPublishedUrls} URLs</div><div class="kpi-sub">with ≥1 Evertune occurrence</div></div>
     <div class="kpi"><div class="kpi-label">Sites selected</div><div class="kpi-value">${ids.length} / ${SITE_ANALYTICS.sites.length}</div><div class="kpi-sub">multi-site aggregate view</div></div>`;
   lineChart('sa-clicks',labels,[{name:'Clicks',values:clickValues,color:'#1F6F6B'}],{min:0,max:maxFor(clickValues),height:230});
   lineChart('sa-impressions',labels,[{name:'Impressions',values:impressionValues,color:'#6B8FC9'}],{min:0,max:maxFor(impressionValues),height:230});

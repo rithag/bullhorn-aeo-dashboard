@@ -216,6 +216,7 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
     <div class="nav-group-label">Overview</div>
     <div class="nav-item active" data-page="overview"><span class="nav-dot" style="background:var(--brand)"></span>Aggregate</div>
     <div class="nav-item" data-page="fanout"><span class="nav-dot" style="background:var(--brand)"></span>Prompt Fanout</div>
+    <div class="nav-item" data-page="siteanalytics"><span class="nav-dot" style="background:#4F8B8B"></span>Site Analytics</div>
     <div class="nav-group-label">Dimensions</div>
     <div class="nav-item" data-page="visibility"><span class="nav-dot" style="background:#6B8FC9"></span>Visibility</div>
     <div class="nav-item" data-page="favorability"><span class="nav-dot" style="background:#7FA98F"></span>Favorability</div>
@@ -231,6 +232,7 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
   <div class="main" id="main-root">
     <div class="page active" id="page-overview"></div>
     <div class="page" id="page-fanout"></div>
+    <div class="page" id="page-siteanalytics"></div>
     <div class="page" id="page-visibility"></div>
     <div class="page" id="page-favorability"></div>
     <div class="page" id="page-depth"></div>
@@ -630,7 +632,7 @@ function collapseFilterbar(bar){
    not synthetic. loadAllData()+buildFromFetchedData() populate everything below before
    INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
    ============================================================================ */
-let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null;
+let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null;
 let RACE_IDX_BY_RACE = {};
 let ROWS_BY_RACE = {};
 
@@ -693,6 +695,19 @@ function ensureCitationsLoaded(){
     });
   }
   return citationsLoadPromise;
+}
+// Site Analytics is a compact, pre-aggregated asset. It never puts Search Console credentials in
+// the browser: its export is produced with a read-only credential, then served through the same
+// authenticated GCS proxy as citation data.
+let siteAnalyticsLoadPromise = null;
+function ensureSiteAnalyticsLoaded(){
+  if(!siteAnalyticsLoadPromise){
+    siteAnalyticsLoadPromise = fetch(heavyAssetUrl('site_analytics.json')).then(r=>{
+      if(!r.ok) throw new Error('Site Analytics asset is unavailable ('+r.status+'). Refresh and upload it before deploying this tab.');
+      return r.json();
+    }).then(raw=>{ SITE_ANALYTICS=raw; return raw; });
+  }
+  return siteAnalyticsLoadPromise;
 }
 // topic_key_labels.json is tiny (~182 entries, a few KB) — safe to fetch eagerly the same moment
 // citations.json is, no need for the same defer-until-page-open treatment. Only the Citation
@@ -1701,6 +1716,20 @@ document.querySelectorAll('.nav-item').forEach(item=>{
           PAGE_BUILT.citations = true;
           enhanceSelects(); collapseAllFilterbars();
         }catch(e){ console.error('Citation data load failed', e); }
+      }
+      return;
+    }
+    if(page==='siteanalytics'){
+      if(!PAGE_BUILT.siteanalytics){
+        try{
+          await ensureSiteAnalyticsLoaded();
+          buildSiteAnalyticsPage();
+          PAGE_BUILT.siteanalytics = true;
+          enhanceSelects(); collapseAllFilterbars();
+        }catch(e){
+          console.error('Site Analytics data load failed', e);
+          document.getElementById('page-siteanalytics').innerHTML='<div class="err-banner">Site Analytics could not load: '+escXHtml(String(e.message||e))+'</div>';
+        }
       }
       return;
     }
@@ -4131,7 +4160,140 @@ async function openPromptHealthDetail(promptId){
 }
 
 /* ============================================================================
-   13. CITATION BREAKOUT PAGE
+   13. SITE ANALYTICS
+   ============================================================================ */
+function saNum(v){ return new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(v||0); }
+function saSelectedSiteIds(){ return [...document.getElementById('sa-sites').selectedOptions].map(o=>o.value); }
+function saSourceTypes(){ return [...document.querySelectorAll('[data-sa-source]:checked')].map(el=>el.dataset.saSource); }
+function saDateRange(){ return {start:document.getElementById('sa-start').value,end:document.getElementById('sa-end').value}; }
+function saInRange(row, ids, range){ return ids.includes(row.id||row.site_id) && (!range.start || row.date>=range.start) && (!range.end || row.date<=range.end); }
+function saDays(start,end){
+  if(!start || !end || start>end) return [];
+  const out=[], cursor=new Date(start+'T12:00:00Z'), last=new Date(end+'T12:00:00Z');
+  while(cursor<=last){ out.push(cursor.toISOString().slice(0,10)); cursor.setUTCDate(cursor.getUTCDate()+1); }
+  return out;
+}
+function saSumByDay(rows, ids, range, value, sourceTypes){
+  const out={};
+  rows.forEach(r=>{
+    if(!saInRange(r,ids,range) || (sourceTypes && !sourceTypes.includes(r.source_type))) return;
+    out[r.date]=(out[r.date]||0)+(+r[value]||0);
+  });
+  return out;
+}
+function saStatusNotice(){
+  const status=(SITE_ANALYTICS.sources.search_console.site_status||[]);
+  const bad=status.filter(s=>s.status!=='ok');
+  if(!bad.length) return '';
+  const names=bad.map(s=>escXHtml(s.domain)).join(', ');
+  return `<div class="err-banner">Search Console data is incomplete for ${bad.length} site${bad.length===1?'':'s'}: ${names}. Traffic is not estimated or zero-filled for unavailable properties.</div>`;
+}
+function buildSiteAnalyticsPage(){
+  const page=document.getElementById('page-siteanalytics');
+  const sites=SITE_ANALYTICS.sites||[];
+  const sc=SITE_ANALYTICS.sources.search_console||{};
+  const citationDates=(SITE_ANALYTICS.citations.site_daily||[]).map(r=>r.date);
+  const dates=[sc.start_date,sc.end_date,...citationDates].filter(Boolean).sort();
+  const minDate=dates[0]||'', maxDate=dates[dates.length-1]||'';
+  page.innerHTML=`
+    <div class="page-head"><div><div class="page-title">Site Analytics</div><div class="page-desc">Protected cross-site reporting for the 37 AEO domains. Traffic is Google Search Console web data across all indexable pages on the selected domains; citations are Evertune source-count events.</div></div></div>
+    ${saStatusNotice()}
+    <div class="filterbar">
+      <div class="fitem"><label>Sites (one or multiple)</label><select id="sa-sites" multiple size="7">${sites.map(s=>`<option value="${escXAttr(s.id)}" selected>${escXHtml(s.name)} · ${escXHtml(s.domain)}</option>`).join('')}</select></div>
+      <div class="fitem"><label>Range start</label><input type="date" id="sa-start" value="${escXAttr(minDate)}" min="${escXAttr(minDate)}" max="${escXAttr(maxDate)}"></div>
+      <div class="fitem"><label>Range end</label><input type="date" id="sa-end" value="${escXAttr(maxDate)}" min="${escXAttr(minDate)}" max="${escXAttr(maxDate)}"></div>
+      <div class="fitem"><label>LLM citation type</label><div style="display:flex;gap:8px;flex-wrap:wrap;max-width:430px;padding:5px 0;"> <label style="font-size:11px;text-transform:none;letter-spacing:0;color:var(--ink-soft);"><input type="checkbox" data-sa-source="sources_cited" checked> Cited in response</label><label style="font-size:11px;text-transform:none;letter-spacing:0;color:var(--ink-soft);"><input type="checkbox" data-sa-source="related_more" checked> Related/more sources</label><label style="font-size:11px;text-transform:none;letter-spacing:0;color:var(--ink-soft);"><input type="checkbox" data-sa-source="sources_search" checked> Search results shown</label></div></div>
+      <div class="fitem"><label>&nbsp;</label><div style="display:flex;gap:6px;"><button class="btn ghost sm" type="button" id="sa-all">All sites</button><button class="btn ghost sm" type="button" id="sa-none">Clear</button></div></div>
+    </div>
+    <div class="kpis" id="sa-kpis"></div>
+    <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">Google Search Console web clicks across selected sites.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google Search Console web impressions across selected sites.</div><div id="sa-impressions"></div></div></div>
+    <div class="card section-gap"><div class="card-title">LLM citations over time</div><div class="card-caption">Evertune citation volume across the selected sites and citation types.</div><div id="sa-citations"></div></div>
+    <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into its cited URLs, then the prompts and full protected response samples associated with that prompt/date/provider.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
+    <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
+  document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
+  document.getElementById('sa-none').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=false); renderSiteAnalytics(); });
+  page.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',()=>{ window.__saDrill={level:'site'}; renderSiteAnalytics(); }));
+  window.__saDrill={level:'site'};
+  renderSiteAnalytics();
+}
+function renderSiteAnalytics(){
+  const ids=saSelectedSiteIds(), range=saDateRange(), sourceTypes=saSourceTypes(), traffic=SITE_ANALYTICS.traffic, citations=SITE_ANALYTICS.citations;
+  const clickByDay=saSumByDay(traffic.site_daily,ids,range,'clicks');
+  const impressionByDay=saSumByDay(traffic.site_daily,ids,range,'impressions');
+  const events=(citations.events||[]).filter(e=>saInRange(e,ids,range) && sourceTypes.includes(e.source_type));
+  // Events, rather than the type-agnostic site_daily rollup, make every citation-type filter exact.
+  const eventCitationTotal=events.reduce((s,e)=>s+(+e.count||0),0);
+  const citationByDay=events.reduce((out,e)=>{out[e.date]=(out[e.date]||0)+(+e.count||0);return out;},{});
+  const labels=saDays(range.start,range.end);
+  const maxFor=(values)=>Math.max(1,...values,0);
+  const clickValues=labels.map(d=>clickByDay[d]||0), impressionValues=labels.map(d=>impressionByDay[d]||0), citationValues=labels.map(d=>citationByDay[d]||0);
+  document.getElementById('sa-kpis').innerHTML=`
+    <div class="kpi hi"><div class="kpi-label">Total impressions</div><div class="kpi-value">${saNum(impressionValues.reduce((s,v)=>s+v,0))}</div><div class="kpi-sub">selected sites · selected date range</div></div>
+    <div class="kpi"><div class="kpi-label">Total clicks</div><div class="kpi-value">${saNum(clickValues.reduce((s,v)=>s+v,0))}</div><div class="kpi-sub">selected sites · selected date range</div></div>
+    <div class="kpi"><div class="kpi-label">Total LLM citations</div><div class="kpi-value">${saNum(eventCitationTotal)}</div><div class="kpi-sub">all selected Evertune citation types</div></div>
+    <div class="kpi"><div class="kpi-label">Sites selected</div><div class="kpi-value">${ids.length} / ${SITE_ANALYTICS.sites.length}</div><div class="kpi-sub">multi-site aggregate view</div></div>`;
+  lineChart('sa-clicks',labels,[{name:'Clicks',values:clickValues,color:'#1F6F6B'}],{min:0,max:maxFor(clickValues),height:230});
+  lineChart('sa-impressions',labels,[{name:'Impressions',values:impressionValues,color:'#6B8FC9'}],{min:0,max:maxFor(impressionValues),height:230});
+  lineChart('sa-citations',labels,[{name:'LLM citations',values:citationValues,color:'#8B7FB0'}],{min:0,max:maxFor(citationValues),height:230});
+  renderSiteCitationDrill(events);
+  renderSiteArticleTable(ids,range,sourceTypes);
+}
+function renderSiteCitationDrill(events){
+  const drill=window.__saDrill||{level:'site'}, el=document.getElementById('sa-citation-drill'), crumbs=document.getElementById('sa-citation-crumbs');
+  const siteById=Object.fromEntries(SITE_ANALYTICS.sites.map(s=>[s.id,s]));
+  const by=(rows,key)=>rows.reduce((out,row)=>{ const k=key(row); out[k]=(out[k]||0)+(+row.count||0); return out; },{});
+  if(drill.level==='site'){
+    crumbs.innerHTML='<b>Citation frequency by site</b>';
+    const rows=Object.entries(by(events,e=>e.site_id)).map(([id,count])=>({id,count,site:siteById[id]})).sort((a,b)=>b.count-a.count);
+    const max=Math.max(1,...rows.map(r=>r.count));
+    el.innerHTML=rows.length?rows.map(r=>`<div class="topic-row" data-sa-site="${escXAttr(r.id)}" style="cursor:pointer;"><div class="topic-name" style="width:270px;white-space:normal;">${escXHtml(r.site.name)} <span class="small-muted">${escXHtml(r.site.domain)}</span></div><div class="topic-track"><div class="topic-fill" style="width:${100*r.count/max}%;background:${escXAttr(r.site.color)};"></div></div><div class="topic-pct" style="width:62px;">${saNum(r.count)}</div></div>`).join(''):'<div class="small-muted">No Evertune citations for the selected sites, range, and source types.</div>';
+    el.querySelectorAll('[data-sa-site]').forEach(row=>row.addEventListener('click',()=>{ window.__saDrill={level:'url',siteId:row.dataset.saSite}; renderSiteAnalytics(); }));
+    return;
+  }
+  const site=siteById[drill.siteId], siteEvents=events.filter(e=>e.site_id===drill.siteId);
+  crumbs.innerHTML=`<span class="cb-crumb-link" id="sa-back-sites">Citation frequency by site</span> / <b>${escXHtml(site.name)}</b>`;
+  document.getElementById('sa-back-sites').addEventListener('click',()=>{window.__saDrill={level:'site'};renderSiteAnalytics();});
+  if(drill.level==='url'){
+    const rows=Object.entries(by(siteEvents,e=>e.url)).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
+    el.innerHTML=`<div class="card-caption">Click a URL to see the cited prompts.</div><div class="scroll-table"><table><tr><th>URL</th><th>Citations</th></tr>${rows.map((r,i)=>`<tr class="clickable" data-sa-url="${i}"><td style="max-width:680px;white-space:normal;word-break:break-all;">${escXHtml(r.url)}</td><td>${saNum(r.count)}</td></tr>`).join('')}</table></div>`;
+    el.querySelectorAll('[data-sa-url]').forEach(row=>row.addEventListener('click',()=>{window.__saDrill={level:'prompt',siteId:drill.siteId,url:rows[+row.dataset.saUrl].url};renderSiteAnalytics();}));
+    return;
+  }
+  const urlEvents=siteEvents.filter(e=>e.url===drill.url);
+  const grouped={};
+  urlEvents.forEach(e=>{ const key=[e.prompt_id,e.date,e.model||'',e.race].join('||'); if(!grouped[key]) grouped[key]={...e,count:0}; grouped[key].count+=+e.count||0; });
+  const rows=Object.values(grouped).sort((a,b)=>b.count-a.count);
+  crumbs.innerHTML+=` / <span class="cb-crumb-link" id="sa-back-urls">URLs</span> / <b>Prompts</b>`;
+  document.getElementById('sa-back-urls').addEventListener('click',()=>{window.__saDrill={level:'url',siteId:drill.siteId};renderSiteAnalytics();});
+  el.innerHTML=`<div class="card-caption">Evertune reports citations at prompt/date/provider granularity. “View responses” opens the full protected response samples for that same prompt and provider; it does not claim one sample was the uniquely cited response.</div><div class="scroll-table"><table><tr><th>Prompt</th><th>Date</th><th>Provider</th><th>Citations</th><th></th></tr>${rows.map((r,i)=>{const p=PROMPT_INDEX[r.prompt_id];return `<tr><td style="max-width:460px;white-space:normal;">${escXHtml(p?p.full_query:(r.prompt_id||'Prompt unavailable'))}</td><td>${escXHtml(r.date)}</td><td>${escXHtml(r.model||'Provider not retained in historical export')}</td><td>${saNum(r.count)}</td><td><button class="btn ghost sm" data-sa-response="${i}" type="button">View responses</button></td></tr>`;}).join('')}</table></div>`;
+  el.querySelectorAll('[data-sa-response]').forEach(button=>button.addEventListener('click',()=>openSiteAnalyticsResponses(rows[+button.dataset.saResponse])));
+}
+async function openSiteAnalyticsResponses(event){
+  const prompt=PROMPT_INDEX[event.prompt_id];
+  if(!prompt){ openSidePanel(`<div class="card-title">Prompt unavailable</div><div class="small-muted">This historical citation event could not be matched to a retained prompt ID.</div>`,{wide:true}); return; }
+  openSidePanel(`<div class="card-title">Loading full responses…</div>`,{wide:true});
+  await ensureTextLoadedForRaceName(prompt.race);
+  // AI Mode appears in the current Evertune citation drops even though the legacy scoring-chart
+  // model list predates it. Keep this drill provider-exact without changing those legacy charts.
+  const provider=({'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview','AI Mode':'ai_mode'})[event.model]||null;
+  let rows=(ROWS_BY_RACE[prompt.race]||[]).filter(r=>r.prompt_id===event.prompt_id && r.report_date===event.date && (!provider || r.ai_provider===provider));
+  let scope='same prompt, date, and provider';
+  if(!rows.length){ rows=(ROWS_BY_RACE[prompt.race]||[]).filter(r=>r.prompt_id===event.prompt_id && (!provider || r.ai_provider===provider)); scope='same prompt and provider (no exact report-date match retained)'; }
+  const body=rows.map((r,i)=>`<details style="margin:10px 0;border:1px solid var(--border);border-radius:8px;padding:8px;"><summary style="cursor:pointer;font-weight:600;">Response ${i+1} · ${escXHtml(r.ai_provider)} · ${escXHtml(r.report_date)}</summary><div style="white-space:pre-wrap;font-size:12px;line-height:1.5;margin-top:8px;">${escXHtml((TEXT[r.id]||{}).full_response||'Full response not retained for this run.')}</div></details>`).join('') || '<div class="small-muted">No retained full responses match this citation event.</div>';
+  openSidePanel(`<div class="card-title">${escXHtml(prompt.full_query)}</div><div class="card-caption">Citation event: ${escXHtml(event.date)} · ${escXHtml(event.model||'historical provider unavailable')} · ${saNum(event.count)} citations. Showing ${escXHtml(scope)}.</div>${body}`,{wide:true});
+}
+function renderSiteArticleTable(ids,range,sourceTypes){
+  const traffic={};
+  SITE_ANALYTICS.traffic.article_daily.forEach(r=>{if(saInRange(r,ids,range)){const x=traffic[r.id]||(traffic[r.id]={clicks:0,impressions:0});x.clicks+=+r.clicks||0;x.impressions+=+r.impressions||0;}});
+  const citations={};
+  (SITE_ANALYTICS.citations.events||[]).forEach(r=>{if(!saInRange(r,ids,range)||!sourceTypes.includes(r.source_type))return;const article=SITE_ANALYTICS.articles.find(a=>a.site_id===r.site_id&&a.url===r.url);if(article)citations[article.id]=(citations[article.id]||0)+(+r.count||0);});
+  const siteById=Object.fromEntries(SITE_ANALYTICS.sites.map(s=>[s.id,s]));
+  const rows=SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id)).sort((a,b)=>a.site_id.localeCompare(b.site_id)||a.published_date.localeCompare(b.published_date));
+  document.getElementById('sa-articles').innerHTML=`<table><tr><th>Site</th><th>Article</th><th>Published</th><th>Tags</th><th>Impressions</th><th>Clicks</th><th>Citations</th></tr>${rows.map(a=>{const t=traffic[a.id]||{};return `<tr><td>${escXHtml(siteById[a.site_id].name)}<div class="small-muted">${escXHtml(a.domain)}</div></td><td style="max-width:390px;white-space:normal;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${escXHtml(a.title||a.url)}</a></td><td>${escXHtml(a.published_date)}</td><td style="white-space:normal;max-width:180px;">${escXHtml((a.topic_tags||[]).join(', '))}</td><td>${saNum(t.impressions)}</td><td>${saNum(t.clicks)}</td><td>${saNum(citations[a.id])}</td></tr>`;}).join('')}</table>`;
+}
+
+/* ============================================================================
+   14. CITATION BREAKOUT PAGE
    ============================================================================ */
 function buildCitationsPage(){
   document.getElementById('page-citations').innerHTML = `
@@ -4681,6 +4843,7 @@ async function initDashboard(){
     document.getElementById('page-'+page).innerHTML = '<div class="small-muted" style="padding:40px;text-align:center;">Loading…</div>';
   });
   document.getElementById('page-citations').innerHTML = '<div class="page-head"><div><div class="page-title">Citation Breakout</div></div></div><div class="small-muted" style="padding:40px;text-align:center;">Loading citation data…</div>';
+  document.getElementById('page-siteanalytics').innerHTML = '<div class="page-head"><div><div class="page-title">Site Analytics</div></div></div><div class="small-muted" style="padding:40px;text-align:center;">Loading protected site analytics…</div>';
   enhanceSelects();
   collapseAllFilterbars();
   if(loadingEl) loadingEl.remove();

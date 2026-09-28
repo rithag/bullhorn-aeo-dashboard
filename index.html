@@ -4370,8 +4370,9 @@ function renderSiteAnalytics(){
   else document.getElementById('sa-position').innerHTML='<div class="small-muted">Average position will appear after the next Search Console refresh.</div>';
   lineChart('sa-citations',citationLabels,[{name:'LLM citations',values:citationChartValues,color:'#8B7FB0'}],{min:0,max:maxFor(citationChartValues),height:230});
   if(providerChartSegments.length){
-    stackedBarChart('sa-provider-mix',[{label:'All citations',segments:providerChartSegments}],{width:620,barH:30,rowGap:0,labelW:100});
-    document.getElementById('sa-provider-legend').innerHTML=providerChartSegments.map(seg=>`<span><i class="legend-dot" style="background:${escXAttr(seg.color)}"></i>${escXHtml(seg.name)} · ${saNum(seg.value)}</span>`).join('');
+    const providerTotal=providerChartSegments.reduce((sum,seg)=>sum+seg.value,0), providerMax=Math.max(...providerChartSegments.map(seg=>seg.value),1);
+    document.getElementById('sa-provider-mix').innerHTML=providerChartSegments.map(seg=>`<div class="topic-row" style="grid-template-columns:minmax(120px,1fr) minmax(90px,2.2fr) 88px;"><div class="topic-name" style="width:auto;white-space:normal;">${escXHtml(seg.name)}</div><div class="topic-track"><div class="topic-fill" style="width:${100*seg.value/providerMax}%;background:${escXAttr(seg.color)};"></div></div><div class="topic-pct" style="width:auto;">${saNum(seg.value)} · ${(100*seg.value/providerTotal).toFixed(1)}%</div></div>`).join('');
+    document.getElementById('sa-provider-legend').innerHTML='<span>Counts and shares of the selected citation occurrences.</span>';
   } else {
     document.getElementById('sa-provider-mix').innerHTML='<div class="small-muted">No Evertune citation occurrences in the selected view.</div>';
     document.getElementById('sa-provider-legend').innerHTML='';

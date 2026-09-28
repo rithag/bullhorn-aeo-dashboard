@@ -632,7 +632,7 @@ function collapseFilterbar(bar){
    not synthetic. loadAllData()+buildFromFetchedData() populate everything below before
    INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
    ============================================================================ */
-let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null;
+let AGG=null, TEXT=null, CITATIONS_RAW=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null, SITE_ANALYTICS_RESPONSES=null;
 let RACE_IDX_BY_RACE = {};
 let ROWS_BY_RACE = {};
 
@@ -708,6 +708,18 @@ function ensureSiteAnalyticsLoaded(){
     }).then(raw=>{ SITE_ANALYTICS=raw; return raw; });
   }
   return siteAnalyticsLoadPromise;
+}
+// Individual raw Evertune answers are purposefully split from the compact chart asset. The
+// browser only fetches this protected index if someone asks to inspect cited response samples.
+let siteAnalyticsResponsesLoadPromise = null;
+function ensureSiteAnalyticsResponsesLoaded(){
+  if(!siteAnalyticsResponsesLoadPromise){
+    siteAnalyticsResponsesLoadPromise = fetch(heavyAssetUrl('site_analytics_responses.json')).then(r=>{
+      if(!r.ok) throw new Error('Exact response samples are unavailable ('+r.status+'). Refresh and upload the Site Analytics response asset.');
+      return r.json();
+    }).then(raw=>{ SITE_ANALYTICS_RESPONSES=raw; return raw; });
+  }
+  return siteAnalyticsResponsesLoadPromise;
 }
 // topic_key_labels.json is tiny (~182 entries, a few KB) — safe to fetch eagerly the same moment
 // citations.json is, no need for the same defer-until-page-open treatment. Only the Citation
@@ -4208,7 +4220,7 @@ function buildSiteAnalyticsPage(){
     <div class="kpis" id="sa-kpis"></div>
     <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">Google Search Console web clicks across selected sites.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google Search Console web impressions across selected sites.</div><div id="sa-impressions"></div></div></div>
     <div class="card section-gap"><div class="card-title">LLM citations over time</div><div class="card-caption">Evertune citation volume across the selected sites and citation types.</div><div id="sa-citations"></div></div>
-    <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into its cited URLs, then the prompts and full protected response samples associated with that prompt/date/provider.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
+    <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
   document.getElementById('sa-none').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=false); renderSiteAnalytics(); });
@@ -4265,17 +4277,26 @@ function renderSiteCitationDrill(events){
   const rows=Object.values(grouped).sort((a,b)=>b.count-a.count);
   crumbs.innerHTML+=` / <span class="cb-crumb-link" id="sa-back-urls">URLs</span> / <b>Prompts</b>`;
   document.getElementById('sa-back-urls').addEventListener('click',()=>{window.__saDrill={level:'url',siteId:drill.siteId};renderSiteAnalytics();});
-  el.innerHTML=`<div class="card-caption">Evertune reports citations at prompt/date/provider granularity. “View responses” opens the full protected response samples for that same prompt and provider; it does not claim one sample was the uniquely cited response.</div><div class="scroll-table"><table><tr><th>Prompt</th><th>Date</th><th>Provider</th><th>Citations</th><th></th></tr>${rows.map((r,i)=>{const p=PROMPT_INDEX[r.prompt_id];return `<tr><td style="max-width:460px;white-space:normal;">${escXHtml(p?p.full_query:(r.prompt_id||'Prompt unavailable'))}</td><td>${escXHtml(r.date)}</td><td>${escXHtml(r.model||'Provider not retained in historical export')}</td><td>${saNum(r.count)}</td><td><button class="btn ghost sm" data-sa-response="${i}" type="button">View responses</button></td></tr>`;}).join('')}</table></div>`;
+  el.innerHTML=`<div class="card-caption">Evertune’s Sources-URL export supplies the aggregate count. “View responses” opens individual protected samples whose structured source list contains this exact URL, matched on race, prompt, provider, and date.</div><div class="scroll-table"><table><tr><th>Prompt</th><th>Date</th><th>Provider</th><th>Citations</th><th></th></tr>${rows.map((r,i)=>{const p=PROMPT_INDEX[r.prompt_id];return `<tr><td style="max-width:460px;white-space:normal;">${escXHtml(p?p.full_query:(r.prompt_id||'Prompt unavailable'))}</td><td>${escXHtml(r.date)}</td><td>${escXHtml(r.model||'Provider not retained in historical export')}</td><td>${saNum(r.count)}</td><td><button class="btn ghost sm" data-sa-response="${i}" type="button">View responses</button></td></tr>`;}).join('')}</table></div>`;
   el.querySelectorAll('[data-sa-response]').forEach(button=>button.addEventListener('click',()=>openSiteAnalyticsResponses(rows[+button.dataset.saResponse])));
 }
 async function openSiteAnalyticsResponses(event){
   const prompt=PROMPT_INDEX[event.prompt_id];
   if(!prompt){ openSidePanel(`<div class="card-title">Prompt unavailable</div><div class="small-muted">This historical citation event could not be matched to a retained prompt ID.</div>`,{wide:true}); return; }
   openSidePanel(`<div class="card-title">Loading full responses…</div>`,{wide:true});
-  await ensureTextLoadedForRaceName(prompt.race);
   // AI Mode appears in the current Evertune citation drops even though the legacy scoring-chart
   // model list predates it. Keep this drill provider-exact without changing those legacy charts.
   const provider=({'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview','AI Mode':'ai_mode'})[event.model]||null;
+  try{
+    const raw=await ensureSiteAnalyticsResponsesLoaded();
+    const exact=(raw.runs||[]).filter(run=>run.race===event.race && run.prompt_id===event.prompt_id && run.date===event.date && (!provider || run.provider===provider) && (run.matches||[]).some(match=>match.site_id===event.site_id && match.url===event.url));
+    if(exact.length){
+      const body=exact.map((run,i)=>`<details style="margin:10px 0;border:1px solid var(--border);border-radius:8px;padding:8px;"><summary style="cursor:pointer;font-weight:600;">Response ${i+1} · ${escXHtml(run.model)} · ${escXHtml(run.created_at)}</summary><div style="white-space:pre-wrap;font-size:12px;line-height:1.5;margin-top:8px;">${escXHtml(run.response||'Full response unavailable.')}</div></details>`).join('');
+      openSidePanel(`<div class="card-title">${escXHtml(prompt.full_query)}</div><div class="card-caption">Citation event: ${escXHtml(event.date)} · ${escXHtml(event.model||'provider unavailable')} · ${saNum(event.count)} aggregate citations. Showing ${exact.length} individual Evertune sample${exact.length===1?'':'s'} whose structured source list includes this URL.</div>${body}`,{wide:true});
+      return;
+    }
+  }catch(e){ console.error('Exact Site Analytics response index load failed', e); }
+  await ensureTextLoadedForRaceName(prompt.race);
   let rows=(ROWS_BY_RACE[prompt.race]||[]).filter(r=>r.prompt_id===event.prompt_id && r.report_date===event.date && (!provider || r.ai_provider===provider));
   let scope='same prompt, date, and provider';
   if(!rows.length){ rows=(ROWS_BY_RACE[prompt.race]||[]).filter(r=>r.prompt_id===event.prompt_id && (!provider || r.ai_provider===provider)); scope='same prompt and provider (no exact report-date match retained)'; }

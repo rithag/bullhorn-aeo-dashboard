@@ -4293,7 +4293,7 @@ function buildSiteAnalyticsPage(){
     <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div><div id="sa-impressions"></div></div></div>
     <div class="row-eq section-gap"><div class="card"><div class="card-title">Average Google position over time</div><div class="card-caption">Impression-weighted average position for selected domains. Lower is better; position is not available when there are no impressions.</div><div id="sa-position"></div></div><div class="card"><div class="card-title">Citation mix by provider</div><div class="card-caption">Share of selected Evertune citation occurrences by sampled search surface.</div><div id="sa-provider-mix"></div><div class="legend-row" id="sa-provider-legend"></div></div></div>
     <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div><div id="sa-citations"></div></div>
-    <div class="card section-gap"><div class="card-title">Published-article citation penetration</div><div class="card-caption">For one candidate and prompt, the share of individual non-refusal raw model responses whose structured source list contains at least one of our published canonical articles. Homepages and topic pages are excluded. The date range applies to both the numerator and denominator; the rate is withheld where the exact raw runs lack refusal scoring.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Candidate</label><select id="acp-candidate"></select></div><div class="fitem"><label>Prompt</label><select id="acp-prompt"></select></div><div class="fitem"><label>From</label><input id="acp-start" type="date"></div><div class="fitem"><label>To</label><input id="acp-end" type="date"></div></div><div id="acp-content"></div></div>
+    <div class="card section-gap"><div class="card-title">Candidate &amp; prompt citation penetration</div><div class="card-caption">Rank candidates by AEO article-source appearances, then select one to see its prompts ranked by penetration. The date range applies to both the numerator and denominator; rates are withheld where the exact raw runs lack refusal scoring.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Candidate drill-down</label><select id="acp-candidate"></select></div><div class="fitem"><label>Prompt drill-down</label><select id="acp-prompt"></select></div><div class="fitem"><label>From</label><input id="acp-start" type="date"></div><div class="fitem"><label>To</label><input id="acp-end" type="date"></div></div><div class="row-eq"><div><div class="card-title">Candidates by AEO site citations</div><div class="card-caption">Ranked by canonical-article source appearances in the selected dates. Click a candidate to drill in.</div><div class="scroll-table" id="acp-candidate-rank"></div></div><div><div class="card-title">Prompts by citation penetration</div><div class="card-caption">Selected candidate only. Ranked by cited non-refusal response runs ÷ all non-refusal response runs; click a prompt for cited-article detail.</div><div class="scroll-table" id="acp-prompt-rank"></div></div></div><div id="acp-content"></div></div>
     <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
@@ -4366,6 +4366,16 @@ function acpProviderLabel(provider){
   return ({chatgpt_search:'ChatGPT Search',gemini_search:'Gemini Search',ai_overview:'AI Overview',ai_mode:'AI Mode'})[provider] || provider || 'Provider unavailable';
 }
 function acpCandidateKey(row){ return row.race_id+'||'+row.candidate; }
+function acpRollup(rows, keyFn){
+  const groups={};
+  rows.forEach(row=>{
+    const key=keyFn(row), group=groups[key]||(groups[key]={...row,total_responses:0,cited_responses:0,source_appearances:0});
+    group.total_responses+=+row.total_responses||0;
+    group.cited_responses+=+row.cited_responses||0;
+    group.source_appearances+=(row.articles||[]).reduce((sum,article)=>sum+(+article.cited_responses||0),0);
+  });
+  return Object.values(groups);
+}
 function buildArticleCitationPenetration(){
   const asset=SITE_ANALYTICS.article_citation_penetration||{};
   const content=document.getElementById('acp-content'), candidateSelect=document.getElementById('acp-candidate'), promptSelect=document.getElementById('acp-prompt'), startInput=document.getElementById('acp-start'), endInput=document.getElementById('acp-end');
@@ -4386,6 +4396,17 @@ function buildArticleCitationPenetration(){
     promptSelect.innerHTML=prompts.map(p=>`<option value="${escXAttr(p.id)}">${escXHtml(p.id)} · ${escXHtml(p.text)}</option>`).join('');
     refreshXSel(promptSelect);
   };
+  window.__acpSetCandidate=(candidateKey)=>{
+    candidateSelect.value=candidateKey;
+    refreshXSel(candidateSelect);
+    refreshPrompts();
+    renderArticleCitationPenetration();
+  };
+  window.__acpSetPrompt=(promptId)=>{
+    promptSelect.value=promptId;
+    refreshXSel(promptSelect);
+    renderArticleCitationPenetration();
+  };
   candidateSelect.addEventListener('change',()=>{refreshPrompts();renderArticleCitationPenetration();});
   promptSelect.addEventListener('change',renderArticleCitationPenetration);
   startInput.addEventListener('change',renderArticleCitationPenetration);
@@ -4399,7 +4420,19 @@ function renderArticleCitationPenetration(){
   if(!content || !asset.available) return;
   const candidateKey=document.getElementById('acp-candidate').value, promptId=document.getElementById('acp-prompt').value;
   const start=document.getElementById('acp-start').value, end=document.getElementById('acp-end').value;
-  const rows=(asset.records||[]).filter(r=>acpCandidateKey(r)===candidateKey && r.prompt_id===promptId && (!start||r.date>=start) && (!end||r.date<=end));
+  const dateRows=(asset.records||[]).filter(r=>(!start||r.date>=start) && (!end||r.date<=end));
+  const candidateRanks=acpRollup(dateRows,acpCandidateKey).sort((a,b)=>b.source_appearances-a.source_appearances||b.cited_responses-a.cited_responses||a.candidate.localeCompare(b.candidate));
+  const candidateRows=dateRows.filter(r=>acpCandidateKey(r)===candidateKey);
+  const promptRanks=acpRollup(candidateRows,r=>r.prompt_id).sort((a,b)=>{
+    const ar=a.total_responses?a.cited_responses/a.total_responses:0, br=b.total_responses?b.cited_responses/b.total_responses:0;
+    return br-ar||b.source_appearances-a.source_appearances||a.prompt_id.localeCompare(b.prompt_id);
+  });
+  const rows=candidateRows.filter(r=>r.prompt_id===promptId);
+  const candidateRankEl=document.getElementById('acp-candidate-rank'), promptRankEl=document.getElementById('acp-prompt-rank');
+  candidateRankEl.innerHTML=`<table><tr><th>Candidate</th><th>AEO citations</th><th>Cited responses</th><th>Penetration</th></tr>${candidateRanks.map(row=>`<tr class="clickable" data-acp-candidate="${escXAttr(acpCandidateKey(row))}"><td style="white-space:normal;max-width:260px;"><b>${escXHtml(row.candidate)}</b><div class="small-muted">${escXHtml(row.race)}</div></td><td>${saNum(row.source_appearances)}</td><td>${saNum(row.cited_responses)}</td><td>${row.total_responses?(100*row.cited_responses/row.total_responses).toFixed(1):'0.0'}%</td></tr>`).join('')||'<tr><td colspan="4" class="small-muted">No fully scored response groups in this date range.</td></tr>'}</table>`;
+  candidateRankEl.querySelectorAll('[data-acp-candidate]').forEach(el=>el.addEventListener('click',()=>window.__acpSetCandidate(el.dataset.acpCandidate)));
+  promptRankEl.innerHTML=`<table><tr><th>Prompt</th><th>Penetration</th><th>Cited responses</th><th>AEO citations</th></tr>${promptRanks.map(row=>`<tr class="clickable" data-acp-prompt="${escXAttr(row.prompt_id)}"><td style="white-space:normal;max-width:320px;"><b>${escXHtml(row.prompt_id)}</b><div class="small-muted">${escXHtml(row.prompt)}</div></td><td>${row.total_responses?(100*row.cited_responses/row.total_responses).toFixed(1):'0.0'}%</td><td>${saNum(row.cited_responses)}</td><td>${saNum(row.source_appearances)}</td></tr>`).join('')||'<tr><td colspan="4" class="small-muted">No fully scored prompts for this candidate and date range.</td></tr>'}</table>`;
+  promptRankEl.querySelectorAll('[data-acp-prompt]').forEach(el=>el.addEventListener('click',()=>window.__acpSetPrompt(el.dataset.acpPrompt)));
   const total=rows.reduce((sum,r)=>sum+(+r.total_responses||0),0);
   const cited=rows.reduce((sum,r)=>sum+(+r.cited_responses||0),0);
   const rate=total ? 100*cited/total : 0;

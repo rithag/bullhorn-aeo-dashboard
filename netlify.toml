@@ -18,3 +18,13 @@
   from = "/api/check-auth"
   to = "/.netlify/functions/check-auth"
   status = 200
+
+[[redirects]]
+  from = "/api/site-analytics-login"
+  to = "/.netlify/functions/site-analytics-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/check-site-analytics-auth"
+  to = "/.netlify/functions/check-site-analytics-auth"
+  status = 200

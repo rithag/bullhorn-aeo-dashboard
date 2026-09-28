@@ -1,9 +1,10 @@
 # Dashboard login + data gate
 
-Three Netlify environment variables required (Site settings → Environment variables in the
+Four Netlify environment variables required (Site settings → Environment variables in the
 Netlify dashboard — never commit these):
 
 - `DASHBOARD_PASSWORD` — the shared password typed into the login form.
+- `SITE_ANALYTICS_PASSWORD` — the separate password typed only when opening Site Analytics.
 - `COOKIE_SECRET` — random secret used to HMAC-sign the session cookie. Generate with
   `openssl rand -hex 32`.
 - `GCP_SA_KEY_B64` — base64-encoded contents of the `dashboard-data-reader` service account's JSON
@@ -21,6 +22,10 @@ Netlify dashboard — never commit these):
    URL for the requested asset. The browser follows the redirect and downloads directly from GCS
    (necessary since some assets, e.g. `citations.json`, are ~216MB — far past any Netlify
    Function response-size limit, so bytes can never be proxied through the function body itself).
+4. `site-analytics-login.js` and `check-site-analytics-auth.js` issue/check a distinct signed
+   cookie after `SITE_ANALYTICS_PASSWORD` succeeds. `data-proxy.js` requires that second cookie
+   for `site_analytics.json` and `site_analytics_responses.json`; the main dashboard session alone
+   cannot read either object.
 
 The bucket itself has no `allUsers` grant once this is live — only a valid, freshly-signed URL (or
 the `dashboard-data-reader` service account directly) can read it. Bucket CORS must still allow the

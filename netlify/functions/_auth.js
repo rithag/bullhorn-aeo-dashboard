@@ -9,6 +9,7 @@
 const crypto = require('crypto');
 
 const COOKIE_NAME = 'aeo_dash_auth';
+const SITE_ANALYTICS_COOKIE_NAME = 'aeo_site_analytics_auth';
 const SESSION_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 function base64url(buf) {
@@ -20,10 +21,10 @@ function sign(expiry, secret) {
   return base64url(mac);
 }
 
-function makeCookieHeader(secret) {
+function makeCookieHeader(secret, cookieName = COOKIE_NAME) {
   const expiry = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
   const value = `${expiry}.${sign(expiry, secret)}`;
-  return `${COOKIE_NAME}=${value}; Path=/; Max-Age=${SESSION_SECONDS}; HttpOnly; Secure; SameSite=Lax`;
+  return `${cookieName}=${value}; Path=/; Max-Age=${SESSION_SECONDS}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 function parseCookies(cookieHeader) {
@@ -36,8 +37,8 @@ function parseCookies(cookieHeader) {
   return out;
 }
 
-function isValidSession(cookieHeader, secret) {
-  const raw = parseCookies(cookieHeader)[COOKIE_NAME];
+function isValidSession(cookieHeader, secret, cookieName = COOKIE_NAME) {
+  const raw = parseCookies(cookieHeader)[cookieName];
   if (!raw) return false;
   const dot = raw.indexOf('.');
   if (dot === -1) return false;
@@ -52,4 +53,21 @@ function isValidSession(cookieHeader, secret) {
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { COOKIE_NAME, makeCookieHeader, isValidSession };
+function passwordMatches(password, expected) {
+  // Cap both sides before comparing -- padEnd doesn't truncate an over-length input, and
+  // timingSafeEqual throws (rather than returning false) on a buffer-length mismatch.
+  const given = String(password || '').slice(0, 256);
+  const a = Buffer.from(given.padEnd(256, '\0'));
+  const b = Buffer.from(String(expected || '').slice(0, 256).padEnd(256, '\0'));
+  return !!expected && String(expected).length <= 256 && crypto.timingSafeEqual(a, b);
+}
+
+// A cookie's HMAC must be bound to its purpose. Otherwise a dashboard user could copy the value
+// of their valid main-session cookie into a differently named Site Analytics cookie and bypass the
+// second password. This deterministic derivation keeps one stored Netlify secret while producing
+// independent signing keys for the two authorization scopes.
+function purposeSecret(secret, purpose) {
+  return crypto.createHmac('sha256', secret).update(`aeo-dashboard:${purpose}`).digest('hex');
+}
+
+module.exports = { COOKIE_NAME, SITE_ANALYTICS_COOKIE_NAME, makeCookieHeader, isValidSession, passwordMatches, purposeSecret };

@@ -721,6 +721,52 @@ function ensureSiteAnalyticsResponsesLoaded(){
   }
   return siteAnalyticsResponsesLoadPromise;
 }
+async function checkSiteAnalyticsAuthed(){
+  try {
+    const r = await fetch('/api/check-site-analytics-auth', { credentials: 'same-origin' });
+    return r.ok;
+  } catch(e) {
+    return false;
+  }
+}
+function renderSiteAnalyticsPasswordGate(errorMsg){
+  const page=document.getElementById('page-siteanalytics');
+  page.innerHTML=`
+    <div class="page-head"><div><div class="page-title">Site Analytics</div><div class="page-desc">This cross-site traffic and citation reporting area requires its own password.</div></div></div>
+    <form id="site-analytics-login-form" style="display:flex;flex-direction:column;gap:12px;width:320px;padding:22px;border:1px solid var(--border);border-radius:10px;background:#fff;">
+      <label for="site-analytics-password" style="font-size:12px;font-weight:600;">Site Analytics password</label>
+      <input id="site-analytics-password" type="password" autocomplete="current-password" autofocus style="padding:8px 10px;font-size:14px;border:1px solid #ccc;border-radius:5px;">
+      ${errorMsg ? `<div style="color:var(--bad);font-size:13px;">${escXHtml(errorMsg)}</div>` : ''}
+      <button class="btn" type="submit" style="align-self:flex-start;">Unlock Site Analytics</button>
+    </form>`;
+  page.querySelector('#site-analytics-login-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const password=page.querySelector('#site-analytics-password').value;
+    try{
+      const r=await fetch('/api/site-analytics-login', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+      if(!r.ok){ renderSiteAnalyticsPasswordGate('Incorrect password.'); return; }
+      await openSiteAnalyticsPage();
+    }catch(err){ renderSiteAnalyticsPasswordGate('Unlock failed — check your connection and try again.'); }
+  });
+}
+async function openSiteAnalyticsPage(){
+  if(!(await checkSiteAnalyticsAuthed())){
+    renderSiteAnalyticsPasswordGate();
+    return false;
+  }
+  if(PAGE_BUILT.siteanalytics) return true;
+  try{
+    await ensureSiteAnalyticsLoaded();
+    buildSiteAnalyticsPage();
+    PAGE_BUILT.siteanalytics=true;
+    enhanceSelects(); collapseAllFilterbars();
+    return true;
+  }catch(e){
+    console.error('Site Analytics data load failed', e);
+    document.getElementById('page-siteanalytics').innerHTML='<div class="err-banner">Site Analytics could not load: '+escXHtml(String(e.message||e))+'</div>';
+    return false;
+  }
+}
 // topic_key_labels.json is tiny (~182 entries, a few KB) — safe to fetch eagerly the same moment
 // citations.json is, no need for the same defer-until-page-open treatment. Only the Citation
 // Breakout page's "Citations by prompt" search card reads TOPIC_KEY_LABELS.
@@ -1732,17 +1778,7 @@ document.querySelectorAll('.nav-item').forEach(item=>{
       return;
     }
     if(page==='siteanalytics'){
-      if(!PAGE_BUILT.siteanalytics){
-        try{
-          await ensureSiteAnalyticsLoaded();
-          buildSiteAnalyticsPage();
-          PAGE_BUILT.siteanalytics = true;
-          enhanceSelects(); collapseAllFilterbars();
-        }catch(e){
-          console.error('Site Analytics data load failed', e);
-          document.getElementById('page-siteanalytics').innerHTML='<div class="err-banner">Site Analytics could not load: '+escXHtml(String(e.message||e))+'</div>';
-        }
-      }
+      await openSiteAnalyticsPage();
       return;
     }
     if(!PAGE_BUILT[page] && PAGE_BUILD[page]){

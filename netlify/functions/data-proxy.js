@@ -6,7 +6,7 @@
 // The signed URL only exists because the cookie was valid, expires in minutes, and is scoped to
 // exactly one object -- it does not grant standing/public access the way the old allUsers grant did.
 
-const { isValidSession } = require('./_auth');
+const { SITE_ANALYTICS_COOKIE_NAME, isValidSession, purposeSecret } = require('./_auth');
 const { signV4Url } = require('./_gcs_sign');
 
 const BUCKET = 'aeo-dashboard-assets-bullhorn';
@@ -14,10 +14,6 @@ const SIGNED_URL_TTL_SECONDS = 300; // 5 minutes -- plenty for the browser to st
 
 exports.handler = async (event) => {
   const cookieSecret = process.env.COOKIE_SECRET;
-  if (!cookieSecret || !isValidSession(event.headers && event.headers.cookie, cookieSecret)) {
-    return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'unauthorized' }) };
-  }
-
   // event.path reflects the ORIGINAL public request path for a status-200 rewrite rule (not the
   // rewritten /.netlify/functions/data-proxy/... target) -- confirmed empirically against the
   // live deploy, e.g. "/api/data/citations.json" -> relPath "citations.json".
@@ -29,6 +25,19 @@ exports.handler = async (event) => {
   // flat filenames or one-level-deep (text/<race>.json), never expected to contain "..".
   if (relPath.includes('..')) {
     return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'invalid path' }) };
+  }
+  // Site Analytics is a second, intentionally narrower gate. The main dashboard session can
+  // read all of its normal data, but the two cross-site analytics objects require an additional
+  // cookie only issued after the separate Site Analytics password succeeds.
+  const siteAnalyticsAsset = new Set(['site_analytics.json', 'site_analytics_responses.json']).has(relPath);
+  const signingSecret = siteAnalyticsAsset ? purposeSecret(cookieSecret || '', 'site-analytics') : cookieSecret;
+  const authed = cookieSecret && isValidSession(
+    event.headers && event.headers.cookie,
+    signingSecret,
+    siteAnalyticsAsset ? SITE_ANALYTICS_COOKIE_NAME : undefined,
+  );
+  if (!authed) {
+    return { statusCode: 401, body: JSON.stringify({ ok: false, error: 'unauthorized' }) };
   }
 
   const objectName = `dashboard-data/${relPath}`;

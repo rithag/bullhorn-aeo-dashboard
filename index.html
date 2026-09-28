@@ -43,11 +43,12 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,
 .metric-guide-sub{display:block;font-size:11px;color:var(--ink-soft);font-weight:400;margin-top:2px;}
 .metric-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 16px;}
 .metric-guide-item{border:1px solid var(--border);border-radius:9px;padding:10px 11px;background:#FAFBFC;}
+.metric-guide-item:last-child{grid-column:span 2;}
 .metric-guide-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:700;margin-bottom:4px;}
 .metric-guide-item strong{font-size:12px;display:block;margin-bottom:4px;}
 .metric-guide-item p{font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin:0;}
 .metric-guide-note{border-top:1px solid var(--border);padding:10px 16px 13px;color:var(--ink-soft);font-size:11.5px;line-height:1.45;}
-@media (max-width:760px){.metric-guide-grid{grid-template-columns:1fr;}}
+@media (max-width:760px){.metric-guide-grid{grid-template-columns:1fr;}.metric-guide-item:last-child{grid-column:auto;}}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
 .kpi.hi{border-color:var(--brand);background:var(--brand-soft);}
 .kpi-label{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
@@ -4266,12 +4267,17 @@ function buildSiteAnalyticsPage(){
         <div class="metric-guide-item">
           <div class="metric-guide-label">Google Search Console · user search activity</div>
           <strong>Google Search visibility and traffic</strong>
-          <p><b>Impressions</b> are times a URL on the selected domains appeared to a person in Google web search. <b>Clicks</b> are person-initiated visits from those results. <b>CTR</b> is clicks divided by impressions. These measures cover every indexable page on each selected domain—not only the article inventory.</p>
+          <p><b>Impressions</b> are times a URL on the selected domains appeared to a person in Google web search. <b>Clicks</b> are person-initiated visits from those results. <b>CTR</b> is clicks divided by impressions. <b>Average position</b> is impression-weighted, so lower is better. These measures cover every indexable page on each selected domain—not only the article inventory.</p>
         </div>
         <div class="metric-guide-item">
           <div class="metric-guide-label">Evertune exports · sampled model outputs</div>
           <strong>Observed LLM citation occurrences</strong>
-          <p>A count of times an owned URL appears in Evertune’s sampled model source lists, filtered by citation type. <b>Citation footprint</b> is the number of selected sites and canonical articles with at least one such occurrence. Neither measure is a site visit, referral, impression, crawl, or count of unique people.</p>
+          <p>A count of times an owned URL appears in Evertune’s sampled model source lists, filtered by citation type. <b>Citation footprint</b> is the number of selected sites and canonical articles with at least one such occurrence. The provider mix shows which sampled search surface generated those occurrences. Neither measure is a site visit, referral, impression, crawl, or count of unique people.</p>
+        </div>
+        <div class="metric-guide-item">
+          <div class="metric-guide-label">Google URL Inspection · point-in-time check</div>
+          <strong>Published URL index coverage</strong>
+          <p>The share of selected canonical articles with a confirmed <b>Indexed</b> result in the most recent retained URL Inspection checkpoint. It is a dated snapshot, not an estimate, ranking signal, or time-series measure; any uninspected URL is excluded from the rate.</p>
         </div>
       </div>
       <div class="metric-guide-note"><b>Do not compare raw totals as if they were the same behavior.</b> Google Search Console measures people seeing and clicking Google results; Evertune measures source occurrences within research samples. The date range and source filters always control the displayed values.</div>
@@ -4285,6 +4291,7 @@ function buildSiteAnalyticsPage(){
     </div>
     <div class="kpis" id="sa-kpis"></div>
     <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div><div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div><div id="sa-impressions"></div></div></div>
+    <div class="row-eq section-gap"><div class="card"><div class="card-title">Average Google position over time</div><div class="card-caption">Impression-weighted average position for selected domains. Lower is better; position is not available when there are no impressions.</div><div id="sa-position"></div></div><div class="card"><div class="card-title">Citation mix by provider</div><div class="card-caption">Share of selected Evertune citation occurrences by sampled search surface.</div><div id="sa-provider-mix"></div><div class="legend-row" id="sa-provider-legend"></div></div></div>
     <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div><div id="sa-citations"></div></div>
     <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div><div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
@@ -4306,20 +4313,50 @@ function renderSiteAnalytics(){
   const maxFor=(values)=>Math.max(1,...values,0);
   const clickValues=labels.map(d=>clickByDay[d]||0), impressionValues=labels.map(d=>impressionByDay[d]||0), citationValues=labels.map(d=>citationByDay[d]||0);
   const totalClicks=clickValues.reduce((s,v)=>s+v,0), totalImpressions=impressionValues.reduce((s,v)=>s+v,0);
+  const positionByDay={};
+  (traffic.site_daily||[]).forEach(r=>{
+    if(!saInRange(r,ids,range) || !(+r.impressions) || r.average_position==null) return;
+    const day=positionByDay[r.date]||(positionByDay[r.date]={weighted:0,impressions:0});
+    day.weighted+=(+r.average_position)*(+r.impressions);
+    day.impressions+=+r.impressions;
+  });
+  const positionValues=labels.map(d=>positionByDay[d] ? positionByDay[d].weighted/positionByDay[d].impressions : null);
+  const overallPosition=totalImpressions && positionValues.some(v=>v!=null)
+    ? Object.values(positionByDay).reduce((sum,v)=>sum+v.weighted,0)/totalImpressions : null;
+  const providerTotals=events.reduce((out,e)=>{const provider=e.model||'Provider unavailable';out[provider]=(out[provider]||0)+(+e.count||0);return out;},{});
+  const providerColors={'ChatGPT Search':'#3D8B82','Gemini Search':'#6B8FC9','AI Overview':'#C98A2E','AI Mode':'#8B7FB0','Provider unavailable':'#8B93A1'};
+  const providerSegments=Object.entries(providerTotals).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value,color:providerColors[name]||'#8B93A1'}));
   const citedSites=new Set(events.map(e=>e.site_id)).size;
-  const publishedUrls=new Set(SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id)).map(a=>a.site_id+'||'+a.url));
+  const selectedArticles=SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id));
+  const publishedUrls=new Set(selectedArticles.map(a=>a.site_id+'||'+a.url));
   const citedPublishedUrls=new Set(events.filter(e=>publishedUrls.has(e.site_id+'||'+e.url)).map(e=>e.site_id+'||'+e.url)).size;
   const ctr=totalImpressions ? 100*totalClicks/totalImpressions : 0;
+  const inspectedArticles=selectedArticles.filter(a=>a.google_index_status==='indexed'||a.google_index_status==='not_indexed');
+  const indexedArticles=selectedArticles.filter(a=>a.google_index_status==='indexed');
+  const indexCoverage=inspectedArticles.length ? 100*indexedArticles.length/inspectedArticles.length : null;
+  const indexSnapshot=SITE_ANALYTICS.index_coverage||{};
+  const snapshotDate=indexSnapshot.snapshot_updated_at ? new Date(indexSnapshot.snapshot_updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
   document.getElementById('sa-kpis').innerHTML=`
     <div class="kpi hi"><div class="kpi-label">Google impressions</div><div class="kpi-value">${saNum(totalImpressions)}</div><div class="kpi-sub">people seeing selected domains in Google web search</div></div>
     <div class="kpi"><div class="kpi-label">Google clicks</div><div class="kpi-value">${saNum(totalClicks)}</div><div class="kpi-sub">person-initiated Google result visits</div></div>
     <div class="kpi"><div class="kpi-label">Organic CTR</div><div class="kpi-value">${ctr.toFixed(1)}%</div><div class="kpi-sub">clicks ÷ impressions</div></div>
+    <div class="kpi"><div class="kpi-label">Average Google position</div><div class="kpi-value">${overallPosition==null?'—':overallPosition.toFixed(1)}</div><div class="kpi-sub">impression-weighted · lower is better</div></div>
+    <div class="kpi"><div class="kpi-label">Published URLs indexed</div><div class="kpi-value">${indexCoverage==null?'—':indexCoverage.toFixed(0)+'%'}</div><div class="kpi-sub">${inspectedArticles.length?indexedArticles.length+'/'+inspectedArticles.length+' inspected':'no inspection snapshot'}${snapshotDate?' · '+snapshotDate:''}</div></div>
     <div class="kpi"><div class="kpi-label">Observed LLM citations</div><div class="kpi-value">${saNum(eventCitationTotal)}</div><div class="kpi-sub">Evertune source-list occurrences</div></div>
-    <div class="kpi"><div class="kpi-label">Citation footprint</div><div class="kpi-value">${citedSites} sites · ${citedPublishedUrls} URLs</div><div class="kpi-sub">with ≥1 Evertune occurrence</div></div>
-    <div class="kpi"><div class="kpi-label">Sites selected</div><div class="kpi-value">${ids.length} / ${SITE_ANALYTICS.sites.length}</div><div class="kpi-sub">multi-site aggregate view</div></div>`;
+    <div class="kpi"><div class="kpi-label">Citation footprint</div><div class="kpi-value">${citedSites} sites · ${citedPublishedUrls} URLs</div><div class="kpi-sub">with ≥1 Evertune occurrence</div></div>`;
   lineChart('sa-clicks',labels,[{name:'Clicks',values:clickValues,color:'#1F6F6B'}],{min:0,max:maxFor(clickValues),height:230});
   lineChart('sa-impressions',labels,[{name:'Impressions',values:impressionValues,color:'#6B8FC9'}],{min:0,max:maxFor(impressionValues),height:230});
+  const positionPresent=positionValues.filter(v=>v!=null);
+  if(positionPresent.length) lineChart('sa-position',labels,[{name:'Average position',values:positionValues,color:'#C98A2E'}],{min:1,max:Math.max(2,...positionPresent)+1,height:230});
+  else document.getElementById('sa-position').innerHTML='<div class="small-muted">Average position will appear after the next Search Console refresh.</div>';
   lineChart('sa-citations',labels,[{name:'LLM citations',values:citationValues,color:'#8B7FB0'}],{min:0,max:maxFor(citationValues),height:230});
+  if(providerSegments.length){
+    stackedBarChart('sa-provider-mix',[{label:'All citations',segments:providerSegments}],{width:620,barH:30,rowGap:0,labelW:100});
+    document.getElementById('sa-provider-legend').innerHTML=providerSegments.map(seg=>`<span><i class="legend-dot" style="background:${escXAttr(seg.color)}"></i>${escXHtml(seg.name)} · ${saNum(seg.value)}</span>`).join('');
+  } else {
+    document.getElementById('sa-provider-mix').innerHTML='<div class="small-muted">No Evertune citation occurrences in the selected view.</div>';
+    document.getElementById('sa-provider-legend').innerHTML='';
+  }
   renderSiteCitationDrill(events);
   renderSiteArticleTable(ids,range,sourceTypes);
 }

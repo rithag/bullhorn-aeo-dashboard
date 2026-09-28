@@ -10,7 +10,12 @@ Netlify dashboard — never commit these):
 - `GCP_SA_KEY_B64` — base64-encoded contents of the `dashboard-data-reader` service account's JSON
   key (`roles/storage.objectViewer` on `aeo-dashboard-assets-bullhorn` only, nothing else). Used
   only to sign short-lived GCS V4 signed URLs locally (no OAuth2 token round-trip) — see
-  `_gcs_sign.js`.
+   `_gcs_sign.js`.
+
+`netlify.toml` deliberately sets `SECRETS_SCAN_OMIT_KEYS = "SITE_ANALYTICS_PASSWORD"`. This is a
+narrow build-scanner exception for the server-side password value appearing in Netlify's generated
+function bundle; it does not disable scanning or omit any other secret. The value must still never
+be committed or used in browser code.
 
 ## How it works
 

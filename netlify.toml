@@ -1,6 +1,13 @@
 [build]
   functions = "netlify/functions"
 
+# SITE_ANALYTICS_PASSWORD is deliberately consumed only by a server-side Netlify function. The
+# secrets scanner sees its runtime value in that function's generated bundle and would otherwise
+# block every deploy, despite no value being committed or served to the browser. Keep scanning on
+# for every other value; omit only this known server-only environment key.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "SITE_ANALYTICS_PASSWORD"
+
 # Same-origin rewrite (status 200, not a redirect) so the browser's fetch URL and any relative-
 # path logic in dashboard.html's JS never sees a cross-origin request -- the function itself reads
 # everything after "/data-proxy/" as the requested asset's relative path.

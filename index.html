@@ -4264,6 +4264,20 @@ function saCoveredDailyValues(labels, valuesByDay, reportedDates){
   return labels.map(day=>covered.has(day) ? (+valuesByDay[day]||0) : null);
 }
 function saCoverageThrough(dates){ return dates&&dates.length ? dates[dates.length-1] : null; }
+function saArticleStateLabel(group){
+  if(group==='MULTI_STATE') return 'Multi-state';
+  if(group==='UNASSIGNED') return 'Unassigned';
+  const labels=SITE_ANALYTICS.state_labels||{};
+  return group ? `${group} · ${labels[group]||group}` : 'Unassigned';
+}
+function saArticleCandidateOptions(){
+  const referenced=new Set((SITE_ANALYTICS.articles||[]).flatMap(article=>article.candidate_refs||[]));
+  const candidates=(SITE_ANALYTICS.candidates||[]).filter(candidate=>referenced.has(candidate.id)).sort((a,b)=>{
+    const state=(a.state||'').localeCompare(b.state||'');
+    return state || a.name.localeCompare(b.name);
+  });
+  return `<option value="">All candidate mentions</option>${candidates.map(candidate=>`<option value="${escXAttr(candidate.id)}">${escXHtml((candidate.state||'—')+' · '+candidate.name)}</option>`).join('')}`;
+}
 function saStatusNotice(){
   const status=(SITE_ANALYTICS.sources.search_console.site_status||[]);
   const bad=status.filter(s=>s.status!=='ok');
@@ -4319,7 +4333,7 @@ function buildSiteAnalyticsPage(){
     <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div>${saChartFiltersHtml('sa-citations-chart',sites,citationMin,citationMax,true)}<div id="sa-citations"></div></div>
     <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div>${saChartFiltersHtml('sa-frequency-chart',sites,citationMin,citationMax,true)}<div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Candidate &amp; prompt citation penetration</div><div class="card-caption">Start with the candidate ranking, then drill into prompts. The selected dates control both numerator and denominator; only exact refusal-scored responses are eligible.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Response dates</label><div style="display:flex;gap:8px;"><input id="acp-start" type="date"><input id="acp-end" type="date"></div></div><div class="fitem"><label>Selected candidate</label><select id="acp-candidate"></select></div><div class="fitem"><label>Selected prompt</label><select id="acp-prompt"></select></div></div><div class="row-eq"><div><div class="card-title">1. Candidate ranking</div><div class="card-caption">Most to least canonical AEO article-source appearances. Select a candidate to continue.</div><div class="scroll-table" id="acp-candidate-rank"></div></div><div><div class="card-title">2. Prompt ranking</div><div class="card-caption">For the selected candidate, ranked by citation penetration. Select a prompt for the evidence detail.</div><div class="scroll-table" id="acp-prompt-rank"></div></div></div><div class="section-gap" id="acp-content"></div></div>
-    <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
+    <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites, grouped by the state of its controlled candidate tags. Select a candidate to see every tagged article in the selected-site scope. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="filterbar" style="margin:10px 0;"><div class="fitem"><label>Candidate mention</label><select id="sa-article-candidate">${saArticleCandidateOptions()}</select></div><div class="fitem"><label>Grouping</label><div class="small-muted" style="padding:8px 0;">State · controlled candidate metadata</div></div></div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
   document.getElementById('sa-none').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=false); renderSiteAnalytics(); });
   page.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',()=>{ window.__saDrill={level:'site'}; renderSiteAnalytics(); }));
@@ -4553,8 +4567,22 @@ function renderSiteArticleTable(ids,range,sourceTypes){
   const citations={};
   (SITE_ANALYTICS.citations.events||[]).forEach(r=>{if(!saInRange(r,ids,range)||!sourceTypes.includes(r.source_type))return;const article=SITE_ANALYTICS.articles.find(a=>a.site_id===r.site_id&&a.url===r.url);if(article)citations[article.id]=(citations[article.id]||0)+(+r.count||0);});
   const siteById=Object.fromEntries(SITE_ANALYTICS.sites.map(s=>[s.id,s]));
-  const rows=SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id)).sort((a,b)=>a.site_id.localeCompare(b.site_id)||a.published_date.localeCompare(b.published_date));
-  document.getElementById('sa-articles').innerHTML=`<table><tr><th>Site</th><th>Article</th><th>Published</th><th>Tags</th><th>Impressions</th><th>Clicks</th><th>Citations</th></tr>${rows.map(a=>{const t=traffic[a.id]||{};return `<tr><td>${escXHtml(siteById[a.site_id].name)}<div class="small-muted">${escXHtml(a.domain)}</div></td><td style="max-width:390px;white-space:normal;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${escXHtml(a.title||a.url)}</a></td><td>${escXHtml(a.published_date)}</td><td style="white-space:normal;max-width:180px;">${escXHtml((a.topic_tags||[]).join(', '))}</td><td>${saNum(t.impressions)}</td><td>${saNum(t.clicks)}</td><td>${saNum(citations[a.id])}</td></tr>`;}).join('')}</table>`;
+  const candidateById=Object.fromEntries((SITE_ANALYTICS.candidates||[]).map(candidate=>[candidate.id,candidate]));
+  const selectedCandidate=(document.getElementById('sa-article-candidate')||{}).value||'';
+  const rows=SITE_ANALYTICS.articles.filter(article=>ids.includes(article.site_id) && (!selectedCandidate || (article.candidate_refs||[]).includes(selectedCandidate))).sort((a,b)=>a.published_date.localeCompare(b.published_date)||a.title.localeCompare(b.title));
+  const groups={};
+  rows.forEach(article=>{const group=article.state_group||'UNASSIGNED';(groups[group]||(groups[group]=[])).push(article);});
+  const groupOrder=Object.keys(groups).sort((a,b)=>{
+    const aLast=['MULTI_STATE','UNASSIGNED'].includes(a), bLast=['MULTI_STATE','UNASSIGNED'].includes(b);
+    return aLast!==bLast ? (aLast?1:-1) : saArticleStateLabel(a).localeCompare(saArticleStateLabel(b));
+  });
+  const selectedName=selectedCandidate && candidateById[selectedCandidate] ? candidateById[selectedCandidate].name : null;
+  if(!rows.length){
+    document.getElementById('sa-articles').innerHTML=`<div class="small-muted">No published articles match ${selectedName?escXHtml(selectedName)+' within the selected sites':'the current site selection'}.</div>`;
+    return;
+  }
+  const tableRows=groupOrder.map(group=>`<tr><td colspan="8" style="background:var(--panel);font-weight:700;color:var(--ink);padding-top:12px;">${escXHtml(saArticleStateLabel(group))}<span class="small-muted" style="margin-left:8px;font-weight:400;">${groups[group].length} article${groups[group].length===1?'':'s'}</span></td></tr>${groups[group].map(article=>{const t=traffic[article.id]||{};const mentions=(article.candidate_refs||[]).map(id=>(candidateById[id]||{}).name||id).join(', ');return `<tr><td>${escXHtml(siteById[article.site_id].name)}<div class="small-muted">${escXHtml(article.domain)}</div></td><td style="max-width:330px;white-space:normal;"><a href="${escXAttr(article.url)}" target="_blank" rel="noopener">${escXHtml(article.title||article.url)}</a></td><td style="white-space:normal;max-width:210px;">${escXHtml(mentions)}</td><td>${escXHtml(article.published_date)}</td><td style="white-space:normal;max-width:150px;">${escXHtml((article.topic_tags||[]).join(', '))}</td><td>${saNum(t.impressions)}</td><td>${saNum(t.clicks)}</td><td>${saNum(citations[article.id])}</td></tr>`;}).join('')}`).join('');
+  document.getElementById('sa-articles').innerHTML=`<div class="small-muted" style="margin:0 0 8px;">${rows.length} article${rows.length===1?'':'s'}${selectedName?' tagged to '+escXHtml(selectedName):''} · grouped by state</div><table><tr><th>Site</th><th>Article</th><th>Candidate tags</th><th>Published</th><th>Topics</th><th>Impressions</th><th>Clicks</th><th>Citations</th></tr>${tableRows}</table>`;
 }
 
 /* ============================================================================

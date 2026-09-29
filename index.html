@@ -4252,6 +4252,18 @@ function saSumByDay(rows, ids, range, value, sourceTypes){
   });
   return out;
 }
+function saReportedDates(source, fallbackRows){
+  const dates=(source&& (source.observed_dates||source.reported_dates))||[];
+  if(dates.length) return [...new Set(dates)].sort();
+  // Compatibility for the prior asset schema. This fallback is intentionally conservative: a
+  // date without any retained source row is unknown, never silently converted into a zero.
+  return [...new Set((fallbackRows||[]).map(r=>r.date).filter(Boolean))].sort();
+}
+function saCoveredDailyValues(labels, valuesByDay, reportedDates){
+  const covered=new Set(reportedDates||[]);
+  return labels.map(day=>covered.has(day) ? (+valuesByDay[day]||0) : null);
+}
+function saCoverageThrough(dates){ return dates&&dates.length ? dates[dates.length-1] : null; }
 function saStatusNotice(){
   const status=(SITE_ANALYTICS.sources.search_console.site_status||[]);
   const bad=status.filter(s=>s.status!=='ok');
@@ -4263,9 +4275,13 @@ function buildSiteAnalyticsPage(){
   const page=document.getElementById('page-siteanalytics');
   const sites=SITE_ANALYTICS.sites||[];
   const sc=SITE_ANALYTICS.sources.search_console||{};
-  const citationDates=(SITE_ANALYTICS.citations.site_daily||[]).map(r=>r.date);
-  const dates=[sc.start_date,sc.end_date,...citationDates].filter(Boolean).sort();
+  const ev=SITE_ANALYTICS.sources.evertune||{};
+  const trafficDates=saReportedDates(sc,SITE_ANALYTICS.traffic.site_daily);
+  const citationDates=saReportedDates(ev,SITE_ANALYTICS.citations.events);
+  const dates=[...trafficDates,...citationDates].filter(Boolean).sort();
   const minDate=dates[0]||'', maxDate=dates[dates.length-1]||'';
+  const trafficMin=trafficDates[0]||minDate, trafficMax=saCoverageThrough(trafficDates)||maxDate;
+  const citationMin=citationDates[0]||minDate, citationMax=saCoverageThrough(citationDates)||maxDate;
   page.innerHTML=`
     <div class="page-head"><div><div class="page-title">Site Analytics</div><div class="page-desc">Protected cross-site reporting for the 37 AEO domains. Each measure below has a distinct source and meaning; none is used as a proxy for another.</div></div></div>
     ${saStatusNotice()}
@@ -4298,10 +4314,10 @@ function buildSiteAnalyticsPage(){
       <div class="fitem"><label>&nbsp;</label><div style="display:flex;gap:6px;"><button class="btn ghost sm" type="button" id="sa-all">All sites</button><button class="btn ghost sm" type="button" id="sa-none">Clear</button></div></div>
     </div>
     <div class="kpis" id="sa-kpis"></div>
-    <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div>${saChartFiltersHtml('sa-clicks-chart',sites,minDate,maxDate)}<div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div>${saChartFiltersHtml('sa-impressions-chart',sites,minDate,maxDate)}<div id="sa-impressions"></div></div></div>
-    <div class="row-eq section-gap"><div class="card"><div class="card-title">Average Google position over time</div><div class="card-caption">Impression-weighted average position for selected domains. Lower is better; position is not available when there are no impressions.</div>${saChartFiltersHtml('sa-position-chart',sites,minDate,maxDate)}<div id="sa-position"></div></div><div class="card"><div class="card-title">Citation mix by provider</div><div class="card-caption">Share of selected Evertune citation occurrences by sampled search surface.</div>${saChartFiltersHtml('sa-provider-chart',sites,minDate,maxDate,true)}<div id="sa-provider-mix"></div><div class="legend-row" id="sa-provider-legend"></div></div></div>
-    <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div>${saChartFiltersHtml('sa-citations-chart',sites,minDate,maxDate,true)}<div id="sa-citations"></div></div>
-    <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div>${saChartFiltersHtml('sa-frequency-chart',sites,minDate,maxDate,true)}<div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
+    <div class="row-eq"><div class="card"><div class="card-title">Clicks over time</div><div class="card-caption">People clicking Google web results to any page on the selected sites; not crawler requests or LLM referrals.</div>${saChartFiltersHtml('sa-clicks-chart',sites,trafficMin,trafficMax)}<div id="sa-clicks"></div></div><div class="card"><div class="card-title">Impressions over time</div><div class="card-caption">Google web-search appearances for any page on the selected sites; not a count of crawls or citations.</div>${saChartFiltersHtml('sa-impressions-chart',sites,trafficMin,trafficMax)}<div id="sa-impressions"></div></div></div>
+    <div class="row-eq section-gap"><div class="card"><div class="card-title">Average Google position over time</div><div class="card-caption">Impression-weighted average position for selected domains. Lower is better; position is not available when there are no impressions.</div>${saChartFiltersHtml('sa-position-chart',sites,trafficMin,trafficMax)}<div id="sa-position"></div></div><div class="card"><div class="card-title">Citation mix by provider</div><div class="card-caption">Share of selected Evertune citation occurrences by sampled search surface.</div>${saChartFiltersHtml('sa-provider-chart',sites,citationMin,citationMax,true)}<div id="sa-provider-mix"></div><div class="legend-row" id="sa-provider-legend"></div></div></div>
+    <div class="card section-gap"><div class="card-title">Observed LLM citations over time</div><div class="card-caption">Evertune sampled source-list occurrences across the selected sites and citation types; this is not visitor traffic or crawler activity.</div>${saChartFiltersHtml('sa-citations-chart',sites,citationMin,citationMax,true)}<div id="sa-citations"></div></div>
+    <div class="card section-gap"><div class="card-title">Citation frequency by AEO site</div><div class="card-caption">Click a site to drill into cited URLs, prompts, and the protected Evertune response samples that cite that URL.</div>${saChartFiltersHtml('sa-frequency-chart',sites,citationMin,citationMax,true)}<div class="breadcrumbs" id="sa-citation-crumbs" style="font-size:12px;color:var(--ink-soft);margin:8px 0;"></div><div id="sa-citation-drill"></div></div>
     <div class="card section-gap"><div class="card-title">Candidate &amp; prompt citation penetration</div><div class="card-caption">Start with the candidate ranking, then drill into prompts. The selected dates control both numerator and denominator; only exact refusal-scored responses are eligible.</div><div class="filterbar" id="acp-filters"><div class="fitem"><label>Response dates</label><div style="display:flex;gap:8px;"><input id="acp-start" type="date"><input id="acp-end" type="date"></div></div><div class="fitem"><label>Selected candidate</label><select id="acp-candidate"></select></div><div class="fitem"><label>Selected prompt</label><select id="acp-prompt"></select></div></div><div class="row-eq"><div><div class="card-title">1. Candidate ranking</div><div class="card-caption">Most to least canonical AEO article-source appearances. Select a candidate to continue.</div><div class="scroll-table" id="acp-candidate-rank"></div></div><div><div class="card-title">2. Prompt ranking</div><div class="card-caption">For the selected candidate, ranked by citation penetration. Select a prompt for the evidence detail.</div><div class="scroll-table" id="acp-prompt-rank"></div></div></div><div class="section-gap" id="acp-content"></div></div>
     <div class="card section-gap"><div class="card-title">Published article inventory</div><div class="card-caption">Every published canonical AEO article for the selected sites. Metrics respect the selected dates and citation types. The top-line traffic totals additionally include home, topic, and other indexable pages on each selected domain.</div><div class="scroll-table" id="sa-articles"></div></div>`;
   document.getElementById('sa-all').addEventListener('click',()=>{ [...document.getElementById('sa-sites').options].forEach(o=>o.selected=true); renderSiteAnalytics(); });
@@ -4313,6 +4329,8 @@ function buildSiteAnalyticsPage(){
 }
 function renderSiteAnalytics(){
   const ids=saSelectedSiteIds(), range=saDateRange(), sourceTypes=saSourceTypes(), traffic=SITE_ANALYTICS.traffic, citations=SITE_ANALYTICS.citations;
+  const trafficDates=saReportedDates(SITE_ANALYTICS.sources.search_console||{},traffic.site_daily);
+  const citationDates=saReportedDates(SITE_ANALYTICS.sources.evertune||{},citations.events);
   const clickByDay=saSumByDay(traffic.site_daily,ids,range,'clicks');
   const impressionByDay=saSumByDay(traffic.site_daily,ids,range,'impressions');
   const events=(citations.events||[]).filter(e=>saInRange(e,ids,range) && sourceTypes.includes(e.source_type));
@@ -4321,8 +4339,9 @@ function renderSiteAnalytics(){
   const citationByDay=events.reduce((out,e)=>{out[e.date]=(out[e.date]||0)+(+e.count||0);return out;},{});
   const labels=saDays(range.start,range.end);
   const maxFor=(values)=>Math.max(1,...values,0);
-  const clickValues=labels.map(d=>clickByDay[d]||0), impressionValues=labels.map(d=>impressionByDay[d]||0), citationValues=labels.map(d=>citationByDay[d]||0);
-  const totalClicks=clickValues.reduce((s,v)=>s+v,0), totalImpressions=impressionValues.reduce((s,v)=>s+v,0);
+  const clickValues=saCoveredDailyValues(labels,clickByDay,trafficDates), impressionValues=saCoveredDailyValues(labels,impressionByDay,trafficDates), citationValues=saCoveredDailyValues(labels,citationByDay,citationDates);
+  const trafficAvailable=clickValues.some(v=>v!==null), citationAvailable=citationValues.some(v=>v!==null);
+  const totalClicks=clickValues.reduce((s,v)=>s+(v||0),0), totalImpressions=impressionValues.reduce((s,v)=>s+(v||0),0);
   const positionByDay={};
   (traffic.site_daily||[]).forEach(r=>{
     if(!saInRange(r,ids,range) || !(+r.impressions) || r.average_position==null) return;
@@ -4340,26 +4359,26 @@ function renderSiteAnalytics(){
   const selectedArticles=SITE_ANALYTICS.articles.filter(a=>ids.includes(a.site_id));
   const publishedUrls=new Set(selectedArticles.map(a=>a.site_id+'||'+a.url));
   const citedPublishedUrls=new Set(events.filter(e=>publishedUrls.has(e.site_id+'||'+e.url)).map(e=>e.site_id+'||'+e.url)).size;
-  const ctr=totalImpressions ? 100*totalClicks/totalImpressions : 0;
+  const ctr=trafficAvailable && totalImpressions ? 100*totalClicks/totalImpressions : null;
   const inspectedArticles=selectedArticles.filter(a=>a.google_index_status==='indexed'||a.google_index_status==='not_indexed');
   const indexedArticles=selectedArticles.filter(a=>a.google_index_status==='indexed');
   const indexCoverage=inspectedArticles.length ? 100*indexedArticles.length/inspectedArticles.length : null;
   const indexSnapshot=SITE_ANALYTICS.index_coverage||{};
   const snapshotDate=indexSnapshot.snapshot_updated_at ? new Date(indexSnapshot.snapshot_updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
   document.getElementById('sa-kpis').innerHTML=`
-    <div class="kpi hi"><div class="kpi-label">Google impressions</div><div class="kpi-value">${saNum(totalImpressions)}</div><div class="kpi-sub">people seeing selected domains in Google web search</div></div>
-    <div class="kpi"><div class="kpi-label">Google clicks</div><div class="kpi-value">${saNum(totalClicks)}</div><div class="kpi-sub">person-initiated Google result visits</div></div>
-    <div class="kpi"><div class="kpi-label">Organic CTR</div><div class="kpi-value">${ctr.toFixed(1)}%</div><div class="kpi-sub">clicks ÷ impressions</div></div>
+    <div class="kpi hi"><div class="kpi-label">Google impressions</div><div class="kpi-value">${trafficAvailable?saNum(totalImpressions):'—'}</div><div class="kpi-sub">people seeing selected domains in Google web search${saCoverageThrough(trafficDates)?' · through '+saCoverageThrough(trafficDates):''}</div></div>
+    <div class="kpi"><div class="kpi-label">Google clicks</div><div class="kpi-value">${trafficAvailable?saNum(totalClicks):'—'}</div><div class="kpi-sub">person-initiated Google result visits</div></div>
+    <div class="kpi"><div class="kpi-label">Organic CTR</div><div class="kpi-value">${ctr==null?'—':ctr.toFixed(1)+'%'}</div><div class="kpi-sub">clicks ÷ impressions</div></div>
     <div class="kpi"><div class="kpi-label">Average Google position</div><div class="kpi-value">${overallPosition==null?'—':overallPosition.toFixed(1)}</div><div class="kpi-sub">impression-weighted · lower is better</div></div>
     <div class="kpi"><div class="kpi-label">Published URLs indexed</div><div class="kpi-value">${indexCoverage==null?'—':indexCoverage.toFixed(0)+'%'}</div><div class="kpi-sub">${inspectedArticles.length?indexedArticles.length+'/'+inspectedArticles.length+' inspected':'no inspection snapshot'}${snapshotDate?' · '+snapshotDate:''}</div></div>
-    <div class="kpi"><div class="kpi-label">Observed LLM citations</div><div class="kpi-value">${saNum(eventCitationTotal)}</div><div class="kpi-sub">Evertune source-list occurrences</div></div>
-    <div class="kpi"><div class="kpi-label">Citation footprint</div><div class="kpi-value">${citedSites} sites · ${citedPublishedUrls} URLs</div><div class="kpi-sub">with ≥1 Evertune occurrence</div></div>`;
-  const clickIds=saChartSiteIds('sa-clicks-chart'), clickRange=saChartRange('sa-clicks-chart'), clickLabels=saDays(clickRange.start,clickRange.end), clickChartValues=clickLabels.map(d=>saSumByDay(traffic.site_daily,clickIds,clickRange,'clicks')[d]||0);
-  const impressionIds=saChartSiteIds('sa-impressions-chart'), impressionRange=saChartRange('sa-impressions-chart'), impressionLabels=saDays(impressionRange.start,impressionRange.end), impressionChartValues=impressionLabels.map(d=>saSumByDay(traffic.site_daily,impressionIds,impressionRange,'impressions')[d]||0);
+    <div class="kpi"><div class="kpi-label">Observed LLM citations</div><div class="kpi-value">${citationAvailable?saNum(eventCitationTotal):'—'}</div><div class="kpi-sub">Evertune source-list occurrences${saCoverageThrough(citationDates)?' · through '+saCoverageThrough(citationDates):''}</div></div>
+    <div class="kpi"><div class="kpi-label">Citation footprint</div><div class="kpi-value">${citationAvailable?citedSites+' sites · '+citedPublishedUrls+' URLs':'—'}</div><div class="kpi-sub">with ≥1 Evertune occurrence</div></div>`;
+  const clickIds=saChartSiteIds('sa-clicks-chart'), clickRange=saChartRange('sa-clicks-chart'), clickLabels=saDays(clickRange.start,clickRange.end), clickChartValues=saCoveredDailyValues(clickLabels,saSumByDay(traffic.site_daily,clickIds,clickRange,'clicks'),trafficDates);
+  const impressionIds=saChartSiteIds('sa-impressions-chart'), impressionRange=saChartRange('sa-impressions-chart'), impressionLabels=saDays(impressionRange.start,impressionRange.end), impressionChartValues=saCoveredDailyValues(impressionLabels,saSumByDay(traffic.site_daily,impressionIds,impressionRange,'impressions'),trafficDates);
   const positionIds=saChartSiteIds('sa-position-chart'), positionRange=saChartRange('sa-position-chart'), positionLabels=saDays(positionRange.start,positionRange.end), positionChartByDay={};
   (traffic.site_daily||[]).forEach(r=>{if(!saInRange(r,positionIds,positionRange)||!(+r.impressions)||r.average_position==null)return;const x=positionChartByDay[r.date]||(positionChartByDay[r.date]={weighted:0,impressions:0});x.weighted+=(+r.average_position)*(+r.impressions);x.impressions+=+r.impressions;});
   const positionChartValues=positionLabels.map(d=>positionChartByDay[d]?positionChartByDay[d].weighted/positionChartByDay[d].impressions:null);
-  const citationIds=saChartSiteIds('sa-citations-chart'), citationRange=saChartRange('sa-citations-chart'), citationTypes=saChartSourceTypes('sa-citations-chart'), citationLabels=saDays(citationRange.start,citationRange.end), citationChartByDay=saSumByDay(citations.events||[],citationIds,citationRange,'count',citationTypes), citationChartValues=citationLabels.map(d=>citationChartByDay[d]||0);
+  const citationIds=saChartSiteIds('sa-citations-chart'), citationRange=saChartRange('sa-citations-chart'), citationTypes=saChartSourceTypes('sa-citations-chart'), citationLabels=saDays(citationRange.start,citationRange.end), citationChartByDay=saSumByDay(citations.events||[],citationIds,citationRange,'count',citationTypes), citationChartValues=saCoveredDailyValues(citationLabels,citationChartByDay,citationDates);
   const frequencyIds=saChartSiteIds('sa-frequency-chart'), frequencyRange=saChartRange('sa-frequency-chart'), frequencyTypes=saChartSourceTypes('sa-frequency-chart'), frequencyEvents=(citations.events||[]).filter(e=>saInRange(e,frequencyIds,frequencyRange) && frequencyTypes.includes(e.source_type));
   const providerIds=saChartSiteIds('sa-provider-chart'), providerRange=saChartRange('sa-provider-chart'), providerTypes=saChartSourceTypes('sa-provider-chart'), providerChartTotals=(citations.events||[]).filter(e=>saInRange(e,providerIds,providerRange)&&providerTypes.includes(e.source_type)).reduce((out,e)=>{const provider=e.model||'Provider unavailable';out[provider]=(out[provider]||0)+(+e.count||0);return out;},{});
   const providerChartSegments=Object.entries(providerChartTotals).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value,color:providerColors[name]||'#8B93A1'}));

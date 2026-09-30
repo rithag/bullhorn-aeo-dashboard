@@ -6,7 +6,7 @@
 # block every deploy, despite no value being committed or served to the browser. Keep scanning on
 # for every other value; omit only this known server-only environment key.
 [build.environment]
-  SECRETS_SCAN_OMIT_KEYS = "SITE_ANALYTICS_PASSWORD"
+  SECRETS_SCAN_OMIT_KEYS = "SITE_ANALYTICS_PASSWORD,COURIER_CITATIONS_PASSWORD,HEARTLAND_CITATIONS_PASSWORD,SLEA_CITATIONS_PASSWORD,FORWARD_MAJORITY_CITATIONS_PASSWORD"
 
 # Same-origin rewrite (status 200, not a redirect) so the browser's fetch URL and any relative-
 # path logic in dashboard.html's JS never sees a cross-origin request -- the function itself reads
@@ -34,4 +34,14 @@
 [[redirects]]
   from = "/api/check-site-analytics-auth"
   to = "/.netlify/functions/check-site-analytics-auth"
+  status = 200
+
+[[redirects]]
+  from = "/api/partner-insights-login"
+  to = "/.netlify/functions/partner-insights-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/check-partner-insights-auth"
+  to = "/.netlify/functions/check-partner-insights-auth"
   status = 200

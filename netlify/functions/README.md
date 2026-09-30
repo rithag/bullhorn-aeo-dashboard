@@ -1,10 +1,14 @@
 # Dashboard login + data gate
 
-Four Netlify environment variables required (Site settings → Environment variables in the
+Eight Netlify environment variables required (Site settings → Environment variables in the
 Netlify dashboard — never commit these):
 
 - `DASHBOARD_PASSWORD` — the shared password typed into the login form.
 - `SITE_ANALYTICS_PASSWORD` — the separate password typed only when opening Site Analytics.
+- `COURIER_CITATIONS_PASSWORD` — the separate password typed only when opening Courier Citations.
+- `HEARTLAND_CITATIONS_PASSWORD` — the separate password typed only when opening Heartland Signal.
+- `SLEA_CITATIONS_PASSWORD` — the separate password typed only when opening Local Voter Guide.
+- `FORWARD_MAJORITY_CITATIONS_PASSWORD` — the separate password typed only when opening Forward Majority.
 - `COOKIE_SECRET` — random secret used to HMAC-sign the session cookie. Generate with
   `openssl rand -hex 32`.
 - `GCP_SA_KEY_B64` — base64-encoded contents of the `dashboard-data-reader` service account's JSON
@@ -12,10 +16,9 @@ Netlify dashboard — never commit these):
   only to sign short-lived GCS V4 signed URLs locally (no OAuth2 token round-trip) — see
    `_gcs_sign.js`.
 
-`netlify.toml` deliberately sets `SECRETS_SCAN_OMIT_KEYS = "SITE_ANALYTICS_PASSWORD"`. This is a
-narrow build-scanner exception for the server-side password value appearing in Netlify's generated
-function bundle; it does not disable scanning or omit any other secret. The value must still never
-be committed or used in browser code.
+`netlify.toml` deliberately omits only these server-side password variable names from Netlify's
+build secrets scanner. This does not disable scanning or omit any key material. Password values
+must still never be committed or used in browser code.
 
 ## How it works
 
@@ -31,6 +34,10 @@ be committed or used in browser code.
    cookie after `SITE_ANALYTICS_PASSWORD` succeeds. `data-proxy.js` requires that second cookie
    for `site_analytics.json` and `site_analytics_responses.json`; the main dashboard session alone
    cannot read either object.
+5. `partner-insights-login.js` and `check-partner-insights-auth.js` issue/check a distinct signed
+   cookie for each partner's reporting tab. These are secondary gates within the internally
+   authenticated dashboard—not a substitute for a separate deployment and segregated data assets
+   if external users will receive dashboard credentials.
 
 The bucket itself has no `allUsers` grant once this is live — only a valid, freshly-signed URL (or
 the `dashboard-data-reader` service account directly) can read it. Bucket CORS must still allow the

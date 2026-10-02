@@ -679,7 +679,7 @@ function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/
 // Analytics assets retain their independent, validated stable release paths above.  Keeping the
 // score release in the URL prevents a browser cache from mixing a newly deployed dashboard shell
 // with an older aggregate, response-text partition, or child table.
-const SCORE_RELEASE_PREFIX = 'score-releases/sep14-20-2026-v1/';
+const SCORE_RELEASE_PREFIX = 'score-releases/sep14-20-2026-depth-v1/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by

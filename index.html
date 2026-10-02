@@ -675,6 +675,12 @@ let ROWS_BY_RACE = {};
 // to be fetched through the same authenticated data path.
 const HEAVY_DATA_BASE_URL = '/api/data/';
 function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
+// Score data is released atomically under an immutable versioned prefix.  Citation and Site
+// Analytics assets retain their independent, validated stable release paths above.  Keeping the
+// score release in the URL prevents a browser cache from mixing a newly deployed dashboard shell
+// with an older aggregate, response-text partition, or child table.
+const SCORE_RELEASE_PREFIX = 'score-releases/sep14-20-2026-v1/';
+function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
    export_dashboard_json.py, not one combined file -- a single combined file is ~1.4GB at real
@@ -686,7 +692,7 @@ function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/
 const textLoadPromisesByRaceId = {};
 function ensureTextLoadedForRace(raceId){
   if(!textLoadPromisesByRaceId[raceId]){
-    textLoadPromisesByRaceId[raceId] = fetch(heavyAssetUrl('text/'+encodeURIComponent(raceId)+'.json'))
+    textLoadPromisesByRaceId[raceId] = fetch(scoreAssetUrl('text/'+encodeURIComponent(raceId)+'.json'))
       .then(r=>r.json()).then(t=>{ Object.assign(TEXT, t); return TEXT; });
   }
   return textLoadPromisesByRaceId[raceId];
@@ -919,13 +925,12 @@ function ensureTopicKeyLabelsLoaded(){
   return topicKeyLabelsLoadPromise;
 }
 async function loadAllData(){
-  const base='dashboard_data/dist/';
-  const j = u => fetch(base+u).then(r=>r.json());
   const jHeavy = u => fetch(heavyAssetUrl(u)).then(r=>r.json());
+  const jScore = u => fetch(scoreAssetUrl(u)).then(r=>r.json());
   TEXT = {};
   [AGG, ROSTER_RAW, ACCURACY_ISSUES_RAW, NARRATIVE_GAPS_RAW] = await Promise.all([
-    jHeavy('prompt_results_agg.json'),
-    j('roster.json'), j('accuracy_issues.json'), j('narrative_alignment_gaps.json')
+    jScore('prompt_results_agg.json'),
+    jScore('roster.json'), jScore('accuracy_issues.json'), jScore('narrative_alignment_gaps.json')
   ]);
 }
 /* export_dashboard_json.py dictionary-encodes any column where most values repeat (confirmed the

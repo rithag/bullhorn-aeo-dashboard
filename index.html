@@ -675,12 +675,14 @@ let ROWS_BY_RACE = {};
 // to be fetched through the same authenticated data path.
 const HEAVY_DATA_BASE_URL = '/api/data/';
 function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
-// Score data is released atomically under an immutable versioned prefix.  Citation and Site
-// Analytics assets retain their independent, validated stable release paths above.  Keeping the
-// score release in the URL prevents a browser cache from mixing a newly deployed dashboard shell
-// with an older aggregate, response-text partition, or child table.
-const SCORE_RELEASE_PREFIX = 'score-releases/sep21-27-2026-v1/';
+// Score and citation data are released atomically under separate immutable versioned prefixes.
+// Site Analytics retains its independent validated stable path. Keeping release identifiers in
+// each URL prevents a browser cache from mixing the 108-race shell with older score or citation
+// assets.
+const SCORE_RELEASE_PREFIX = 'score-releases/co04-ws3-ws4-kickoff-2026-v1/';
+const CITATION_RELEASE_PREFIX = 'citation-releases/co04-ws3-ws4-kickoff-2026-v1/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
+function citationAssetUrl(relPath){ return heavyAssetUrl(CITATION_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
    export_dashboard_json.py, not one combined file -- a single combined file is ~1.4GB at real
@@ -717,7 +719,7 @@ let citationsLoadPromise = null;
 let citationCoverageLoadPromise = null;
 function ensureCitationCoverageLoaded(){
   if(!citationCoverageLoadPromise){
-    citationCoverageLoadPromise = fetch(heavyAssetUrl('citation_delivery_coverage.json')).then(r=>{
+    citationCoverageLoadPromise = fetch(citationAssetUrl('citation_delivery_coverage.json')).then(r=>{
       if(!r.ok) throw new Error('citation delivery coverage unavailable ('+r.status+')');
       return r.json();
     }).then(coverage=>{
@@ -730,7 +732,7 @@ function ensureCitationCoverageLoaded(){
 function ensureCitationsLoaded(){
   if(!citationsLoadPromise){
     citationsLoadPromise = Promise.all([
-      fetch(heavyAssetUrl('citation_summary.json')).then(r=>{ if(!r.ok) throw new Error('citation summary unavailable ('+r.status+')'); return r.json(); }),
+      fetch(citationAssetUrl('citation_summary.json')).then(r=>{ if(!r.ok) throw new Error('citation summary unavailable ('+r.status+')'); return r.json(); }),
       ensureCitationCoverageLoaded()
     ]).then(([raw, coverage])=>{
       CITATIONS_RAW = raw;
@@ -748,7 +750,7 @@ const CITATION_RACE_LOAD_ERRORS = {};
 function ensureCitationRaceLoaded(race){
   if(!race) return Promise.resolve([]);
   if(!citationRaceManifestPromise){
-    citationRaceManifestPromise = fetch(heavyAssetUrl('citation_races/manifest.json')).then(r=>{
+    citationRaceManifestPromise = fetch(citationAssetUrl('citation_races/manifest.json')).then(r=>{
       if(!r.ok) throw new Error('citation race manifest unavailable ('+r.status+')');
       return r.json();
     }).then(raw=>Object.fromEntries((raw.race_files||[]).map(row=>[row.race,row])));
@@ -757,7 +759,7 @@ function ensureCitationRaceLoaded(race){
     citationRaceLoadPromises[race] = citationRaceManifestPromise.then(manifest=>{
       const entry=manifest[race];
       if(!entry) throw new Error('No citation partition is available for '+race+'.');
-      return fetch(heavyAssetUrl('citation_races/'+encodeURIComponent(entry.file))).then(r=>{
+      return fetch(citationAssetUrl('citation_races/'+encodeURIComponent(entry.file))).then(r=>{
         if(!r.ok) throw new Error('citation race detail unavailable ('+r.status+')');
         return r.json();
       });
@@ -778,7 +780,7 @@ function ensurePartnerCitationsLoaded(partner){
   const assetKey=partner.assetKey||partner.key;
   if(!partnerCitationLoadPromises[assetKey]){
     partnerCitationLoadPromises[assetKey] = Promise.all([
-      fetch(heavyAssetUrl('citation_partners/'+encodeURIComponent(assetKey)+'.json')).then(r=>{
+      fetch(citationAssetUrl('citation_partners/'+encodeURIComponent(assetKey)+'.json')).then(r=>{
         if(!r.ok) throw new Error('partner citation detail unavailable ('+r.status+')');
         return r.json();
       }),
@@ -917,7 +919,7 @@ let topicKeyLabelsLoadPromise = null;
 let TOPIC_KEY_LABELS = {};
 function ensureTopicKeyLabelsLoaded(){
   if(!topicKeyLabelsLoadPromise){
-    topicKeyLabelsLoadPromise = fetch(heavyAssetUrl('topic_key_labels.json')).then(r=>r.json()).then(raw=>{
+    topicKeyLabelsLoadPromise = fetch(citationAssetUrl('topic_key_labels.json')).then(r=>r.json()).then(raw=>{
       TOPIC_KEY_LABELS = raw;
       return TOPIC_KEY_LABELS;
     }).catch(e=>{ console.error('topic_key_labels load failed', e); return {}; });

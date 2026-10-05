@@ -678,9 +678,9 @@ let ROWS_BY_RACE = {};
 const HEAVY_DATA_BASE_URL = '/api/data/';
 function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/dist/') + relPath; }
 // Score and citation data are released atomically under separate immutable versioned prefixes.
-// Site Analytics retains its independent validated stable path. Keeping release identifiers in
-// each URL prevents a browser cache from mixing the 108-race shell with older score or citation
-// assets.
+// Site Analytics, scores, and citations use independent immutable releases. Keeping release
+// identifiers in each URL prevents a browser cache from mixing assets built from different
+// inventories or scoring/citation universes.
 const SCORE_RELEASE_PREFIX = 'score-releases/co04-ws3-ws4-kickoff-2026-v1/';
 // This derivative is immutable and records the exact source aggregate it summarizes. Keeping it
 // separate from the raw score release means adding a performance view never mutates scoring data.
@@ -690,10 +690,12 @@ const CITATION_RELEASE_PREFIX = 'citation-releases/co04-ws3-ws4-kickoff-2026-v2/
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
 // the complete Sources-URL corpus.
 const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/co04-ws3-ws4-kickoff-2026-v2/';
+const SITE_ANALYTICS_RELEASE_PREFIX = 'site-analytics-releases/2026-10-05-v1/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 function scoreBootstrapUrl(relPath){ return heavyAssetUrl(SCORE_BOOTSTRAP_PREFIX + relPath); }
 function citationAssetUrl(relPath){ return heavyAssetUrl(CITATION_RELEASE_PREFIX + relPath); }
 function citationDetailAssetUrl(relPath){ return heavyAssetUrl(CITATION_DETAIL_RELEASE_PREFIX + relPath); }
+function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
    export_dashboard_json.py, not one combined file -- a single combined file is ~1.4GB at real
@@ -881,11 +883,13 @@ function ensureCitationCrossRaceDomainDetail(domain){
 }
 // Site Analytics is a compact, pre-aggregated asset. It never puts Search Console credentials in
 // the browser: its export is produced with a read-only credential, then served through the same
-// authenticated GCS proxy as citation data.
+// authenticated GCS proxy as citation data. Its response drill-through is intentionally retained
+// in the prior verified object until a separately audited raw-response index release is ready;
+// the UI falls back to the matching scored response when no exact retained sample is available.
 let siteAnalyticsLoadPromise = null;
 function ensureSiteAnalyticsLoaded(){
   if(!siteAnalyticsLoadPromise){
-    siteAnalyticsLoadPromise = fetch(heavyAssetUrl('site_analytics.json')).then(r=>{
+    siteAnalyticsLoadPromise = fetch(siteAnalyticsAssetUrl('site_analytics.json')).then(r=>{
       if(!r.ok) throw new Error('Site Analytics asset is unavailable ('+r.status+'). Refresh and upload it before deploying this tab.');
       return r.json();
     }).then(raw=>{ SITE_ANALYTICS=raw; return raw; });

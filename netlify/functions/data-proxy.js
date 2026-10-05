@@ -27,9 +27,11 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'invalid path' }) };
   }
   // Site Analytics is a second, intentionally narrower gate. The main dashboard session can
-  // read all of its normal data, but the two cross-site analytics objects require an additional
-  // cookie only issued after the separate Site Analytics password succeeds.
-  const siteAnalyticsAsset = new Set(['site_analytics.json', 'site_analytics_responses.json']).has(relPath);
+  // read all of its normal data, but its legacy objects and every immutable Site Analytics
+  // release require an additional cookie only issued after the separate Site Analytics password
+  // succeeds.
+  const siteAnalyticsAsset = new Set(['site_analytics.json', 'site_analytics_responses.json']).has(relPath)
+    || relPath.startsWith('site-analytics-releases/');
   const signingSecret = siteAnalyticsAsset ? purposeSecret(cookieSecret || '', 'site-analytics') : cookieSecret;
   const authed = cookieSecret && isValidSession(
     event.headers && event.headers.cookie,

@@ -233,6 +233,7 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
     <div class="nav-item" data-page="fanout"><span class="nav-dot" style="background:var(--brand)"></span>Prompt Fanout</div>
     <div class="nav-group-label">Dimensions</div>
     <div class="nav-item" data-page="visibility"><span class="nav-dot" style="background:#6B8FC9"></span>Visibility</div>
+    <label style="display:flex;align-items:flex-start;gap:6px;padding:2px 10px 8px 28px;font-size:11px;line-height:1.35;color:var(--ink-soft);cursor:pointer;"><input id="visibility-refusal-toggle" type="checkbox" onchange="setVisibilityRefusalMode(this.checked)"> Include refusals in visibility</label>
     <div class="nav-item" data-page="favorability"><span class="nav-dot" style="background:#7FA98F"></span>Favorability</div>
     <div class="nav-item" data-page="depth"><span class="nav-dot" style="background:#B79A5C"></span>Depth</div>
     <div class="nav-item" data-page="accuracy"><span class="nav-dot" style="background:var(--bad)"></span>Accuracy</div>
@@ -659,6 +660,11 @@ function collapseFilterbar(bar){
 let AGG=null, TEXT=null, CITATIONS_RAW=null, CITATION_COVERAGE=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null, SITE_ANALYTICS_RESPONSES=null;
 let CITATION_DATA_COVERAGE={};
 let SCORE_BOOTSTRAP=null, FULL_SCORE_DATA_READY=false, fullScoreDataPromise=null;
+let INCLUDE_REFUSAL_VISIBILITY = sessionStorage.getItem('aeo_include_refusal_visibility') === '1';
+function setVisibilityRefusalMode(include){
+  sessionStorage.setItem('aeo_include_refusal_visibility', include ? '1' : '0');
+  window.location.reload();
+}
 let RACE_IDX_BY_RACE = {};
 let ROWS_BY_RACE = {};
 
@@ -1034,7 +1040,8 @@ async function loadScoreBootstrap(){
   if(!response.ok) throw new Error('score bootstrap unavailable ('+response.status+')');
   const raw = await response.json();
   if(!raw || raw.schema_version!==1 || raw.artifact_category!=='dashboard_score_bootstrap' ||
-     !Array.isArray(raw.roster) || !Array.isArray(raw.dates) || !raw.metrics || typeof raw.metrics!=='object'){
+     !Array.isArray(raw.roster) || !Array.isArray(raw.dates) || !raw.metrics || typeof raw.metrics!=='object' ||
+     !raw.metrics_including_refusals || typeof raw.metrics_including_refusals!=='object'){
     throw new Error('score bootstrap has an invalid schema');
   }
   SCORE_BOOTSTRAP=raw;
@@ -1052,7 +1059,7 @@ function buildFromScoreBootstrap(){
     if(r.opponent) ENTITIES.push({id:'o'+i,raceIdx:i,role:'opp',name:r.opponent,party:r.opponent_party,candidateType:r.opponentType,state:r.state,location:r.location,office:r.office,race:r.race,race_level:r.race_level,race_type:r.race_type,opponentId:'c'+i});
   });
   DATES=[...SCORE_BOOTSTRAP.dates];
-  METRICS=SCORE_BOOTSTRAP.metrics;
+  METRICS=INCLUDE_REFUSAL_VISIBILITY ? SCORE_BOOTSTRAP.metrics_including_refusals : SCORE_BOOTSTRAP.metrics;
   TEXT={}; ROWS_BY_RACE={}; PROMPTS=[]; PROMPTS_BY_RACE={}; PROMPT_NARR_TESTED={};
   PROMPT_INDEX=SCORE_BOOTSTRAP.prompt_index||{};
   buildFilterOptionLists();
@@ -1259,6 +1266,7 @@ function bucket3Legend(key){
    for both roles; a named prompt whose target_candidate names ONLY the other side is excluded for
    this role. Kept in exact lockstep with tie_out_audit.py's Python replica of the same rule. */
 function visibilityEligible(row, side){
+  if(!INCLUDE_REFUSAL_VISIBILITY && row.is_refusal==='Y') return false;
   if(row.is_blind==='Y') return true;
   const tc = row.target_candidate;
   if(!tc) return true;
@@ -5679,6 +5687,8 @@ async function initDashboard(){
     document.getElementById('page-'+page).innerHTML = `<div class="page-head"><div><div class="page-title">${escXHtml(partner.label)}</div></div></div><div class="small-muted" style="padding:40px;text-align:center;">Loading protected partner reporting…</div>`;
   });
   enhanceSelects();
+  const refusalToggle=document.getElementById('visibility-refusal-toggle');
+  if(refusalToggle) refusalToggle.checked=INCLUDE_REFUSAL_VISIBILITY;
   collapseAllFilterbars();
   if(loadingEl) loadingEl.remove();
 }

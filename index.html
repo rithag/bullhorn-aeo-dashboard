@@ -657,6 +657,7 @@ function collapseFilterbar(bar){
    INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
    ============================================================================ */
 let AGG=null, TEXT=null, CITATIONS_RAW=null, CITATION_COVERAGE=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null, SITE_ANALYTICS_RESPONSES=null;
+let CITATION_DATA_COVERAGE={};
 let SCORE_BOOTSTRAP=null, FULL_SCORE_DATA_READY=false, fullScoreDataPromise=null;
 let RACE_IDX_BY_RACE = {};
 let ROWS_BY_RACE = {};
@@ -684,10 +685,15 @@ const SCORE_RELEASE_PREFIX = 'score-releases/co04-ws3-ws4-kickoff-2026-v1/';
 // This derivative is immutable and records the exact source aggregate it summarizes. Keeping it
 // separate from the raw score release means adding a performance view never mutates scoring data.
 const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/co04-ws3-ws4-kickoff-2026-v2/';
-const CITATION_RELEASE_PREFIX = 'citation-releases/co04-ws3-ws4-kickoff-2026-v1/';
+const CITATION_RELEASE_PREFIX = 'citation-releases/co04-ws3-ws4-kickoff-2026-v2/';
+// This overlay is derived from (but never mutates) the sealed citation release above.  It adds
+// cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
+// the complete Sources-URL corpus.
+const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/co04-ws3-ws4-kickoff-2026-v2/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 function scoreBootstrapUrl(relPath){ return heavyAssetUrl(SCORE_BOOTSTRAP_PREFIX + relPath); }
 function citationAssetUrl(relPath){ return heavyAssetUrl(CITATION_RELEASE_PREFIX + relPath); }
+function citationDetailAssetUrl(relPath){ return heavyAssetUrl(CITATION_DETAIL_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
    export_dashboard_json.py, not one combined file -- a single combined file is ~1.4GB at real
@@ -716,10 +722,11 @@ function ensureTextLoadedForRaceName(raceName){
   return ensureTextLoadedForRace(raceIdFromRowId(sample.id));
 }
 /* The complete citation corpus reached 8.9M rows in the Sep. 30 refresh. A browser must never
-   fetch it as one object-per-row array. Citation Breakout first loads a compact summary cube; a
-   user must select one race before a domain/URL/prompt drill fetches that race's small partition.
-   Partner tabs load their own small domain-only partitions. All remain deferred until their page
-   opens, so the aggregate dashboard shell never pays their parse/memory cost. */
+   fetch it as one object-per-row array. Citation Breakout first loads a compact summary cube;
+   selected-race drills load one race partition and cross-race category/prompt-type drills load
+   one compact index plus one domain shard. Partner tabs load their own small domain-only
+   partitions. All remain deferred until their page opens, so the aggregate dashboard shell never
+   pays their parse/memory cost. */
 let citationsLoadPromise = null;
 let citationCoverageLoadPromise = null;
 function ensureCitationCoverageLoaded(){
@@ -797,6 +804,80 @@ function ensurePartnerCitationsLoaded(partner){
     });
   }
   return partnerCitationLoadPromises[assetKey];
+}
+// Cross-race detail is deliberately split in two stages.  Selecting a category or prompt type
+// loads one compact domain cube.  Selecting a domain then loads one deterministic shard containing
+// its URLs and literal prompts.  This is exact across ALL races while preserving the fast landing
+// experience of the compact citation summary.
+let citationCrossRaceManifestPromise = null;
+const CITATION_CROSS_RACE_INDEX_EVENTS = {};
+const citationCrossRaceIndexPromises = {};
+const CITATION_CROSS_RACE_DETAIL_EVENTS = {};
+const citationCrossRaceDetailPromises = {};
+const CITATION_CROSS_RACE_LOAD_ERRORS = {};
+function ensureCitationCrossRaceManifest(){
+  if(!citationCrossRaceManifestPromise){
+    citationCrossRaceManifestPromise = fetch(citationDetailAssetUrl('manifest.json')).then(r=>{
+      if(!r.ok) throw new Error('cross-race citation detail manifest unavailable ('+r.status+')');
+      return r.json();
+    }).then(raw=>{
+      if(raw.schema_version!==1 || !raw.assets || !raw.assets.categories || !raw.assets.prompt_types || !raw.assets.detail_shards){
+        throw new Error('cross-race citation detail manifest has an unsupported contract');
+      }
+      return raw;
+    });
+  }
+  return citationCrossRaceManifestPromise;
+}
+function crossRaceDomainShard(domain){
+  // FNV-1a 32-bit.  Keep this byte-for-byte consistent with the Cloud Run publisher.
+  let value=2166136261;
+  for(const byte of new TextEncoder().encode(normalizeDomain(domain))){ value^=byte; value=Math.imul(value,16777619)>>>0; }
+  return value%256;
+}
+function ensureCitationCrossRaceIndex(kind, key){
+  const cacheKey=kind+'\u0000'+key;
+  if(!citationCrossRaceIndexPromises[cacheKey]){
+    citationCrossRaceIndexPromises[cacheKey]=ensureCitationCrossRaceManifest().then(manifest=>{
+      const family=kind==='category' ? manifest.assets.categories : manifest.assets.prompt_types;
+      const entry=family[key];
+      if(!entry || !entry.relative_path) throw new Error('cross-race citation index is unavailable for '+key);
+      return fetch(citationDetailAssetUrl(entry.relative_path)).then(r=>{
+        if(!r.ok) throw new Error('cross-race citation index unavailable ('+r.status+')');
+        return r.json();
+      });
+    }).then(raw=>{
+      const events=buildCitationEventsFromRaw(raw);
+      CITATION_CROSS_RACE_INDEX_EVENTS[cacheKey]=events;
+      return events;
+    }).catch(error=>{
+      CITATION_CROSS_RACE_LOAD_ERRORS[cacheKey]=error;
+      throw error;
+    });
+  }
+  return citationCrossRaceIndexPromises[cacheKey];
+}
+function ensureCitationCrossRaceDomainDetail(domain){
+  const normalized=normalizeDomain(domain);
+  const shardKey=crossRaceDomainShard(normalized).toString(16).padStart(2,'0');
+  if(!citationCrossRaceDetailPromises[shardKey]){
+    citationCrossRaceDetailPromises[shardKey]=ensureCitationCrossRaceManifest().then(manifest=>{
+      const entry=manifest.assets.detail_shards[shardKey];
+      if(!entry || !entry.relative_path) throw new Error('cross-race citation detail shard is unavailable');
+      return fetch(citationDetailAssetUrl(entry.relative_path)).then(r=>{
+        if(!r.ok) throw new Error('cross-race citation detail shard unavailable ('+r.status+')');
+        return r.json();
+      });
+    }).then(raw=>{
+      const events=buildCitationEventsFromRaw(raw);
+      CITATION_CROSS_RACE_DETAIL_EVENTS[shardKey]=events;
+      return events;
+    }).catch(error=>{
+      CITATION_CROSS_RACE_LOAD_ERRORS['shard:'+shardKey]=error;
+      throw error;
+    });
+  }
+  return citationCrossRaceDetailPromises[shardKey];
 }
 // Site Analytics is a compact, pre-aggregated asset. It never puts Search Console credentials in
 // the browser: its export is produced with a read-only credential, then served through the same
@@ -1329,12 +1410,21 @@ const CITATION_SOURCE_SEGMENTS = [
 ];
 function citationSourceBucket(sourceType){ return sourceType==='sources_references' ? 'sources_more' : sourceType; }
 function citationCoverageRecord(date){ return (CITATION_COVERAGE&&CITATION_COVERAGE.dates||[]).find(row=>row.date===date) || {date,status:'unknown',coverage_percent:null}; }
-function citationDateComparable(date){ return citationCoverageRecord(date).status==='complete'; }
+function citationDataCoverageRecord(date){ return CITATION_DATA_COVERAGE[date] || {date,status:'unknown',observed_race_count:0,expected_race_count:0,missing_race_count:0}; }
+function citationDateComparable(date){
+  // A delivery can contain every expected CSV yet still omit an already-active race universe.
+  // Require both the vendor delivery check and the independent citation-race continuity check
+  // before an all-race trend treats a date as comparable by default.
+  return citationCoverageRecord(date).status==='complete' && citationDataCoverageRecord(date).status==='complete';
+}
 function citationCoverageLabel(date){
-  const row=citationCoverageRecord(date);
-  if(row.status==='complete') return 'complete delivery';
-  const pct=row.coverage_percent==null ? '' : ` · ${fmt1(row.coverage_percent)}% file coverage`;
-  return `${row.status} delivery${pct}`;
+  const delivery=citationCoverageRecord(date), data=citationDataCoverageRecord(date);
+  if(delivery.status!=='complete'){
+    const pct=delivery.coverage_percent==null ? '' : ` · ${fmt1(delivery.coverage_percent)}% file coverage`;
+    return `${delivery.status} delivery${pct}`;
+  }
+  if(data.status!=='complete') return `partial citation-race coverage · ${data.observed_race_count}/${data.expected_race_count} active races`;
+  return `complete delivery · ${data.observed_race_count}/${data.expected_race_count} active races`;
 }
 function citationDatesForView(start,end,includeIncomplete){
   return [...new Set(CITATION_EVENTS.map(e=>e.date))]
@@ -1389,6 +1479,26 @@ function buildCitationEventsFromRaw(raw){
 }
 function buildCitationEvents(){
   CITATION_EVENTS = buildCitationEventsFromRaw(CITATIONS_RAW);
+  // The vendor ledger audits whether expected files arrived.  This independent continuity ledger
+  // audits whether every race already active in this release actually has citation rows that day.
+  // It caught Sep. 28/29: all files were delivered, but the 34 CO-04/WS3/WS4 races disappeared
+  // after Sep. 27 and would otherwise look like a false all-race citation decline.
+  const observed={};
+  const first={};
+  CITATION_EVENTS.forEach(event=>{
+    (observed[event.date]||(observed[event.date]=new Set())).add(event.race);
+    if(!first[event.race] || event.date<first[event.race]) first[event.race]=event.date;
+  });
+  CITATION_DATA_COVERAGE={};
+  Object.keys(observed).sort().forEach(date=>{
+    const expected=new Set(Object.keys(first).filter(race=>first[race]<=date));
+    const present=observed[date];
+    const missing=[...expected].filter(race=>!present.has(race));
+    CITATION_DATA_COVERAGE[date]={
+      date, status:missing.length?'partial':'complete', observed_race_count:present.size,
+      expected_race_count:expected.size, missing_race_count:missing.length,
+    };
+  });
   // Drop the raw form once expanded. The summary has 415k rows; this is bounded, unlike the
   // retired 8.9M-row monolith.
   CITATIONS_RAW = null;
@@ -4887,7 +4997,7 @@ function buildPartnerInsightsPage(page){
         <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="pi-src-more-${page}" checked> Related/more</label>
       </div></div>
     </div>
-    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="pi-include-incomplete-${page}"> Include partial, pending, or historically unknown Sources-URL deliveries — excluded by default.</label>
+    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="pi-include-incomplete-${page}"> Include partial, pending, historically unknown, or incomplete-race-coverage citation observations — excluded by default.</label>
     <div class="card-caption" style="margin:0 0 12px;">An observation is a dated Evertune Sources-URL batch. Trend charts show each observed batch separately; totals in this view sum source-list occurrences across the selected complete reporting period. They are not unique people, visits, or response counts.</div>
     <div class="kpis" id="pi-kpis-${page}"></div>
     <div class="card section-gap"><div class="card-title">Citation frequency over time</div><div class="card-caption">One stacked column per Evertune reporting date. Column height is total occurrence volume; segments show source type.</div><div id="pi-trend-${page}"></div><div class="small-muted" id="pi-trend-note-${page}" style="margin-top:8px;"></div></div>
@@ -4923,10 +5033,10 @@ function renderPartnerInsights(page){
   const totalByDate={}; events.forEach(e=>{const bucket=citationSourceBucket(e.source_type);(totalByDate[e.date]||(totalByDate[e.date]={}))[bucket]=(totalByDate[e.date][bucket]||0)+e.count;});
   const trendEl=document.getElementById('pi-trend-'+page);
   if(dates.length){
-    const rows=dates.map(date=>({label:date,incomplete:citationCoverageRecord(date).status!=='complete',segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:(totalByDate[date]||{})[s.key]||0,color:s.color}))}));
+    const rows=dates.map(date=>({label:date,incomplete:!citationDateComparable(date),segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:(totalByDate[date]||{})[s.key]||0,color:s.color}))}));
     stackedColumnChart('pi-trend-'+page,rows,{height:270});
-    const incomplete=dates.map(citationCoverageRecord).filter(row=>row.status!=='complete');
-    document.getElementById('pi-trend-note-'+page).textContent=incomplete.length ? `* Included delivery status: ${incomplete.map(row=>`${row.date} (${row.status}${row.coverage_percent==null?'':`, ${fmt1(row.coverage_percent)}% files`})`).join('; ')}.` : 'Only complete Sources-URL deliveries are included.';
+    const incomplete=dates.filter(date=>!citationDateComparable(date));
+    document.getElementById('pi-trend-note-'+page).textContent=incomplete.length ? `* Included non-comparable observation(s): ${incomplete.map(date=>`${date} (${citationCoverageLabel(date)})`).join('; ')}.` : 'Only complete, all-active-race citation observations are included.';
   }else trendEl.innerHTML='<div class="small-muted">No complete Evertune citation observations in the selected range.</div>';
   const domainTrendEl=document.getElementById('pi-domain-trend-'+page);
   if(domainTrendEl){
@@ -4979,7 +5089,7 @@ function buildCitationsPage(){
       </div>
     </div>
     <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-unresolved"> Include "Unresolved (Google wrapper)" citations — excluded by default everywhere on this page (Citation mix, Citations by prompt type, Citations by prompt) since Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data.</label>
-    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-incomplete"> Include partial, pending, or historically unknown Sources-URL deliveries — excluded by default so incomplete vendor files cannot be mistaken for performance change.</label>
+    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-incomplete"> Include partial, pending, historically unknown, or incomplete-race-coverage citation observations — excluded by default so incomplete data cannot be mistaken for performance change.</label>
     <div class="kpis" id="cb-kpis"></div>
     <div class="card section-gap">
       <div class="card-title">Citation frequency over time</div>
@@ -4994,7 +5104,7 @@ function buildCitationsPage(){
     </div>
     <div class="card section-gap">
       <div class="card-title">Citations by prompt type</div>
-      <div class="card-caption">Cumulative source-list occurrences across the selected reporting period, by prompt type. Select one race before drilling into cited domains, URLs, or literal prompts; the aggregate prompt-type chart remains available across all selected races. Prompt type and Topic below apply page-wide, the same as every filter above.</div>
+      <div class="card-caption">Cumulative source-list occurrences across the selected reporting period, by prompt type. Drill into domains, URLs, and literal prompts across all selected races; selecting one race simply narrows the same exact view. Prompt type and Topic below apply page-wide, the same as every filter above.</div>
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div class="fitem"><label>Prompt type</label><select id="cb-pt-type-filter">${selectOptions(CITATION_PROMPT_TYPES.map(t=>t.key),'All')}</select></div>
         <div class="fitem"><label>Topic</label><select id="cb-pt-topic-filter">${selectOptions(citationTopicOptions(),'All')}</select></div>
@@ -5087,6 +5197,31 @@ function cbFilteredDetailEvents(){
   if(!race || !Object.prototype.hasOwnProperty.call(CITATION_RACE_EVENTS,race)) return null;
   return filterCitationEvents(CITATION_RACE_EVENTS[race]);
 }
+function cbFilteredCrossRaceIndexEvents(kind,key){
+  const cacheKey=kind+'\u0000'+key;
+  const events=CITATION_CROSS_RACE_INDEX_EVENTS[cacheKey];
+  if(events) return filterCitationEvents(events);
+  if(!CITATION_CROSS_RACE_LOAD_ERRORS[cacheKey]){
+    ensureCitationCrossRaceIndex(kind,key).then(()=>renderCitations()).catch(error=>{
+      console.error('Cross-race citation index load failed',error);
+      renderCitations();
+    });
+  }
+  return null;
+}
+function cbFilteredCrossRaceDomainDetailEvents(domain){
+  const normalized=normalizeDomain(domain);
+  const shardKey=crossRaceDomainShard(normalized).toString(16).padStart(2,'0');
+  const events=CITATION_CROSS_RACE_DETAIL_EVENTS[shardKey];
+  if(events) return filterCitationEvents(events).filter(e=>normalizeDomain(e.domain)===normalized);
+  if(!CITATION_CROSS_RACE_LOAD_ERRORS['shard:'+shardKey]){
+    ensureCitationCrossRaceDomainDetail(normalized).then(()=>renderCitations()).catch(error=>{
+      console.error('Cross-race citation domain detail load failed',error);
+      renderCitations();
+    });
+  }
+  return null;
+}
 function ensureSelectedCitationRaceDetail(){
   const race=selectedCitationRaceName();
   if(!race || Object.prototype.hasOwnProperty.call(CITATION_RACE_EVENTS,race) || CITATION_RACE_LOAD_ERRORS[race]) return;
@@ -5094,6 +5229,12 @@ function ensureSelectedCitationRaceDetail(){
     console.error('Citation race detail load failed',error);
     renderCitations();
   });
+}
+function crossRaceCitationLoadingMessage(kind,key,domain){
+  const label=domain ? `URL and prompt detail for ${domain}` : `Cross-race domains for ${key}`;
+  const errorKey=domain ? 'shard:'+crossRaceDomainShard(normalizeDomain(domain)).toString(16).padStart(2,'0') : kind+'\u0000'+key;
+  const error=CITATION_CROSS_RACE_LOAD_ERRORS[errorKey];
+  return error ? `${label} could not load: ${error.message||error}` : `Loading ${label}…`;
 }
 function citationDetailRequirement(){
   const race=selectedCitationRaceName();
@@ -5120,11 +5261,11 @@ function renderCitationTrend(events){
     const dateEvents=events.filter(e=>e.date===date);
     const counts={}; dateEvents.forEach(e=>{ const key=citationSourceBucket(e.source_type); counts[key]=(counts[key]||0)+e.count; });
     const coverage=citationCoverageRecord(date);
-    return {label:date, incomplete:coverage.status!=='complete',segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:counts[s.key]||0,color:s.color}))};
+    return {label:date, incomplete:!citationDateComparable(date),segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:counts[s.key]||0,color:s.color}))};
   });
   stackedColumnChart('cb-trend',rows,{height:270});
-  const incomplete=dates.map(citationCoverageRecord).filter(row=>row.status!=='complete');
-  document.getElementById('cb-trend-note').textContent=incomplete.length ? `* Included delivery status: ${incomplete.map(row=>`${row.date} (${row.status}${row.coverage_percent==null?'':`, ${fmt1(row.coverage_percent)}% files`})`).join('; ')}.` : 'Only complete Sources-URL deliveries are included.';
+  const incomplete=dates.filter(date=>!citationDateComparable(date));
+  document.getElementById('cb-trend-note').textContent=incomplete.length ? `* Included non-comparable observation(s): ${incomplete.map(date=>`${date} (${citationCoverageLabel(date)})`).join('; ')}.` : 'Only complete, all-active-race citation observations are included.';
 }
 
 function renderCitations(){
@@ -5183,10 +5324,18 @@ function renderCitations(){
         <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
         <div class="topic-pct" style="width:54px;">${r.count}</div>
       </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
-  } else if(detailEvents===null){
-    renderCitationDetailRequirement(drillEl);
   } else if(drill.level==='domain'){
-    const catEvents = detailEvents.filter(e=>e.catKey===drill.catKey);
+    // A selected race retains the existing, small per-race path.  With Race = All, load the
+    // compact category index instead; it contains the same filter dimensions across every race.
+    let catEvents=detailEvents;
+    if(catEvents===null && !selectedCitationRaceName()){
+      catEvents=cbFilteredCrossRaceIndexEvents('category',drill.catKey);
+      if(catEvents===null){ drillEl.innerHTML=`<div class="small-muted">${escXHtml(crossRaceCitationLoadingMessage('category',drill.catKey))}</div>`; return; }
+    } else if(catEvents===null){
+      renderCitationDetailRequirement(drillEl);
+      return;
+    }
+    catEvents = catEvents.filter(e=>e.catKey===drill.catKey);
     // normalizeDomain (2026-09-10 audit fix): this drill used to group by the raw domain string,
     // the only one of this page's 3 domain drills that didn't -- a www./case variant of the same
     // domain would double-count as two separate rows here while collapsing correctly into one
@@ -5203,7 +5352,15 @@ function renderCitations(){
         <div class="topic-pct" style="width:54px;">${r.count}</div>
       </div>`).join('') : `<div class="small-muted">No domains in this category for the current filters.</div>`);
   } else if(drill.level==='url'){
-    const domEvents = detailEvents.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain);
+    let domEvents=detailEvents;
+    if(domEvents===null && !selectedCitationRaceName()){
+      domEvents=cbFilteredCrossRaceDomainDetailEvents(drill.domain);
+      if(domEvents===null){ drillEl.innerHTML=`<div class="small-muted">${escXHtml(crossRaceCitationLoadingMessage('category',drill.catKey,drill.domain))}</div>`; return; }
+    } else if(domEvents===null){
+      renderCitationDetailRequirement(drillEl);
+      return;
+    }
+    domEvents = domEvents.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain);
     const byUrl = {};
     domEvents.forEach(e=>{ byUrl[e.url]=(byUrl[e.url]||0)+e.count; });
     const rows = Object.entries(byUrl).map(([url,count])=>({url,count})).sort((a,b)=>b.count-a.count);
@@ -5214,7 +5371,15 @@ function renderCitations(){
       renderCitations();
     }));
   } else if(drill.level==='prompt'){
-    const urlEvents = detailEvents.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain && e.url===drill.url);
+    let urlEvents=detailEvents;
+    if(urlEvents===null && !selectedCitationRaceName()){
+      urlEvents=cbFilteredCrossRaceDomainDetailEvents(drill.domain);
+      if(urlEvents===null){ drillEl.innerHTML=`<div class="small-muted">${escXHtml(crossRaceCitationLoadingMessage('category',drill.catKey,drill.domain))}</div>`; return; }
+    } else if(urlEvents===null){
+      renderCitationDetailRequirement(drillEl);
+      return;
+    }
+    urlEvents = urlEvents.filter(e=>e.catKey===drill.catKey && normalizeDomain(e.domain)===drill.domain && e.url===drill.url);
     renderCitationUrlPrompts(drillEl, urlEvents, drill.url, CITATION_CATEGORIES.find(c=>c.key===drill.catKey).color);
   }
 }
@@ -5329,8 +5494,16 @@ function renderCitationsByPromptType(events, total){
 
   const el = document.getElementById('cb-prompttype');
   if(drill.level!=='type'){
-    const detailEvents=cbFilteredDetailEvents();
-    if(detailEvents===null){
+    let detailEvents=cbFilteredDetailEvents();
+    if(detailEvents===null && !selectedCitationRaceName()){
+      detailEvents=drill.level==='domain'
+        ? cbFilteredCrossRaceIndexEvents('prompt_type',drill.typeKey)
+        : cbFilteredCrossRaceDomainDetailEvents(drill.domain);
+      if(detailEvents===null){
+        el.innerHTML=`<div class="small-muted">${escXHtml(crossRaceCitationLoadingMessage('prompt_type',drill.typeKey,drill.level==='domain'?null:drill.domain))}</div>`;
+        return;
+      }
+    } else if(detailEvents===null){
       renderCitationDetailRequirement(el);
       return;
     }

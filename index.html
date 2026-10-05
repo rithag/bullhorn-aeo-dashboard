@@ -657,6 +657,7 @@ function collapseFilterbar(bar){
    INIT (section 11) builds any page — see the async wrapper at the bottom of this file.
    ============================================================================ */
 let AGG=null, TEXT=null, CITATIONS_RAW=null, CITATION_COVERAGE=null, ROSTER_RAW=null, ACCURACY_ISSUES_RAW=null, NARRATIVE_GAPS_RAW=null, SITE_ANALYTICS=null, SITE_ANALYTICS_RESPONSES=null;
+let SCORE_BOOTSTRAP=null, FULL_SCORE_DATA_READY=false, fullScoreDataPromise=null;
 let RACE_IDX_BY_RACE = {};
 let ROWS_BY_RACE = {};
 
@@ -680,8 +681,12 @@ function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/
 // each URL prevents a browser cache from mixing the 108-race shell with older score or citation
 // assets.
 const SCORE_RELEASE_PREFIX = 'score-releases/co04-ws3-ws4-kickoff-2026-v1/';
+// This derivative is immutable and records the exact source aggregate it summarizes. Keeping it
+// separate from the raw score release means adding a performance view never mutates scoring data.
+const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/co04-ws3-ws4-kickoff-2026-v1/';
 const CITATION_RELEASE_PREFIX = 'citation-releases/co04-ws3-ws4-kickoff-2026-v1/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
+function scoreBootstrapUrl(relPath){ return heavyAssetUrl(SCORE_BOOTSTRAP_PREFIX + relPath); }
 function citationAssetUrl(relPath){ return heavyAssetUrl(CITATION_RELEASE_PREFIX + relPath); }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
@@ -934,6 +939,51 @@ async function loadAllData(){
     jScore('prompt_results_agg.json'),
     jScore('roster.json'), jScore('accuracy_issues.json'), jScore('narrative_alignment_gaps.json')
   ]);
+}
+/* The landing page does not need millions of response-level rows. The immutable bootstrap is
+   derived server-side from this exact release's aggregate and contains only the roster, date axis,
+   prompt lookup, and metric values the initial Aggregate/Citation/partner views need. Raw score
+   rows remain authoritative and are fetched only when a score drill-down page is opened. */
+async function loadScoreBootstrap(){
+  const response = await fetch(scoreBootstrapUrl('score_bootstrap.json'));
+  if(!response.ok) throw new Error('score bootstrap unavailable ('+response.status+')');
+  const raw = await response.json();
+  if(!raw || raw.schema_version!==1 || raw.artifact_category!=='dashboard_score_bootstrap' ||
+     !Array.isArray(raw.roster) || !Array.isArray(raw.dates) || !raw.metrics || typeof raw.metrics!=='object'){
+    throw new Error('score bootstrap has an invalid schema');
+  }
+  SCORE_BOOTSTRAP=raw;
+}
+function buildFromScoreBootstrap(){
+  ROSTER = SCORE_BOOTSTRAP.roster.map(r=>({
+    name:r.candidate_name, party:r.candidate_party_affiliation, candidateType:r.candidate_type,
+    opponent:r.opponent_name||null, opponent_party:r.opponent_party_affiliation||null, opponentType:r.opponent_type,
+    state:r.state, location:r.location, office:r.office_name, race:r.race, race_level:r.race_level, race_type:r.race_type
+  }));
+  RACE_IDX_BY_RACE={}; ROSTER.forEach((r,i)=>RACE_IDX_BY_RACE[r.race]=i);
+  ENTITIES=[];
+  ROSTER.forEach((r,i)=>{
+    ENTITIES.push({id:'c'+i,raceIdx:i,role:'ours',name:r.name,party:r.party,candidateType:r.candidateType,state:r.state,location:r.location,office:r.office,race:r.race,race_level:r.race_level,race_type:r.race_type,opponentId:r.opponent?('o'+i):null});
+    if(r.opponent) ENTITIES.push({id:'o'+i,raceIdx:i,role:'opp',name:r.opponent,party:r.opponent_party,candidateType:r.opponentType,state:r.state,location:r.location,office:r.office,race:r.race,race_level:r.race_level,race_type:r.race_type,opponentId:'c'+i});
+  });
+  DATES=[...SCORE_BOOTSTRAP.dates];
+  METRICS=SCORE_BOOTSTRAP.metrics;
+  TEXT={}; ROWS_BY_RACE={}; PROMPTS=[]; PROMPTS_BY_RACE={}; PROMPT_NARR_TESTED={};
+  PROMPT_INDEX=SCORE_BOOTSTRAP.prompt_index||{};
+  buildFilterOptionLists();
+}
+async function ensureFullScoreData(){
+  if(FULL_SCORE_DATA_READY) return;
+  if(!fullScoreDataPromise){
+    fullScoreDataPromise=loadAllData().then(()=>{
+      buildFromFetchedData();
+      FULL_SCORE_DATA_READY=true;
+    }).catch(error=>{
+      fullScoreDataPromise=null;
+      throw error;
+    });
+  }
+  return fullScoreDataPromise;
 }
 /* export_dashboard_json.py dictionary-encodes any column where most values repeat (confirmed the
    dominant cost of prompt_results_agg.json and the retired monolithic citation asset at real scale -- e.g. full_query,
@@ -1948,6 +1998,13 @@ document.querySelectorAll('.nav-item').forEach(item=>{
       return;
     }
     if(page==='siteanalytics'){
+      try{
+        await ensureFullScoreData();
+      }catch(e){
+        console.error('Detailed score data load failed', e);
+        document.getElementById('page-siteanalytics').innerHTML='<div class="err-banner">Detailed score data could not load: '+escXHtml(String(e.message||e))+'</div>';
+        return;
+      }
       await openSiteAnalyticsPage();
       return;
     }
@@ -1956,6 +2013,15 @@ document.querySelectorAll('.nav-item').forEach(item=>{
       return;
     }
     if(!PAGE_BUILT[page] && PAGE_BUILD[page]){
+      const pageEl=document.getElementById('page-'+page);
+      pageEl.innerHTML='<div class="small-muted" style="padding:40px;text-align:center;">Loading detailed score data…</div>';
+      try{
+        await ensureFullScoreData();
+      }catch(e){
+        console.error('Detailed score data load failed', e);
+        pageEl.innerHTML='<div class="err-banner">Detailed score data could not load: '+escXHtml(String(e.message||e))+'</div>';
+        return;
+      }
       safe(page, PAGE_BUILD[page]);
       PAGE_BUILT[page] = true;
       // Bug fix (2026-09-08): collapseAllFilterbars() only ran once at initial load, before any
@@ -5404,8 +5470,8 @@ async function initDashboard(){
     return;
   }
   try {
-    await loadAllData();
-    buildFromFetchedData();
+    await loadScoreBootstrap();
+    buildFromScoreBootstrap();
   } catch(err) {
     if(loadingEl) loadingEl.innerHTML = '<div style="padding:40px;text-align:center;color:#B23B3B;">Failed to load dashboard data: '+escXHtml(String(err))+'<br><br>Check that dashboard_data/dist/*.json exist and this page is served over http(s), not file://.</div>';
     console.error('Dashboard data load failed', err);

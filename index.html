@@ -1421,6 +1421,18 @@ const CITATION_SOURCE_SEGMENTS = [
   {key:'sources_search',label:'Search results shown',color:'#C98A2E'},
 ];
 function citationSourceBucket(sourceType){ return sourceType==='sources_references' ? 'sources_more' : sourceType; }
+// Some deliveries can pass the file-level audit but still contain a verified, material
+// source-content discontinuity.  Keep a small, explicit ledger for those dates rather than
+// presenting an implausible collapse as a real change in citation behavior.  Users can still
+// opt in to see them with the existing "include incomplete" control.
+const CITATION_DATE_INTEGRITY_OVERRIDES = Object.freeze({
+  '2026-09-29': {
+    status: 'partial',
+    label: 'verified citation-content anomaly',
+    detail: 'Policy Information Center citation cohorts disappear on Sep. 29 and return on Sep. 30; broader citation totals also drop materially on Sep. 29.'
+  }
+});
+function citationIntegrityOverride(date){ return CITATION_DATE_INTEGRITY_OVERRIDES[date] || null; }
 function citationCoverageRecord(date){ return (CITATION_COVERAGE&&CITATION_COVERAGE.dates||[]).find(row=>row.date===date) || {date,status:'unknown',coverage_percent:null}; }
 function citationDataCoverageRecord(date){ return CITATION_DATA_COVERAGE[date] || {date,status:'unknown',observed_race_count:0,expected_race_count:0,missing_race_count:0}; }
 function citationDataCoverageIsKnown(date){ return Object.prototype.hasOwnProperty.call(CITATION_DATA_COVERAGE,date); }
@@ -1428,7 +1440,7 @@ function citationDateComparable(date){
   // A delivery can contain every expected CSV yet still omit an already-active race universe.
   // Require both the vendor delivery check and the independent citation-race continuity check
   // before an all-race trend treats a date as comparable by default.
-  return citationCoverageRecord(date).status==='complete' && citationDataCoverageRecord(date).status==='complete';
+  return !citationIntegrityOverride(date) && citationCoverageRecord(date).status==='complete' && citationDataCoverageRecord(date).status==='complete';
 }
 function partnerCitationDateComparable(date){
   // Partner pages load a small, domain-only partition on demand.  They must not require the
@@ -1436,10 +1448,12 @@ function partnerCitationDateComparable(date){
   // Citation Breakout has already loaded its independent continuity ledger, honor that stricter
   // check too; otherwise, include only delivery-complete observations and describe the remaining
   // race-continuity status honestly in the UI.
-  if(citationCoverageRecord(date).status!=='complete') return false;
+  if(citationIntegrityOverride(date) || citationCoverageRecord(date).status!=='complete') return false;
   return !citationDataCoverageIsKnown(date) || citationDataCoverageRecord(date).status==='complete';
 }
 function partnerCitationCoverageLabel(date){
+  const integrity=citationIntegrityOverride(date);
+  if(integrity) return integrity.label;
   const delivery=citationCoverageRecord(date);
   if(delivery.status!=='complete'){
     const pct=delivery.coverage_percent==null ? '' : ` · ${fmt1(delivery.coverage_percent)}% file coverage`;
@@ -1449,6 +1463,8 @@ function partnerCitationCoverageLabel(date){
   return citationCoverageLabel(date);
 }
 function citationCoverageLabel(date){
+  const integrity=citationIntegrityOverride(date);
+  if(integrity) return integrity.label;
   const delivery=citationCoverageRecord(date), data=citationDataCoverageRecord(date);
   if(delivery.status!=='complete'){
     const pct=delivery.coverage_percent==null ? '' : ` · ${fmt1(delivery.coverage_percent)}% file coverage`;
@@ -4644,6 +4660,7 @@ function saCitationCoverageRecord(day){
   return rows.find(row=>row.date===day) || null;
 }
 function saCitationDateComplete(day){
+  if(citationIntegrityOverride(day)) return false;
   const rows=((SITE_ANALYTICS.sources||{}).evertune||{}).delivery_coverage||[];
   // Older protected assets predate the delivery audit. Preserve their existing conservative
   // reported-date behavior until the refreshed asset is uploaded; once coverage is present,

@@ -3066,7 +3066,14 @@ function entityBucketTotals(ent, key, modelFilter, rangeOverride, blindOverride)
   // Before a detailed score page has requested the raw corpus, the bootstrap provides the exact
   // all-history/no-filter bucket totals used by the Aggregate landing view. Do not use it for a
   // narrowed date, provider, or blind-prompt query: those views intentionally wait for raw data.
-  if(!FULL_SCORE_DATA_READY && !modelFilter && rangeOverride===undefined && (blindOverride===undefined || blindOverride==='all')){
+  // groupShare() expresses its ordinary full-history view as [0, DATES.length-1], rather than
+  // leaving rangeOverride undefined. That is semantically the same unfiltered view, so it must
+  // also use the bootstrap. Otherwise the Aggregate landing chart falls through to an empty raw
+  // row cache before a detail page has requested the large source asset, yielding null bars.
+  const fullHistoryRange = rangeOverride===undefined || (
+    Array.isArray(rangeOverride) && rangeOverride[0]===0 && rangeOverride[1]===DATES.length-1
+  );
+  if(!FULL_SCORE_DATA_READY && !modelFilter && fullHistoryRange && (blindOverride===undefined || blindOverride==='all')){
     const compact = METRICS[ent.id] && METRICS[ent.id].bucketTotals && METRICS[ent.id].bucketTotals[key];
     if(compact) return compact;
   }

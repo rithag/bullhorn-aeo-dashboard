@@ -1880,6 +1880,20 @@ function compositeAtDay(e, dayIdx){
   const h = METRICS[e.id].history;
   return weightedAvgKnown([[h.visibility[dayIdx],WEIGHTS.visibility],[h.favorability[dayIdx],WEIGHTS.favorability],[h.depth[dayIdx],WEIGHTS.depth],[h.accuracy[dayIdx],WEIGHTS.accuracy],[h.narrative[dayIdx],WEIGHTS.narrative]]);
 }
+/* Range-aware counterpart to compositeAtDay().  Each component comes from the same pooled
+   response population and date interval as the dimension pages, then the usual composite weights
+   are renormalized across only the dimensions that were actually assessed.  This must not use
+   `.base`, which is an all-history value and silently defeats an Aggregate date filter. */
+function compositeForRange(e, rangeOverride, blindOverride){
+  const range = rangeOverride || [0,DATES.length-1];
+  const blind = blindOverride!==undefined ? blindOverride : 'all';
+  const score = dim => bestShare(dim, entityBucketTotals(e, dim, null, range, blind));
+  return weightedAvgKnown([
+    [score('visibility'),WEIGHTS.visibility], [score('favorability'),WEIGHTS.favorability],
+    [score('depth'),WEIGHTS.depth], [score('accuracy'),WEIGHTS.accuracy],
+    [score('narrative'),WEIGHTS.narrative]
+  ]);
+}
 /* Same weights/formula as the candidate-level composite() above, applied to a single prompt×model
    run's own scores instead of an aggregate — used by Prompt Fanout's per-row Composite column.
    0/1/2 dims scale to 0/50/100 (the single-run analog of composite()'s "% scored 2" share);
@@ -2304,7 +2318,7 @@ function computeRaceRows(dimKey, filters){
   return idxs.map(i=>{
     const ours = ourEntity(i), opp = oppEntity(i);
     let ourVal, oppVal;
-    if(dimKey==='composite'){ ourVal = compositeAtDay(ours, dayIdx); oppVal = opp? compositeAtDay(opp, dayIdx): null; }
+    if(dimKey==='composite'){ ourVal = compositeForRange(ours, [i0,i1], filters.blind || 'all'); oppVal = opp? compositeForRange(opp, [i0,i1], filters.blind || 'all'): null; }
     else {
       // Same underlying computation as the comparison/trend charts (entityBucketTotals), with this
       // table's own independent Range/Prompt-type filters -- guarantees tie-out by construction
@@ -2551,8 +2565,8 @@ function buildOverviewPage(){
     </div>
     <div class="card">
       <div class="card-title">Score by dimension</div>
-      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate.</div>
-      ${chartFilterBarHtml('ov-cmp', {level:true, location:true})}
+      <div class="card-caption">Shows Democrats vs. Republicans by default. Narrows to candidate-vs-opponent if you pick a race or a candidate. The date range applies consistently to the chart, the headline metrics, and Composite.</div>
+      ${chartFilterBarHtml('ov-cmp', {level:true, location:true, dateRange:true})}
       <div class="subfilter-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">${groupByToggleHtml('ov-cmp')}</div>
       <div class="kpis" id="ov-kpis"></div>
       <div id="ov-chart"></div>
@@ -2570,7 +2584,7 @@ function buildOverviewPage(){
       <div class="scroll-table" id="ov-table"></div>
       <div class="section-gap" id="ov-table-more"></div>
     </div>`;
-  wireChartFilterBar('ov-cmp', {level:true, location:true}, renderOverview);
+  wireChartFilterBar('ov-cmp', {level:true, location:true, dateRange:true}, renderOverview);
   window.__groupByRerender = window.__groupByRerender || {};
   window.__groupByRerender['ov-cmp'] = renderOverview;
   document.getElementById('ov-tbl-race').dataset.xselDone='1'; buildXSel(document.getElementById('ov-tbl-race'));
@@ -2591,7 +2605,8 @@ function populateLocationSelect(selId, stateSelId, levelSelId){
   refreshXSel(selEl);
 }
 function ovFilters(){
-  return {party:document.getElementById('ov-cmp-party').value, candidateType:document.getElementById('ov-cmp-ctype').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value};
+  const [i0,i1] = dateRangeIdx('ov-cmp');
+  return {party:document.getElementById('ov-cmp-party').value, candidateType:document.getElementById('ov-cmp-ctype').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value, i0, i1};
 }
 /* Shared Dem/Rep/NP bar-group builder for every "Democrats vs. Republicans" chart (2026-08-31 fix —
    see aeo_dashboard_party_ctype_filter_gap memory). Party picks which bar(s) appear — applied AFTER
@@ -2677,13 +2692,16 @@ function resolveEntitiesForFilters(f){
   if(f.candidateType && f.candidateType!=='all') idxs = idxs.filter(i=>ROSTER[i].candidateType===f.candidateType);
   return idxs;
 }
-function renderOverviewInsight(ours){
+function renderOverviewInsight(ours, range){
   const bodyEl = document.getElementById('ov-insight-body');
   if(!bodyEl) return;
   const bullets = [];
   if(ours.length){
     const bucketDims = ['visibility','favorability','depth','accuracy'];
-    const dimShares = bucketDims.map(dim=>({dim, share: worstShare(dim, mergeBucketTotals(ours.map(e=>entityBucketTotals(e,dim))))})).filter(x=>x.share!==null);
+    const dimShares = bucketDims.map(dim=>{
+      const totals = mergeBucketTotals(ours.map(e=>entityBucketTotals(e,dim,null,range,'all')));
+      return {dim, share:worstShare(dim, totals)};
+    }).filter(x=>x.share!==null);
     if(dimShares.length){
       dimShares.sort((a,b)=>b.share-a.share);
       const worstDim = dimShares[0];
@@ -2697,17 +2715,32 @@ function renderOverviewInsight(ours){
         bullets.push(`${DIM_LABELS[secondBest.dim]} is doing best by comparison (${fmt1(secondBest.share)}% ${bucket3Label(secondBest.dim, secondBest.dim==='favorability'?'neg':'0').toLowerCase()}).`);
       }
     }
-    const narrAvg = groupShare(ours, 'narrative');
+    const narrAvg = groupShare(ours, 'narrative', range, 'all');
     if(narrAvg!==null && narrAvg<60) bullets.push(`Narrative Alignment also averages a modest ${fmt1(narrAvg)}/100 — check the Narrative Alignment page's topic explorer for the specific themes going missing.`);
   }
   bodyEl.innerHTML = bullets.length? `<ul class="insight-list">${bullets.map(b=>`<li>${b}</li>`).join('')}</ul>` : `<div class="small-muted">Not enough data in the current filter to generate insights.</div>`;
 }
-function renderOverview(){
+async function renderOverview(){
   const f = ovFilters();
+  const range = [f.i0,f.i1];
+  const isFullHistory = f.i0===0 && f.i1===DATES.length-1;
+  // The compact bootstrap intentionally has enough information for the unfiltered landing view,
+  // but not for a narrowed date interval.  Fetch the authoritative aggregate only when a user
+  // actually changes the date range; do not make the normal landing page parse the large asset.
+  if(!isFullHistory && !FULL_SCORE_DATA_READY){
+    const chart = document.getElementById('ov-chart');
+    if(chart) chart.innerHTML = '<div class="small-muted" style="padding:18px 0;">Loading the selected date range…</div>';
+    try { await ensureFullScoreData(); }
+    catch(e){
+      console.error('Detailed score data load failed for Aggregate range', e);
+      if(chart) chart.innerHTML = '<div class="err-banner">The selected date range could not load. Please try again.</div>';
+      return;
+    }
+  }
   const idxs = resolveEntitiesForFilters(f);
   const ours = idxs.map(i=>ourEntity(i));
-  renderOverviewInsight(ours);
-  const compAvg = avg(ours.map(composite));
+  renderOverviewInsight(ours, range);
+  const compAvg = avg(ours.map(e=>compositeForRange(e, range)));
   // Bug-report fix (2026-09-08): these KPIs average over EVERY tracked candidate (Democrat +
   // Non-Partisan), but the comparison chart just below splits that same population into separate
   // Democrats/Republicans/Non-Partisan bars -- so whenever NP candidates are in view, this row's
@@ -2718,11 +2751,11 @@ function renderOverview(){
   const npCount = ours.filter(e=>e.party==='NP').length;
   document.getElementById('ov-kpis').innerHTML = `
     <div class="kpi hi" title="Composite = Visibility × 40% + Favorability × 15% + Depth × 15% + Accuracy × 15% + Narrative Alignment × 15% (Consistency excluded)."><div class="kpi-label">Composite</div><div class="kpi-value">${fmt1(compAvg)}</div><div class="kpi-sub">${ours.length} candidates in view</div></div>
-    <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(groupShare(ours,'visibility'))}</div></div>
-    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(groupShare(ours,'favorability'))}</div></div>
-    <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(groupShare(ours,'depth'))}</div></div>
-    <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(groupShare(ours,'accuracy'))}</div></div>
-    <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(groupShare(ours,'narrative'))}</div></div>`;
+    <div class="kpi"><div class="kpi-label">Visibility</div><div class="kpi-value">${fmt1(groupShare(ours,'visibility',range,'all'))}</div></div>
+    <div class="kpi"><div class="kpi-label">Favorability</div><div class="kpi-value">${fmt1(groupShare(ours,'favorability',range,'all'))}</div></div>
+    <div class="kpi"><div class="kpi-label">Depth</div><div class="kpi-value">${fmt1(groupShare(ours,'depth',range,'all'))}</div></div>
+    <div class="kpi"><div class="kpi-label">Accuracy</div><div class="kpi-value">${fmt1(groupShare(ours,'accuracy',range,'all'))}</div></div>
+    <div class="kpi"><div class="kpi-label">Narrative Alignment</div><div class="kpi-value">${fmt1(groupShare(ours,'narrative',range,'all'))}</div></div>`;
   document.getElementById('ov-kpis-note') && document.getElementById('ov-kpis-note').remove();
   if(npCount>0){
     document.getElementById('ov-kpis').insertAdjacentHTML('afterend', `<div id="ov-kpis-note" class="small-muted" style="margin:-8px 0 12px;">These KPIs average all ${ours.length} tracked candidates in view, including ${npCount} Non-Partisan — the chart below splits the same candidates by party, so its Democrats bar (and Republicans/Non-Partisan bars) won't exactly match this row.</div>`);
@@ -2737,8 +2770,8 @@ function renderOverview(){
   let series;
   if(idxs.length===1){
     const o=ourEntity(idxs[0]), p=oppEntity(idxs[0]);
-    series=[{name:o.name,color:'#2E5EAA',values:dims.map(d=>norm(METRICS[o.id].base[d],d))}];
-    if(p) series.push({name:p.name,color:'#B23B3B',values:dims.map(d=>norm(METRICS[p.id].base[d],d))});
+    series=[{name:o.name,color:'#2E5EAA',values:dims.map(d=>norm(bestShare(d,entityBucketTotals(o,d,null,range,'all')),d))}];
+    if(p) series.push({name:p.name,color:'#B23B3B',values:dims.map(d=>norm(bestShare(d,entityBucketTotals(p,d,null,range,'all')),d))});
   } else {
     // Bug fix (2026-09-08): this used to reuse `idxs` (from resolveEntitiesForFilters(f), which
     // pre-filters the race POOL by f.party/f.candidateType against "our" (Democrat) entity's own
@@ -2758,7 +2791,7 @@ function renderOverview(){
     if(f.location!=='all') chartIdxs = chartIdxs.filter(i=>ROSTER[i].location===f.location);
     const groupBy = groupByFor('ov-cmp');
     const groups = splitGroupsFor(chartIdxs, f, groupBy);
-    series = groups.map(g=>({name:g.label, color:groupColor(groupBy,g.key), values:dims.map(d=>norm(groupShare(g.entities,d),d))}));
+    series = groups.map(g=>({name:g.label, color:groupColor(groupBy,g.key), values:dims.map(d=>norm(groupShare(g.entities,d,range,'all'),d))}));
   }
   barChart('ov-chart', dimLabels, series, {height:230});
 }

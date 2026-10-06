@@ -1423,11 +1423,30 @@ const CITATION_SOURCE_SEGMENTS = [
 function citationSourceBucket(sourceType){ return sourceType==='sources_references' ? 'sources_more' : sourceType; }
 function citationCoverageRecord(date){ return (CITATION_COVERAGE&&CITATION_COVERAGE.dates||[]).find(row=>row.date===date) || {date,status:'unknown',coverage_percent:null}; }
 function citationDataCoverageRecord(date){ return CITATION_DATA_COVERAGE[date] || {date,status:'unknown',observed_race_count:0,expected_race_count:0,missing_race_count:0}; }
+function citationDataCoverageIsKnown(date){ return Object.prototype.hasOwnProperty.call(CITATION_DATA_COVERAGE,date); }
 function citationDateComparable(date){
   // A delivery can contain every expected CSV yet still omit an already-active race universe.
   // Require both the vendor delivery check and the independent citation-race continuity check
   // before an all-race trend treats a date as comparable by default.
   return citationCoverageRecord(date).status==='complete' && citationDataCoverageRecord(date).status==='complete';
+}
+function partnerCitationDateComparable(date){
+  // Partner pages load a small, domain-only partition on demand.  They must not require the
+  // 59 MB cross-race summary solely to decide whether the delivery itself is complete.  When
+  // Citation Breakout has already loaded its independent continuity ledger, honor that stricter
+  // check too; otherwise, include only delivery-complete observations and describe the remaining
+  // race-continuity status honestly in the UI.
+  if(citationCoverageRecord(date).status!=='complete') return false;
+  return !citationDataCoverageIsKnown(date) || citationDataCoverageRecord(date).status==='complete';
+}
+function partnerCitationCoverageLabel(date){
+  const delivery=citationCoverageRecord(date);
+  if(delivery.status!=='complete'){
+    const pct=delivery.coverage_percent==null ? '' : ` · ${fmt1(delivery.coverage_percent)}% file coverage`;
+    return `${delivery.status} delivery${pct}`;
+  }
+  if(!citationDataCoverageIsKnown(date)) return 'complete delivery · cross-race continuity not loaded in this view';
+  return citationCoverageLabel(date);
 }
 function citationCoverageLabel(date){
   const delivery=citationCoverageRecord(date), data=citationDataCoverageRecord(date);
@@ -4973,7 +4992,7 @@ function partnerCitationDates(page,start,end){
   const includeIncomplete=document.getElementById('pi-include-incomplete-'+page).checked;
   return [...new Set((PARTNER_CITATION_EVENTS[partner.assetKey||partner.key]||[]).map(e=>e.date))]
     .filter(d=>(!start || d>=start) && (!end || d<=end))
-    .filter(d=>includeIncomplete || citationDateComparable(d)).sort();
+    .filter(d=>includeIncomplete || partnerCitationDateComparable(d)).sort();
 }
 function partnerEvents(page){
   const partner=PARTNER_INSIGHTS[page];
@@ -4993,7 +5012,7 @@ function partnerEvents(page){
     if(!domains.has(domain) || (selectedDomain!=='all' && domain!==selectedDomain)) return false;
     if(start && e.date<start) return false;
     if(end && e.date>end) return false;
-    if(!includeIncomplete && !citationDateComparable(e.date)) return false;
+    if(!includeIncomplete && !partnerCitationDateComparable(e.date)) return false;
     return !!sourceTypes[e.source_type];
   });
 }
@@ -5016,7 +5035,7 @@ function buildPartnerInsightsPage(page){
         <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="pi-src-more-${page}" checked> Related/more</label>
       </div></div>
     </div>
-    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="pi-include-incomplete-${page}"> Include partial, pending, historically unknown, or incomplete-race-coverage citation observations — excluded by default.</label>
+    <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="pi-include-incomplete-${page}"> Include partial, pending, or historically unknown citation observations — excluded by default. If the Citation Breakout continuity audit is already loaded, incomplete-race-coverage observations remain excluded too.</label>
     <div class="card-caption" style="margin:0 0 12px;">An observation is a dated Evertune Sources-URL batch. Trend charts show each observed batch separately; totals in this view sum source-list occurrences across the selected complete reporting period. They are not unique people, visits, or response counts.</div>
     <div class="kpis" id="pi-kpis-${page}"></div>
     <div class="card section-gap"><div class="card-title">Citation frequency over time</div><div class="card-caption">One stacked column per Evertune reporting date. Column height is total occurrence volume; segments show source type.</div><div id="pi-trend-${page}"></div><div class="small-muted" id="pi-trend-note-${page}" style="margin-top:8px;"></div></div>
@@ -5048,15 +5067,16 @@ function renderPartnerInsights(page){
     <div class="kpi hi"><div class="kpi-label">Citation occurrences</div><div class="kpi-value">${total}</div><div class="kpi-sub">cumulative in selected period</div></div>
     <div class="kpi"><div class="kpi-label">Cited URLs</div><div class="kpi-value">${urlRows.length}</div><div class="kpi-sub">with ≥1 occurrence</div></div>
     <div class="kpi"><div class="kpi-label">Prompt instances</div><div class="kpi-value">${promptIds.size}</div><div class="kpi-sub">that cite these URLs</div></div>
-    <div class="kpi"><div class="kpi-label">Included batches</div><div class="kpi-value">${dates.length}</div><div class="kpi-sub">complete by default</div></div>`;
+    <div class="kpi"><div class="kpi-label">Included batches</div><div class="kpi-value">${dates.length}</div><div class="kpi-sub">delivery-complete by default</div></div>`;
   const totalByDate={}; events.forEach(e=>{const bucket=citationSourceBucket(e.source_type);(totalByDate[e.date]||(totalByDate[e.date]={}))[bucket]=(totalByDate[e.date][bucket]||0)+e.count;});
   const trendEl=document.getElementById('pi-trend-'+page);
   if(dates.length){
-    const rows=dates.map(date=>({label:date,incomplete:!citationDateComparable(date),segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:(totalByDate[date]||{})[s.key]||0,color:s.color}))}));
+    const rows=dates.map(date=>({label:date,incomplete:!partnerCitationDateComparable(date),segments:CITATION_SOURCE_SEGMENTS.map(s=>({name:s.label,value:(totalByDate[date]||{})[s.key]||0,color:s.color}))}));
     stackedColumnChart('pi-trend-'+page,rows,{height:270});
-    const incomplete=dates.filter(date=>!citationDateComparable(date));
-    document.getElementById('pi-trend-note-'+page).textContent=incomplete.length ? `* Included non-comparable observation(s): ${incomplete.map(date=>`${date} (${citationCoverageLabel(date)})`).join('; ')}.` : 'Only complete, all-active-race citation observations are included.';
-  }else trendEl.innerHTML='<div class="small-muted">No complete Evertune citation observations in the selected range.</div>';
+    const incomplete=dates.filter(date=>!partnerCitationDateComparable(date));
+    const continuityKnown=dates.every(citationDataCoverageIsKnown);
+    document.getElementById('pi-trend-note-'+page).textContent=incomplete.length ? `* Included non-comparable observation(s): ${incomplete.map(date=>`${date} (${partnerCitationCoverageLabel(date)})`).join('; ')}.` : continuityKnown ? 'Only complete, all-active-race citation observations are included.' : 'Only delivery-complete citation observations are included. Cross-race continuity is evaluated when Citation Breakout is loaded.';
+  }else trendEl.innerHTML='<div class="small-muted">No delivery-complete Evertune citation observations in the selected range.</div>';
   const domainTrendEl=document.getElementById('pi-domain-trend-'+page);
   if(domainTrendEl){
     const domainSeries=partner.domains.map((domain,i)=>{

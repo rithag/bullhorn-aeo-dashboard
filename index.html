@@ -233,7 +233,6 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
     <div class="nav-item" data-page="fanout"><span class="nav-dot" style="background:var(--brand)"></span>Prompt Fanout</div>
     <div class="nav-group-label">Dimensions</div>
     <div class="nav-item" data-page="visibility"><span class="nav-dot" style="background:#6B8FC9"></span>Visibility</div>
-    <label style="display:flex;align-items:flex-start;gap:6px;padding:2px 10px 8px 28px;font-size:11px;line-height:1.35;color:var(--ink-soft);cursor:pointer;"><input id="visibility-refusal-toggle" type="checkbox" onchange="setVisibilityRefusalMode(this.checked)"> Include refusals in visibility</label>
     <div class="nav-item" data-page="favorability"><span class="nav-dot" style="background:#7FA98F"></span>Favorability</div>
     <div class="nav-item" data-page="depth"><span class="nav-dot" style="background:#B79A5C"></span>Depth</div>
     <div class="nav-item" data-page="accuracy"><span class="nav-dot" style="background:var(--bad)"></span>Accuracy</div>
@@ -663,6 +662,7 @@ let SCORE_BOOTSTRAP=null, FULL_SCORE_DATA_READY=false, fullScoreDataPromise=null
 let INCLUDE_REFUSAL_VISIBILITY = sessionStorage.getItem('aeo_include_refusal_visibility') === '1';
 function setVisibilityRefusalMode(include){
   sessionStorage.setItem('aeo_include_refusal_visibility', include ? '1' : '0');
+  sessionStorage.setItem('aeo_resume_page', 'visibility');
   window.location.reload();
 }
 let RACE_IDX_BY_RACE = {};
@@ -1109,10 +1109,10 @@ function aggRows(){
   return build(cols, row_count);
 }
 
-const MODELS = ['ChatGPT Search','Gemini Search','AI Overview'];
-const MODEL_TO_PROVIDER = {'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview'};
+const MODELS = ['ChatGPT Search','Gemini Search','AI Overview','AI Mode'];
+const MODEL_TO_PROVIDER = {'ChatGPT Search':'chatgpt_search','Gemini Search':'gemini_search','AI Overview':'ai_overview','AI Mode':'ai_mode'};
 const PROVIDER_TO_MODEL = Object.fromEntries(Object.entries(MODEL_TO_PROVIDER).map(([m,p])=>[p,m]));
-const MODEL_COLORS = {'ChatGPT Search':'#3C8A5B','Gemini Search':'#6B8FC9','AI Overview':'#C9822E'};
+const MODEL_COLORS = {'ChatGPT Search':'#3C8A5B','Gemini Search':'#6B8FC9','AI Overview':'#C9822E','AI Mode':'#8B7FB0'};
 const PARTY_COLORS = {'Democrat':'#2E5EAA','Republican':'#B23B3B','NP':'#8B93A1'};
 function partyColor(party){ return PARTY_COLORS[party] || PARTY_COLORS.NP; }
 function partyBadgeHtml(party){ return `<span class="badge ${party==='Democrat'?'dem':party==='Republican'?'rep':'np'}">${party==='Democrat'?'D':party==='Republican'?'R':'NP'}</span>`; }
@@ -1328,12 +1328,13 @@ function raceFamily(entOrRow){
   return 'policy'; // Legislative (WS1 + Template A) and Administrative/County Judge (Template C)
 }
 
-let DATES = [];
+let DATES = [], DATE_INDEX_BY_VALUE = {};
 function buildDateAxis(){
   const set = new Set();
   aggRowsCache.forEach(r=>{ if(r.report_date) set.add(r.report_date); });
   DATES = [...set].sort();
   if(DATES.length===0) DATES=['2026-08-13'];
+  DATE_INDEX_BY_VALUE = Object.fromEntries(DATES.map((date,index)=>[date,index]));
 }
 
 let ROSTER = [], ENTITIES = [], aggRowsCache = [], PROMPTS = [], PROMPTS_BY_RACE = {}, PROMPT_NARR_TESTED = {}, CITATION_EVENTS = [];
@@ -1955,6 +1956,32 @@ function getRunsInRange(prompt, model, i0, i1){
   }
   return out;
 }
+function scoreRationaleHtml(run, role, dimKey){
+  const side=role==='ours' ? 'candidate' : 'opponent';
+  const candidateLabel=role==='ours' ? 'Candidate' : 'Opponent';
+  const score=run.scores[role] ? run.scores[role][dimKey] : null;
+  const scoreDisplay=score==null ? 'Not scored' : dimKey==='favorability' ? `${fmt1(score)} / 100` : dimKey==='visibility' ? `${score} / 1` : `${score} / 2`;
+  const row=run._row;
+  let rationale='';
+  if(dimKey==='depth') rationale=row[`depth_rationale_${side}`]||'';
+  else if(dimKey==='narrative') rationale=row[`narrative_alignment_rationale_${side}`]||'';
+  else if(dimKey==='consistency') rationale=(TEXT[row.id]||{})[`consistency_rationale_${side}`]||'';
+  else if(dimKey==='accuracy'){
+    const issues=run.accIssue[role]||[];
+    rationale=issues.length
+      ? issues.map(issue=>`<div style="margin-top:5px;"><b>Flagged statement:</b> ${escapeXml(issue.statement)}<br><b>Why:</b> ${escapeXml(issue.description)}</div>`).join('')
+      : score==null ? 'This role was not eligible for Accuracy scoring on this response.' : score===2 ? 'No individual inaccurate statement was retained for this fully accurate response.' : 'This response received a non-perfect Accuracy score, but no individual statement flag was retained in the issue table.';
+  } else if(dimKey==='visibility'){
+    rationale=score===1 ? 'The candidate was identified in the response under the dashboard’s deterministic visibility rule.' : score===0 ? 'The candidate was not identified in the response under the dashboard’s deterministic visibility rule.' : 'This role was not eligible for Visibility scoring on this response.';
+  } else if(dimKey==='favorability'){
+    const pos=row[`favorability_pct_positive_${side}`], neu=row[`favorability_pct_neutral_${side}`], neg=row[`favorability_pct_negative_${side}`];
+    rationale=(pos!==''&&pos!=null&&neu!==''&&neu!=null&&neg!==''&&neg!=null)
+      ? `Vendor sentiment distribution: ${fmt1(+pos)}% positive, ${fmt1(+neu)}% neutral, ${fmt1(+neg)}% negative.`
+      : 'No vendor sentiment distribution is available for this role on this response.';
+  }
+  const body=dimKey==='accuracy' && (run.accIssue[role]||[]).length ? rationale : escapeXml(rationale||'No retained free-text rationale is available for this score.');
+  return `<div class="callout" style="margin-top:10px;padding:9px 10px;"><div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${escXHtml(candidateLabel)} ${escXHtml(DIM_LABELS[dimKey]||dimKey)} score: ${escXHtml(scoreDisplay)}</div>${body}</div>`;
+}
 
 /* ---- refusal / hypothesis-alignment lookup, same array-per-cell shape as getRun() (see above)
    — also carries the response text directly so a caller that only needs refusal/alignment plus
@@ -2268,6 +2295,8 @@ function computeRaceRows(dimKey, filters){
 }
 function renderRaceTable(containerId, dimKey, filters, opts){
   opts = opts||{};
+  window.__fanoutFiltersByContainer = window.__fanoutFiltersByContainer || {};
+  window.__fanoutFiltersByContainer[containerId] = {...filters};
   const rows = computeRaceRows(dimKey, filters).sort((a,b)=>{
     const av = a.gap===null? -9999 : a.gap, bv = b.gap===null? -9999 : b.gap;
     return bv-av;
@@ -2309,7 +2338,7 @@ function toggleFanoutRow(containerId, raceIdx, dimKey){
   document.querySelectorAll(`tr[id^="fanoutrow-${containerId}-"]`).forEach(el=>el.style.display='none');
   if(isOpen) return;
   rowEl.style.display='';
-  bodyEl.innerHTML = renderFanoutHtml(raceIdx, dimKey);
+  bodyEl.innerHTML = renderFanoutHtml(raceIdx, dimKey, (window.__fanoutFiltersByContainer||{})[containerId]);
 }
 /* Bug fix (2026-09-08 feedback): this used to list one row per individual (prompt, model, run) —
    with up to ~100 real runs per prompt, "sorted lowest to highest" meant scrolling through many
@@ -2318,13 +2347,19 @@ function toggleFanoutRow(containerId, raceIdx, dimKey){
    both sides, same "average across whatever models ran" convention. Accuracy's per-response "view
    flag" drill-down still needs real individual runs to find the actual flagged statement text, so
    those are gathered separately just to power that detail view, not to drive the main row list. */
-function renderFanoutHtml(raceIdx, dimKey){
+function renderFanoutHtml(raceIdx, dimKey, tableFilters){
   const prompts = PROMPTS_BY_RACE[raceIdx]||[];
   const ours = ourEntity(raceIdx), opp = oppEntity(raceIdx);
   if(!prompts.length) return `<div class="fanout-wrap"><span class="small-muted">No sampled prompts available for this race.</span></div>`;
+  // The expanded prompt list must respect the parent All Races table's time range.  Without this,
+  // a table correctly filtered to the newest reporting day still opened every historical run and
+  // surfaced Aug. 31 examples first when sorted by score.
+  const latestIdx=DATES.length-1;
+  const i0=tableFilters&&tableFilters.i0!=null ? tableFilters.i0 : latestIdx;
+  const i1=tableFilters&&tableFilters.i1!=null ? tableFilters.i1 : latestIdx;
   let rows = [];
   prompts.forEach(p=>{
-    for(let di=0; di<DATES.length; di++){
+    for(let di=i0; di<=i1; di++){
       const d = DATES[di];
       const ourRoll = rollupValueForPromptDay(p, MODELS, d, 'ours');
       if(!ourRoll) continue;
@@ -2342,8 +2377,8 @@ function renderFanoutHtml(raceIdx, dimKey){
   });
   const range = DIM_RANGE[dimKey]||[0,100];
   const heat=(v)=> v===null? '<span class="small-muted">—</span>' : `<span class="heat" style="background:${heatColor(v,range[0],range[1])};color:${heatText(v,range[0],range[1])}">${fmt1(v)}</span>`;
-  let html = `<div class="fanout-wrap"><div class="fanout-head"><span>All prompts for <b>${ours.race}</b>, sorted lowest to highest ${DIM_LABELS[dimKey].toLowerCase()}</span><span class="small-muted">${rows.length} prompt × day rollups</span></div>`;
-  html += `<div class="scroll-table" style="max-height:320px;"><table><tr><th>Prompt</th><th>Date</th><th title="How many of the 3 models actually ran this prompt that day">Models</th><th>Our score</th><th>Opp. score</th><th>Gap</th>${dimKey==='accuracy'?'<th></th>':''}</tr>`;
+  let html = `<div class="fanout-wrap"><div class="fanout-head"><span>All prompts for <b>${ours.race}</b>, sorted lowest to highest ${DIM_LABELS[dimKey].toLowerCase()}<span class="small-muted"> · click a prompt to view its sampled response and scoring basis</span></span><span class="small-muted">${rows.length} prompt × day rollups</span></div>`;
+  html += `<div class="scroll-table" style="max-height:320px;"><table><tr><th>Prompt</th><th>Date</th><th title="How many configured search surfaces actually ran this prompt that day">Models</th><th>Our score</th><th>Opp. score</th><th>Gap</th><th>Detail</th></tr>`;
   rows.forEach((r,ri)=>{
     const ov=r.ourRoll.scores[dimKey], pv=r.oppRoll?r.oppRoll.scores[dimKey]:null;
     const gap = (ov!==null&&pv!==null)? pv-ov : null;
@@ -2354,15 +2389,70 @@ function renderFanoutHtml(raceIdx, dimKey){
       const runs = MODELS.flatMap(m=>getRun(r.p,m,r.date));
       nonAccurate = runs.some(run=>{ const a=run.scores.ours.accuracy, b=opp?run.scores.opp.accuracy:null; return a===0||a===1||b===0||b===1; });
     }
-    html += `<tr class="${nonAccurate?'clickable':''}" ${nonAccurate?`onclick="showAccuracyDetailForPrompt('${escXAttr(r.p.id)}','${r.date}',${raceIdx})"`:''}>
+    html += `<tr class="clickable" onclick="openFanoutPromptDetail('${escXAttr(r.p.id)}','${r.date}',${raceIdx},'${dimKey}')">
       <td style="max-width:230px;white-space:normal;">${escapeXml(r.p.text)}<br><span class="small-muted">${r.p.category}</span></td>
       <td class="small-muted">${r.date}</td><td class="small-muted">${r.ourRoll.modelsWithData} of ${r.ourRoll.totalModels}</td><td>${heat(ov)}</td><td>${heat(pv)}</td>
       <td class="${gap>0?'gap-pos':gap<0?'gap-neg':''}">${gap===null?'—':(gap>0?'+':'')+fmt1(gap)}</td>
-      ${dimKey==='accuracy'?`<td>${nonAccurate?'<span class="tag recur" style="background:#FBEAEA;color:var(--bad);">view flag</span>':'<span class="small-muted">fully accurate</span>'}</td>`:''}
+      <td>${dimKey==='accuracy'&&nonAccurate?'<span class="tag recur" style="background:#FBEAEA;color:var(--bad);">review flag</span>':'<span class="small-muted">view response</span>'}</td>
       </tr>`;
   });
   html += `</table></div></div>`;
   return html;
+}
+async function openFanoutPromptDetail(promptId, date, raceIdx, dimKey){
+  const p=PROMPTS.find(x=>x.id===promptId);
+  if(!p) return;
+  openSidePanel('<div class="small-muted" style="padding:20px;">Loading sampled responses…</div>', {wide:true});
+  try{
+    await ensureTextLoadedForRaceName(p.race);
+  }catch(error){
+    openSidePanel(`<div class="err-banner">Response text could not load: ${escXHtml(String(error.message||error))}</div>`, {wide:true});
+    return;
+  }
+  const runs=MODELS.flatMap(model=>getRun(p,model,date)).sort((a,b)=>{
+    const modelOrder=MODELS.indexOf(a.model)-MODELS.indexOf(b.model);
+    return modelOrder || String(a._row.id).localeCompare(String(b._row.id));
+  });
+  if(!runs.length){
+    openSidePanel('<div class="small-muted" style="padding:20px;">No sampled responses are available for this prompt and date.</div>', {wide:true});
+    return;
+  }
+  window.__fanoutPromptDetail={p,date,raceIdx,dimKey,runs,selected:0};
+  const sampleByModel={};
+  const options=runs.map((run,index)=>{
+    const sample=(sampleByModel[run.model]=(sampleByModel[run.model]||0)+1);
+    const score=run.scores.ours[dimKey];
+    const display=score==null?'not scored':dimKey==='favorability'?fmt1(score) : score;
+    return `<option value="${index}">${escXHtml(`${run.model} · sample ${sample} · our score ${display}`)}</option>`;
+  }).join('');
+  openSidePanel(`
+    <div style="margin-bottom:14px;">
+      <div class="card-title" style="font-size:16px;margin-bottom:3px;">${escXHtml(DIM_LABELS[dimKey])} prompt detail</div>
+      <div class="small-muted">${escXHtml(p.race)} · ${escXHtml(date)} · ${runs.length} sampled response${runs.length===1?'':'s'}</div>
+    </div>
+    <div class="callout" style="margin-bottom:12px;"><div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Prompt</div>${escapeXml(p.text)}</div>
+    <label style="display:block;font-size:12px;font-weight:650;margin-bottom:5px;">Sampled response</label>
+    <select id="fanout-prompt-run-select" style="width:100%;margin-bottom:12px;">${options}</select>
+    <div id="fanout-prompt-run-detail"></div>
+  `, {wide:true});
+  document.getElementById('fanout-prompt-run-select').addEventListener('change', event=>{
+    window.__fanoutPromptDetail.selected=+event.target.value;
+    renderFanoutPromptRunDetail();
+  });
+  renderFanoutPromptRunDetail();
+}
+function renderFanoutPromptRunDetail(){
+  const state=window.__fanoutPromptDetail;
+  const el=document.getElementById('fanout-prompt-run-detail');
+  if(!state||!el) return;
+  const run=state.runs[state.selected];
+  const ours=ourEntity(state.raceIdx), opp=oppEntity(state.raceIdx);
+  el.innerHTML=`
+    <div class="small-muted" style="margin-bottom:8px;">${escXHtml(run.model)} · ${escXHtml(run.date)}</div>
+    <div class="run-detail">${escapeXml(run.response||'Response text is unavailable for this run.')}</div>
+    ${scoreRationaleHtml(run,'ours',state.dimKey)}
+    ${opp ? scoreRationaleHtml(run,'opp',state.dimKey) : ''}
+  `;
 }
 function showAccuracyDetail(rowId){
   const run = getRunById(rowId);
@@ -2785,6 +2875,10 @@ function buildDimensionPage(key){
   const hasRootCause = HAS_ROOT_CAUSE_SECTION[key] && key!=='visibility'; // Visibility: comparison+trend+search now cover this ground
   el.innerHTML = `
     <div class="page-head"><div><div class="page-title">${DIM_LABELS[key]}</div></div></div>
+    ${key==='visibility' ? `<div class="card" style="margin-bottom:16px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;">
+      <div><div style="font-weight:650;font-size:13px;margin-bottom:3px;">Refusal treatment</div><div class="small-muted">Visibility defaults to substantive responses only, matching the other score dimensions. Turn this on to include refusals in visibility calculations.</div></div>
+      <label style="display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;color:var(--ink-soft);cursor:pointer;"><input id="visibility-refusal-toggle" type="checkbox" ${INCLUDE_REFUSAL_VISIBILITY?'checked':''} onchange="setVisibilityRefusalMode(this.checked)"> Include refusals</label>
+    </div>` : ''}
     ${insightSummaryHtml(key)}
     <div class="row2${key==='narrative'?' row2-stretch':''}">
       <div class="card">
@@ -2809,7 +2903,7 @@ function buildDimensionPage(key){
     ${hasRootCause ? dimSourceHtml(key) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
       <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
-      <div class="card-caption">Defaults to the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}); use Range to average over more. Sorted by biggest gap first. Click a race to see every prompt run for it, sorted lowest to highest.</div>
+      <div class="card-caption">Defaults to the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}); use Range to average over more. Sorted by biggest gap first. Click a race, then any prompt, to inspect the sampled response and scoring basis.</div>
       <div class="filterbar" style="margin-bottom:10px;">
         <div class="fitem"><label>Race</label><select id="${key}-tbl-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx, r.label)).join('')}</select></div>
         <div class="fitem"><label>Candidate</label><select id="${key}-tbl-cand"><option value="all">All</option></select></div>
@@ -2986,12 +3080,17 @@ function renderTopicComparison(){
 /* ============================================================================
    8.5 DIMENSION ROOT-CAUSE BREAKDOWN (Favorability & Depth "where is it falling short")
    ============================================================================ */
-function sampleDateRange(i0, i1, maxSamples){
-  const span = i1-i0+1;
-  if(span<=maxSamples) return Array.from({length:span}, (_,k)=>i0+k);
-  const stride = span/maxSamples;
-  const out = []; for(let k=0;k<maxSamples;k++) out.push(i0+Math.round(k*stride));
-  return [...new Set(out)];
+function observedDateIdxsForEntity(ent, i0, i1){
+  // A global date-axis sample can miss an entire recently onboarded workstream.  Use every
+  // date actually observed for this race in the selected window so a root-cause view is both
+  // current and complete.  Per-race scans are bounded and happen only after the user opens a
+  // detailed score page, so this is materially cheaper than a cross-release rescan.
+  const observed = new Set();
+  (ROWS_BY_RACE[ent.race]||[]).forEach(row=>{
+    const idx=DATE_INDEX_BY_VALUE[row.report_date];
+    if(idx!==undefined && idx>=i0 && idx<=i1) observed.add(idx);
+  });
+  return [...observed].sort((a,b)=>a-b);
 }
 function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOverride, blindOverride){
   // Uses the comparison chart's own filter bar (date range + prompt type) as the ambient context
@@ -3002,7 +3101,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOver
   // guarantees tie-out between the comparison chart, trend chart, and table by construction rather
   // than by three separately-written implementations staying in sync by coincidence.
   const [i0,i1] = rangeOverride || dateRangeIdx(key+'-cmp');
-  const dateIdxs = sampleDateRange(i0,i1,9);
+  const dateIdxs = observedDateIdxsForEntity(ent, i0, i1);
   // NOT filtered by p.dims.includes(key) -- confirmed directly against the real data that
   // dimensions_assessed's per-dimension tags don't reliably predict whether a row actually has a
   // score for that dimension (e.g. 230,021 of 279,617 rows whose dimensions_assessed does NOT
@@ -3055,7 +3154,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOver
             if(v===''||v==null) return;
             // Majority classification for this one item's own display bucket (drill-down list) --
             // the headline percentage above comes from addPct's fractional accumulation, not this.
-            const item = {prompt:p, score:+v, model:m, bucket: (+v>=50?'1':'0'), date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+            const item = {prompt:p, score:+v, model:m, bucket: (+v>=50?'1':'0'), date:dateStr, response:run.response, run, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
             catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
             const vals = {'1':+v, '0':100-(+v)};
             addPct(catBucket, vals); if(topicBucket) addPct(topicBucket, vals);
@@ -3066,7 +3165,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOver
             // Plurality classification (whichever of pos/neu/neg is largest) for this one item's
             // own display bucket -- real percentages, not the old fixed net-score threshold.
             const bucket = pos>=neu && pos>=neg ? 'pos' : (neg>=neu && neg>=pos ? 'neg' : 'neu');
-            const item = {prompt:p, score: 50 + (+pos - neg)/2, model:m, bucket, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+            const item = {prompt:p, score: 50 + (+pos - neg)/2, model:m, bucket, date:dateStr, response:run.response, run, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
             catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
             const vals = {pos:+pos, neu, neg};
             addPct(catBucket, vals); if(topicBucket) addPct(topicBucket, vals);
@@ -3076,7 +3175,7 @@ function scoresByCategoryForEntity(ent, key, topicFilter, modelFilter, rangeOver
         const v = run.scores[side][key];
         if(v===null||v===undefined) return;
         const b = String(v);
-        const item = {prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
+        const item = {prompt:p, score:v, model:m, bucket:b, date:dateStr, response:run.response, run, missingTopics: run.missingTopics ? run.missingTopics[side] : []};
         catBucket.items.push(item); if(topicBucket) topicBucket.items.push(item);
         catBucket.buckets[b] = (catBucket.buckets[b]||0)+1; catBucket.total++;
         if(topicBucket){ topicBucket.buckets[b] = (topicBucket.buckets[b]||0)+1; topicBucket.total++; }
@@ -3259,16 +3358,27 @@ function drillSrcBucket(key,b){
   else { window['__srcDrill_'+key] = {level:'category', bucket:b}; openDimSourceSidebar(key, b); }
 }
 function drillSrcReset(key){ window['__srcDrill_'+key] = {level:'bucket', bucket:null}; renderDimSource(key); }
-function openDimSourceSidebar(key, category, entIdOverride){
+async function openDimSourceSidebar(key, category, entIdOverride){
   let ent;
   if(entIdOverride){ ent = entityById(entIdOverride); }
   else { const candEl = document.getElementById(key+'src-cand'); const idx = parseInt(candEl.value,10); ent = ourEntity(idx); }
+  openSidePanel('<div class="small-muted" style="padding:20px;">Loading current response text…</div>', {wide:true});
+  try{
+    await ensureTextLoadedForRaceName(ent.race);
+  }catch(error){
+    openSidePanel(`<div class="err-banner">Response text could not load: ${escXHtml(String(error.message||error))}</div>`, {wide:true});
+    return;
+  }
   const isIssueTag = issueTagCategories().includes(category) && !BUCKET_LABELS[category];
   const bucketKey = Object.keys(BUCKET_LABELS).find(k=>BUCKET_LABELS[k]===category);
   const data = scoresByCategoryForEntity(ent, key, null);
   const d = isIssueTag ? data.byIssueTag[category] : (bucketKey ? data.byBucket[bucketKey] : data.byCategory[category]);
   const order = bucket3Order(key);
-  const items = d ? [...d.items].sort((a,b)=>order.indexOf(a.bucket)-order.indexOf(b.bucket)).slice(0,12) : [];
+  const items = d ? [...d.items].sort((a,b)=>{
+    const bucketOrder=order.indexOf(a.bucket)-order.indexOf(b.bucket);
+    if(bucketOrder) return bucketOrder;
+    return String(b.date).localeCompare(String(a.date));
+  }).slice(0,12) : [];
   const levers = (LEVERS_BY_DIM[key] && LEVERS_BY_DIM[key][category]) || LEVERS_BY_DIM[key]?.__default || [];
   const html = `
     <div style="margin-bottom:14px;">
@@ -3291,7 +3401,8 @@ function openDimSourceSidebar(key, category, entIdOverride){
           <div style="font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Missing narrative topics</div>
           <ul style="margin:0 0 0 16px;padding:0;line-height:1.5;font-size:12px;">${it.missingTopics.map(t=>`<li><b>${escXHtml(t)}</b> — ${escXHtml(narrativeTopicRecommendation(t))}</li>`).join('')}</ul>
         </div>` : ''}
-        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(it.response)}</div></details>
+        ${scoreRationaleHtml(it.run, ent.role==='ours'?'ours':'opp', key)}
+        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(it.response||'Response text is unavailable for this run.')}</div></details>
       </div>`).join('') || '<div class="small-muted">No scored responses for this category in range.</div>'}
   `;
   openSidePanel(html);
@@ -3938,8 +4049,15 @@ function renderAccuracyPriority(){
     }
   }
 }
-function openAccuracyCategorySidebar(entId, catKey){
+async function openAccuracyCategorySidebar(entId, catKey){
   const ent = entityById(entId);
+  openSidePanel('<div class="small-muted" style="padding:20px;">Loading current response text…</div>', {wide:true});
+  try{
+    await ensureTextLoadedForRaceName(ent.race);
+  }catch(error){
+    openSidePanel(`<div class="err-banner">Response text could not load: ${escXHtml(String(error.message||error))}</div>`, {wide:true});
+    return;
+  }
   const rows = computeAccuracyIssueRows().filter(r=>r.ent.id===entId && r.issue.category===catKey);
   const label = ACCURACY_CATEGORIES.find(c=>c.key===catKey)?.label || catKey;
   const levers = LEVERS_ACCURACY_BY_CAT[catKey]||[];
@@ -3962,7 +4080,7 @@ function openAccuracyCategorySidebar(entId, catKey){
         </div>
         <div style="font-size:12.5px;margin-bottom:4px;"><strong>Statement:</strong> ${escapeXml(r.issue.statement)}</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><strong>Why:</strong> ${escapeXml(r.issue.description)}</div>
-        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full prompt response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(r.response)}</div></details>
+        <details><summary style="cursor:pointer;font-size:11.5px;color:var(--brand);font-weight:600;">Full prompt response</summary><div class="run-detail" style="margin-top:6px;">${escapeXml(r.response||'Response text is unavailable for this run.')}</div></details>
       </div>`).join('') || '<div class="small-muted">No statements found.</div>'}
   `;
   openSidePanel(html);
@@ -5735,6 +5853,12 @@ async function initDashboard(){
   if(refusalToggle) refusalToggle.checked=INCLUDE_REFUSAL_VISIBILITY;
   collapseAllFilterbars();
   if(loadingEl) loadingEl.remove();
+  const resumePage=sessionStorage.getItem('aeo_resume_page');
+  if(resumePage){
+    sessionStorage.removeItem('aeo_resume_page');
+    const nav=document.querySelector(`.nav-item[data-page="${resumePage}"]`);
+    if(nav) nav.click();
+  }
 }
 initDashboard();
 </script>

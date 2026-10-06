@@ -1671,7 +1671,7 @@ function buildMetrics(){
     const rows = rowsForEntity(e);
     const side = e.role==='ours' ? 'candidate' : 'opponent';
 
-    const promptLevelVis = {}, promptLevelFav = {};
+    const promptLevelVis = {}, promptLevelFav = {}, promptLevelFavDist = {};
     rows.forEach(r=>{
       const vis = r['prompt_level_visibility_score_'+side];
       if(vis!=='' && vis!=null && visibilityEligible(r,side)) promptLevelVis[r.prompt_id] = +vis;
@@ -1682,7 +1682,10 @@ function buildMetrics(){
       // which distorted this dimension's 15% weight in the composite).
       const pos = r['prompt_level_favorability_pct_positive_'+side];
       const neg = r['prompt_level_favorability_pct_negative_'+side];
-      if(pos!=='' && pos!=null && neg!=='' && neg!=null) promptLevelFav[r.prompt_id] = 50 + (+pos - +neg)/2;
+      if(pos!=='' && pos!=null && neg!=='' && neg!=null){
+        promptLevelFav[r.prompt_id] = 50 + (+pos - +neg)/2;
+        promptLevelFavDist[r.prompt_id] = {pos:+pos, neu:+r['prompt_level_favorability_pct_neutral_'+side], neg:+neg};
+      }
     });
     const base = {
       visibility: avg(Object.values(promptLevelVis)),
@@ -1692,6 +1695,28 @@ function buildMetrics(){
       narrative: pctScored2(rows, 'narrative_alignment_score_'+side),
       consistency: pctScored2(rows, 'consistency_score_'+side)
     };
+    // These are the exact all-history pooled totals used by the Aggregate page. Keeping them
+    // on the raw-data path too prevents an individual dimension page from silently changing its
+    // value after it fetches drill-down rows. Visibility and favorability are prompt-level values,
+    // so each distinct prompt contributes once, using the same final observed value as base[];
+    // the remaining dimensions retain their literal response-level denominators.
+    const visValues = Object.values(promptLevelVis);
+    const favValues = Object.values(promptLevelFavDist);
+    const bucketTotals = {
+      visibility: {buckets:{'1':visValues.reduce((sum,v)=>sum+v,0)/100, '0':visValues.length-visValues.reduce((sum,v)=>sum+v,0)/100}, total:visValues.length},
+      favorability: favValues.length
+        ? {buckets:{pos:avg(favValues.map(v=>v.pos)), neu:avg(favValues.map(v=>v.neu)), neg:avg(favValues.map(v=>v.neg))}, total:100}
+        : {buckets:{pos:0,neu:0,neg:0},total:0}
+    };
+    ['depth','accuracy','consistency','narrative'].forEach(dim=>{
+      const field = dim==='narrative' ? 'narrative_alignment_score_'+side : dim+'_score_'+side;
+      const vals = rows.map(r=>r[field]).filter(v=>v!==''&&v!=null);
+      bucketTotals[dim] = {buckets:{
+        '0':vals.filter(v=>v==='0').length,
+        '1':vals.filter(v=>v==='1').length,
+        '2':vals.filter(v=>v==='2').length
+      },total:vals.length};
+    });
 
     // history[dim] = a single summary number per date (avg, or "% scoring 2"). history3[dim] =
     // the FULL bucket breakdown per date, same shape dailyBucketShare() computes on demand --
@@ -1748,7 +1773,7 @@ function buildMetrics(){
     rows.forEach(r=>{ const k=r.id+'|'+side; const gaps = NARR_GAPS_BY_ROW[k]; if(gaps){ gapDenom++; gaps.forEach(t=>{ gapCounts[t]=(gapCounts[t]||0)+1; }); } });
     const gaps = Object.entries(gapCounts).map(([topic,n])=>({topic, pctMissing: gapDenom? Math.round(100*n/gapDenom): 0})).sort((a,b)=>b.pctMissing-a.pctMissing);
 
-    METRICS[e.id] = {base, history, history3, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, gaps};
+    METRICS[e.id] = {base, history, history3, bucketTotals, accCounts:{0:n0,1:n1,2:n2,total:accVals.length}, gaps};
   });
 }
 const WEIGHTS = {visibility:0.40,favorability:0.15,depth:0.15,accuracy:0.15,narrative:0.15};
@@ -3207,7 +3232,7 @@ function entityBucketTotals(ent, key, modelFilter, rangeOverride, blindOverride)
   const fullHistoryRange = rangeOverride===undefined || (
     Array.isArray(rangeOverride) && rangeOverride[0]===0 && rangeOverride[1]===DATES.length-1
   );
-  if(!FULL_SCORE_DATA_READY && !modelFilter && fullHistoryRange && (blindOverride===undefined || blindOverride==='all')){
+  if(!modelFilter && fullHistoryRange && (blindOverride===undefined || blindOverride==='all')){
     const compact = METRICS[ent.id] && METRICS[ent.id].bucketTotals && METRICS[ent.id].bucketTotals[key];
     if(compact) return compact;
   }

@@ -1422,18 +1422,10 @@ const CITATION_SOURCE_SEGMENTS = [
   {key:'sources_search',label:'Search results shown',color:'#C98A2E'},
 ];
 function citationSourceBucket(sourceType){ return sourceType==='sources_references' ? 'sources_more' : sourceType; }
-// Some deliveries can pass the file-level audit but still contain a verified, material
-// source-content discontinuity.  Keep a small, explicit ledger for those dates rather than
-// presenting an implausible collapse as a real change in citation behavior.  Users can still
-// opt in to see them with the existing "include incomplete" control.
-const CITATION_DATE_INTEGRITY_OVERRIDES = Object.freeze({
-  '2026-09-29': {
-    status: 'partial',
-    label: 'verified citation-content anomaly',
-    detail: 'Policy Information Center citation cohorts disappear on Sep. 29 and return on Sep. 30; broader citation totals also drop materially on Sep. 29.'
-  }
-});
-function citationIntegrityOverride(date){ return CITATION_DATE_INTEGRITY_OVERRIDES[date] || null; }
+// Delivery completeness is determined from the delivery and race-continuity assets below.
+// Do not maintain unsupported date-specific content exclusions in the UI: any such exception
+// must be backed by a reproducible source-data reconciliation.
+function citationIntegrityOverride(_date){ return null; }
 function citationCoverageRecord(date){ return (CITATION_COVERAGE&&CITATION_COVERAGE.dates||[]).find(row=>row.date===date) || {date,status:'unknown',coverage_percent:null}; }
 function citationDataCoverageRecord(date){ return CITATION_DATA_COVERAGE[date] || {date,status:'unknown',observed_race_count:0,expected_race_count:0,missing_race_count:0}; }
 function citationDataCoverageIsKnown(date){ return Object.prototype.hasOwnProperty.call(CITATION_DATA_COVERAGE,date); }

@@ -687,16 +687,16 @@ function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/
 // Site Analytics, scores, and citations use independent immutable releases. Keeping release
 // identifiers in each URL prevents a browser cache from mixing assets built from different
 // inventories or scoring/citation universes.
-const SCORE_RELEASE_PREFIX = 'score-releases/co04-ws3-ws4-kickoff-2026-v1/';
+const SCORE_RELEASE_PREFIX = 'score-releases/refresh-sep28-oct11-20261014-v2/';
 // This derivative is immutable and records the exact source aggregate it summarizes. Keeping it
 // separate from the raw score release means adding a performance view never mutates scoring data.
-const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/co04-ws3-ws4-kickoff-2026-v3/';
-const CITATION_RELEASE_PREFIX = 'citation-releases/citation-repair-2026-09-29-v1/';
+const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/refresh-sep28-oct11-20261014-v2/';
+const CITATION_RELEASE_PREFIX = 'citation-releases/refresh-sep28-oct11-20261014-v3/';
 // This overlay is derived from (but never mutates) the sealed citation release above.  It adds
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
 // the complete Sources-URL corpus.
-const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/citation-repair-2026-09-29-v1/';
-const SITE_ANALYTICS_RELEASE_PREFIX = 'site-analytics-releases/citation-repair-2026-09-29-v1/';
+const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/refresh-sep28-oct11-20261014-v1/';
+const SITE_ANALYTICS_RELEASE_PREFIX = 'site-analytics-releases/refresh-sep28-oct11-20261014-v2/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 function scoreBootstrapUrl(relPath){ return heavyAssetUrl(SCORE_BOOTSTRAP_PREFIX + relPath); }
 function citationAssetUrl(relPath){ return heavyAssetUrl(CITATION_RELEASE_PREFIX + relPath); }
@@ -1475,11 +1475,11 @@ function citationCoverageLabel(date){
   return `complete delivery · ${data.observed_race_count}/${data.expected_race_count} active races`;
 }
 function citationDatesForView(start,end,includeIncomplete){
-  return [...new Set(CITATION_EVENTS.map(e=>e.date))]
-    .filter(d=>(!start || d>=start) && (!end || d<=end))
-    .filter(d=>includeIncomplete || citationDateComparable(d)).sort();
+  return [...new Set(CITATION_EVENTS.map(event=>event.date))]
+    .filter(date=>(!start || date>=start) && (!end || date<=end))
+    .filter(date=>includeIncomplete || citationDateComparable(date))
+    .sort();
 }
-
 function entityById(id){ return ENTITIES.find(e=>e.id===id); }
 function ourEntity(raceIdx){ return entityById('c'+raceIdx); }
 function oppEntity(raceIdx){ return entityById('o'+raceIdx); }
@@ -5316,19 +5316,14 @@ function buildCitationsPage(){
         <div style="display:flex;gap:10px;align-items:center;height:32px;">
           <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="cb-src-cited" checked> Cited in response</label>
           <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="cb-src-search"> Search results shown</label>
-          <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="cb-src-more" checked> Related/more sources</label>
+          <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;"><input type="checkbox" id="cb-src-more"> Related/more sources</label>
         </div>
       </div>
     </div>
+    <div class="small-muted" style="margin:-2px 0 10px;">Counts are Evertune source mentions in a rolling 100-iteration sample, not people, visits, or independent response citations. “Cited in response” is the default; related and search-surfaced sources stay separate unless explicitly selected.</div>
     <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-unresolved"> Include "Unresolved (Google wrapper)" citations — excluded by default everywhere on this page (Citation mix, Citations by prompt type, Citations by prompt) since Google AI Overview's own citation export mostly returns opaque redirect links instead of the real source, a known vendor-side limitation, not a gap in our data.</label>
     <label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:12px;margin-bottom:10px;"><input type="checkbox" id="cb-include-incomplete"> Include partial, pending, historically unknown, or incomplete-race-coverage citation observations — excluded by default so incomplete data cannot be mistaken for performance change.</label>
     <div class="kpis" id="cb-kpis"></div>
-    <div class="card section-gap">
-      <div class="card-title">Citation frequency over time</div>
-      <div class="card-caption">One stacked column per dated Evertune Sources-URL observation. Column height is point-in-time occurrence volume; the KPIs and all other Citation Breakout tables sum the complete observations across the selected reporting period. A faded, asterisked column is an incomplete delivery included by override.</div>
-      <div id="cb-trend"></div>
-      <div class="small-muted" id="cb-trend-note" style="margin-top:8px;"></div>
-    </div>
     <div class="card section-gap">
       <div class="card-title">Citation mix</div>
       <div class="card-caption">Cumulative source-list occurrences across the selected reporting period, by category.</div>
@@ -5478,6 +5473,41 @@ function citationDetailRequirement(){
 function renderCitationDetailRequirement(element){
   if(element) element.innerHTML=`<div class="small-muted">${escXHtml(citationDetailRequirement())}</div>`;
 }
+function setCitationRaceSelection(raceIdx){
+  const raceSelect=document.getElementById('cb-race');
+  if(!raceSelect) return;
+  raceSelect.value=String(raceIdx);
+  refreshXSel(raceSelect);
+}
+function chooseCitationRaceForCategoryDrill(raceIdx,catKey){
+  setCitationRaceSelection(raceIdx);
+  window.__cbDrill={level:'domain',catKey};
+  renderCitations();
+}
+function chooseCitationRaceForExistingDrill(raceIdx){
+  setCitationRaceSelection(raceIdx);
+  renderCitations();
+}
+function openCitationCategoryDrill(catKey){
+  if(selectedCitationRaceName()) window.__cbDrill={level:'domain',catKey};
+  else window.__cbDrill={level:'race',catKey};
+  renderCitations();
+}
+function renderCitationRaceChooser(element, events, title, onChoose){
+  if(!element) return;
+  const byRace={};
+  events.forEach(event=>{
+    if(event.raceIdx==null || !event.race) return;
+    const row=byRace[event.raceIdx]||(byRace[event.raceIdx]={raceIdx:event.raceIdx,race:event.race,count:0});
+    row.count+=event.count;
+  });
+  const rows=Object.values(byRace).sort((a,b)=>b.count-a.count||a.race.localeCompare(b.race));
+  element.innerHTML=`<div class="card-title" style="margin-bottom:8px;">${escXHtml(title)}</div><div class="card-caption">Citation detail is loaded one race at a time so the dashboard does not download the full raw citation corpus. Choose a race to continue to domains, URLs, and literal prompts.</div>`+
+    (rows.length?`<div class="scroll-table"><table><tr><th>Race</th><th>Source mentions</th></tr>${rows.map(row=>`<tr class="clickable" data-race-idx="${row.raceIdx}"><td style="white-space:normal;">${escXHtml(row.race)}</td><td>${row.count}</td></tr>`).join('')}</table></div>`:`<div class="small-muted section-gap">No races match the current filters.</div>`);
+  element.querySelectorAll('[data-race-idx]').forEach(row=>row.addEventListener('click',()=>{
+    (onChoose||chooseCitationRaceForExistingDrill)(+row.dataset.raceIdx);
+  }));
+}
 function cbCrumb(label, onClick, isLast){
   return `<span style="${isLast?'font-weight:700;color:var(--ink);':'cursor:pointer;color:var(--brand);'}" ${onClick?`onclick="${onClick}"`:''}>${escXHtml(label)}</span>`;
 }
@@ -5499,11 +5529,9 @@ function renderCitationTrend(events){
   const incomplete=dates.filter(date=>!citationDateComparable(date));
   document.getElementById('cb-trend-note').textContent=incomplete.length ? `* Included non-comparable observation(s): ${incomplete.map(date=>`${date} (${citationCoverageLabel(date)})`).join('; ')}.` : 'Only complete, all-active-race citation observations are included.';
 }
-
 function renderCitations(){
   const events = cbFilteredEvents();
   const detailEvents = cbFilteredDetailEvents();
-  renderCitationTrend(events);
   // "Citations" = summed source_count (each row's weight), not row count — a row is one
   // (domain,url,date,model,source_type) combination that can represent many actual citations
   // (DASHBOARD_DATA_SOURCES.md 3.6: "any date-range view sums source_count... then sorts
@@ -5513,7 +5541,7 @@ function renderCitations(){
   const byCat = {};
   events.forEach(e=>{ byCat[e.catKey] = (byCat[e.catKey]||0)+e.count; });
   document.getElementById('cb-kpis').innerHTML = `
-    <div class="kpi hi"><div class="kpi-label">Total citation occurrences</div><div class="kpi-value">${total}</div><div class="kpi-sub">cumulative across selected complete reporting dates</div></div>
+    <div class="kpi hi"><div class="kpi-label">Total source mentions</div><div class="kpi-value">${total}</div><div class="kpi-sub">cumulative across selected complete reporting dates</div></div>
     <div class="kpi"><div class="kpi-label">Unique domains</div><div class="kpi-value">${detailEvents===null?'—':new Set(detailEvents.map(e=>normalizeDomain(e.domain))).size}</div><div class="kpi-sub">${detailEvents===null?'select one race and open a drill for exact count':'within the selected race and filters'}</div></div>
     <div class="kpi"><div class="kpi-label">Candidate-owned share</div><div class="kpi-value">${total? fmt1(100*(byCat['Candidate/Officeholder-Owned Content']||0)/total):'—'}%</div></div>
     <div class="kpi"><div class="kpi-label">Local + national news share</div><div class="kpi-value">${total? fmt1(100*((byCat['Local/Regional News']||0)+(byCat['National News']||0))/total):'—'}%</div></div>`;
@@ -5532,9 +5560,12 @@ function renderCitations(){
 
   const drill = window.__cbDrill || {level:'category'};
   const crumbs = [cbCrumb('Citations', "window.__cbDrill={level:'category'};renderCitations();", drill.level==='category')];
-  if(drill.level==='domain'||drill.level==='url'||drill.level==='prompt'){
+  if(drill.level==='race'||drill.level==='domain'||drill.level==='url'||drill.level==='prompt'){
     const catInfo = CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
-    crumbs.push(' / '+cbCrumb(catInfo.label, `window.__cbDrill={level:'domain',catKey:'${drill.catKey}'};renderCitations();`, drill.level==='domain'));
+    crumbs.push(' / '+cbCrumb(catInfo.label, `openCitationCategoryDrill('${escXAttr(drill.catKey)}')`, drill.level==='race'));
+  }
+  if(drill.level==='race'){
+    crumbs.push(' / '+cbCrumb('Choose race', null, true));
   }
   if(drill.level==='url'||drill.level==='prompt'){
     const backToUrl = drill.level==='prompt' ? `window.__cbDrill={level:'url',catKey:'${drill.catKey}',domain:'${escXAttr(drill.domain)}'};renderCitations();` : null;
@@ -5551,11 +5582,16 @@ function renderCitations(){
       .sort((a,b)=> (a.key==='Other')-(b.key==='Other') || b.count-a.count); // "Other" always last, regardless of count
     const max = Math.max(1,...rows.map(r=>r.count));
     drillEl.innerHTML = `<div class="card-title" style="margin-bottom:8px;">Top categories by citation frequency</div>` + rows.map(r=>`
-      <div class="topic-row" style="cursor:pointer;" onclick="window.__cbDrill={level:'domain',catKey:'${r.key}'};renderCitations();">
+      <div class="topic-row" style="cursor:pointer;" onclick="openCitationCategoryDrill('${escXAttr(r.key)}')">
         <div class="topic-name" style="width:190px;">${escXHtml(r.label)}</div>
         <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
         <div class="topic-pct" style="width:54px;">${r.count}</div>
       </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
+  } else if(drill.level==='race'){
+    const catInfo=CITATION_CATEGORIES.find(c=>c.key===drill.catKey);
+    renderCitationRaceChooser(drillEl, events.filter(event=>event.catKey===drill.catKey), `Choose a race for "${catInfo.label}"`, raceIdx=>chooseCitationRaceForCategoryDrill(raceIdx,drill.catKey));
+  } else if(detailEvents===null){
+    renderCitationDetailRequirement(drillEl);
   } else if(drill.level==='domain'){
     // A selected race retains the existing, small per-race path.  With Race = All, load the
     // compact category index instead; it contains the same filter dimensions across every race.
@@ -5823,7 +5859,7 @@ function renderPromptSearchDetail(detailEvents){
   crumbsEl.innerHTML = crumbs.join('');
 
   if(detailEvents===null){
-    renderCitationDetailRequirement(detailEl);
+    renderCitationRaceChooser(detailEl, cbFilteredEvents().filter(event=>event.topicKey===tk), `Choose a race for "${labelText}"`);
     return;
   }
   const events = excludeUnresolvedUnlessIncluded(detailEvents).filter(e=>e.topicKey===tk);

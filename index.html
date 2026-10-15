@@ -1014,7 +1014,7 @@ async function openPartnerInsightsPage(page){
   if(!(await checkPartnerInsightsAuthed(partner))){ renderPartnerInsightsPasswordGate(page); return false; }
   if(PAGE_BUILT[page]) return true;
   try{
-    await Promise.all([ensurePartnerCitationsLoaded(partner), ensureOwnedDomainsLoaded()]);
+    await ensureOwnedDomainsLoaded();
     buildOwnedDomainsPage(page);
     PAGE_BUILT[page]=true;
     enhanceSelects(); collapseAllFilterbars();

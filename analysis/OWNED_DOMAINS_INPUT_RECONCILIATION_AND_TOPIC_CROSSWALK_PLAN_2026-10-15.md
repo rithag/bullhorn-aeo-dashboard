@@ -243,6 +243,42 @@ Require a before/after diff for any taxonomy revision. Acceptance checks include
 article-by-article and prompt-by-prompt review completion, no cross-race false matches, and a direct
 inspection of every mapping used in a published gap recommendation.
 
+## Crosswalk v1: October 15 record-level review
+
+The first versioned review is now stored in
+[`owned_domains_crosswalk_review_2026-10-15/first_pass_v1`](owned_domains_crosswalk_review_2026-10-15/first_pass_v1).
+It contains a decision, rationale, confidence value, and retained literal evidence for **every
+one of the 2,610 in-scope prompts and every one of the 660 project articles**: 611 AEO Sites
+articles, 41 Courier project articles, and 8 Heartland project articles. The builder rejects a
+release if either ledger no longer exactly matches its corresponding prompt or article roster.
+
+The review uses the article's intentional structure only: title, published topic tags, headings,
+and FAQ questions. A bounded body excerpt remains in the ledger for inspection, but cannot add a
+topic by itself. This prevents incidental language in a closing paragraph from turning a water
+article, for example, into transportation coverage. Courier and Heartland article assignments use
+the supplied, confirmed-project publisher registry's article-level topic tags and race scope; no
+general publisher editorial coverage enters project metrics.
+
+The controlled topic model now includes: candidate information, ballot and voting, campaign
+context, affordability, housing, jobs and economy, health care and personal freedom, public safety,
+courts and justice, immigration, education, data centers, water and environment, energy and
+utilities, infrastructure and local services, accountability, and foreign policy/war/national
+security. This added final group keeps Iran-war coverage from being misclassified as generic
+candidate information.
+
+Two row-level acceptance checks passed before the v5 release was assembled:
+
+1. Every reviewed prompt and article has at least one controlled topic.
+2. Across **22,050** retained article-to-prompt compatibility links, no AEO article is credited to
+   a prompt for a candidate it does not reference, and no Courier or Heartland article is credited
+   outside its declared race scope.
+
+The v1 review is deliberately conservative: a direct match requires a reviewed topic match plus
+the candidate or declared race scope. A general candidate profile can appear as broader context for
+the same candidate, but never as a direct answer to an unrelated policy prompt. Primary topics
+drive the mutually exclusive coverage heatmap; retained secondary topics are available for the
+drilldown and future taxonomy revisions.
+
 ## AEO direct-cost input
 
 Exclude annual domain and hosting costs, and exclude the user's own editing time, as requested.

@@ -1,0 +1,45 @@
+{
+  "prompts": 2610,
+  "articles": 660,
+  "prompt_primary_topics": {
+    "ballot-voting": 195,
+    "candidate-information": 560,
+    "public-safety": 311,
+    "housing": 191,
+    "campaign-context": 268,
+    "affordability": 190,
+    "energy-utilities": 18,
+    "immigration": 104,
+    "foreign-policy": 11,
+    "infrastructure-services": 71,
+    "water-environment": 56,
+    "data-centers": 67,
+    "jobs-economy": 119,
+    "health-care": 158,
+    "accountability": 6,
+    "courts-justice": 220,
+    "education": 65
+  },
+  "article_status": {
+    "individual_evidence_review_v1": 660
+  },
+  "article_primary_topics": {
+    "ballot-voting": 57,
+    "courts-justice": 59,
+    "water-environment": 41,
+    "data-centers": 82,
+    "health-care": 33,
+    "candidate-information": 23,
+    "campaign-context": 4,
+    "public-safety": 59,
+    "housing": 59,
+    "affordability": 68,
+    "energy-utilities": 11,
+    "jobs-economy": 34,
+    "education": 63,
+    "infrastructure-services": 35,
+    "immigration": 12,
+    "accountability": 13,
+    "foreign-policy": 7
+  }
+}

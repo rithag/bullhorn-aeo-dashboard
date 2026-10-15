@@ -8,13 +8,13 @@ Each chart is released only after its source universe, calculation, filter behav
 
 | Filter | Citation frequency and URL detail | Article-window performance | Quality trend | Search Console | Peer rank | Coverage views |
 | --- | --- | --- | --- | --- | --- |
-| Date range | Filters retained history | Milestones retain their fixed complete window; citation-frequency card honors the date range | Uses the latest complete score date in range | Exact Search Console date filter | Latest complete citation snapshot only | Latest complete citation snapshot only |
+| Date range | Filters retained history | Milestones retain their fixed complete window; project-citation frequency honors the date range | Fixed current cited cohort with complete score history through the latest citation snapshot | Exact Search Console date filter | Latest complete citation snapshot only | Latest complete citation snapshot only |
 | Workstream | Exact prompt-history filter | Reviewed articles linked to the selected prompt cohort | Exact prompt cohort | Reviewed articles linked to the selected prompt cohort | Exact workstream rank | Exact prompt universe |
 | Race | Exact prompt-history filter | Reviewed articles linked to the selected prompt cohort | Exact prompt cohort | Reviewed articles linked to the selected prompt cohort | Exact race rank when a peer universe exists | Exact prompt universe |
 | Candidate | Exact prompt-history filter | Reviewed articles linked to the selected prompt cohort | Exact prompt cohort | Reviewed articles linked to the selected prompt cohort | Exact aggregate across the candidate's selected prompts | Exact prompt universe |
 | Topic | Exact prompt-history filter | Reviewed articles linked to the selected prompt cohort | Exact prompt cohort | Reviewed articles linked to the selected prompt cohort | Exact aggregate across the selected topic prompts | Exact prompt universe |
 | Prompt | Exact prompt-history filter | Reviewed articles linked to the literal prompt | Exact prompt cohort | Reviewed articles linked to the literal prompt | Exact literal-prompt rank | Exact prompt universe |
-| Owned domain | Exact domain filter | Exact article-domain filter; cost is not apportioned to a domain | Citation cohort for that domain | Exact site or article-domain filter | Exact selected owned domain rank | Citation and relevant-article details for that domain |
+| Owned domain | Exact domain filter | Exact article-domain filter; cost is not apportioned to a domain | Citation cohort for that domain | Exact site or article-domain filter | Exact selected owned domain rank | Exact latest-citation reach and relevant-article details for that domain |
 
 ## Chart registry
 
@@ -75,6 +75,11 @@ Each chart is released only after its source universe, calculation, filter behav
 - The release has 583 unique site-day rows and 2,810 unique article-day rows, with no duplicate keys and no unknown site or article identifiers.
 - In the default dashboard date range, August 31 through October 11, the independently summed site-level source reports 38,959 impressions and 1,078 clicks. Regrouping by displayed date yields the same totals.
 - The Search Console card previously ignored content-scope filters. It now switches to reviewed article-level Search Console rows when workstream, race, candidate, topic, or prompt is selected. For example, the reviewed Amish Shah scope contains 81 monitored prompts, maps to 35 relevant articles, and yields 2,367 impressions and 96 clicks in the default range. The card explicitly labels this as article-mapped Google Search activity.
+
+## Domain-scoped coverage validation
+
+- The candidate portfolio, addressable-gap queue, and heatmap now recompute prompt reach from the selected domain’s latest complete citation records. Selecting a domain no longer inherits prompt coverage observed elsewhere in the network.
+- For example, `affordabilitydemocrats.com` reaches 10 of the 2,610 AEO monitored prompts at the October 11 snapshot, compared with 1,333 prompts reached by the full AEO portfolio. The domain-specific result exactly matches its ten latest prompt citations.
 
 ## Article-window scope and cost validation
 

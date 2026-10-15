@@ -51,11 +51,12 @@ Each chart is released only after its source universe, calculation, filter behav
 - The v6 browser asset contains **5,770** literal-prompt category leaderboards and **87,944** owned-domain rank rows. Every emitted owned row matched its leaderboard's rank, citation total, and population.
 - Candidate and topic filters aggregate the literal prompt leaderboards in the selected cohort. This makes their peer rank an exact sum of observed citations for the selected prompts, not a race-level proxy.
 
-## Crosswalk release v5 validation
+## Crosswalk release v7 validation
 
-- The v5 asset uses the versioned record-level crosswalk ledger: 2,610 reviewed prompts and 660 reviewed project articles.
-- Its 22,050 compatibility links passed a candidate and race-scope audit: zero AEO links cross a named candidate boundary, and zero partner links cross a declared race boundary.
-- Crosswalk-dependent visuals are live with the reviewed mappings. Their independent numerical tie-outs, along with milestone, quality-trend, and Search Console checks, remain in the work order below.
+- The v7 asset uses the versioned semantic-review ledger: 2,610 reviewed prompts and 660 reviewed project articles.
+- It corrects 299 primary topic classifications from the earlier first pass, including generic profile and comparison prompts that had inherited unrelated issue labels from metadata.
+- Its 23,176 retained compatibility links passed candidate, normalized declared-race, direct-topic, and coverage-link scope audits: zero AEO direct links cross a named candidate boundary and zero partner direct links cross a declared race boundary.
+- Crosswalk-dependent visuals are live with the corrected mappings. Their independent numerical tie-outs, along with milestone, quality-trend, and Search Console checks, remain in the work order below.
 
 ## Coverage and milestone validation
 

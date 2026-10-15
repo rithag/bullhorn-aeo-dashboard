@@ -1,0 +1,20 @@
+{
+  "articles": 660,
+  "per_topic_evidence_rows": 11220,
+  "by_owner": {
+    "aeo_sites": 611,
+    "courier": 41,
+    "heartland": 8
+  },
+  "precision_status": {
+    "verified": 640,
+    "corrected_topic_scope": 20
+  },
+  "decisions": {
+    "second_pass_confirmed": 640,
+    "removed_unsupported_topic": 20
+  },
+  "topic_removals": 20,
+  "topic_additions": 0,
+  "blockers": 0
+}

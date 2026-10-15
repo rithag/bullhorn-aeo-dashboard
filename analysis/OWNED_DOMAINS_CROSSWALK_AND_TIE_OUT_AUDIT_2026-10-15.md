@@ -43,6 +43,13 @@ The quality trend selects exact prompt-provider pairs from the latest cited coho
 - AI Mode is normalized to `ai_mode`, matching the score-release provider key. It is now included in the quality trend.
 - Accuracy can be shown as **not measured** for a day or very narrow cohort when no eligible accuracy sample exists. That is an intentional data state, not a zero score. Visibility, favorability, depth, narrative, and accuracy otherwise use the same calculation and refusal treatment as the rest of the dashboard.
 
+## Google Search Console scope reconciliation
+
+- The Site Analytics release contains the same **611 AEO articles** as the Owned Domains release.
+- All **3,456** article references in the reviewed candidate-topic index resolve to the Site Analytics article inventory.
+- The unscoped Search Console cards use 583 unique site-date observations. A scoped view uses 2,810 unique article-date observations only for reviewed, relevant articles. Neither table has duplicate entity-date keys.
+- The corresponding machine-readable check is `owned_domains_crosswalk_review_2026-10-15/gsc_scope_tie_out_v8.json`.
+
 ## Scope rule
 
 All Owned Domains headline, frequency, URL, prompt-reach, coverage, and quality metrics now use the same in-scope prompt roster. Opponent-only prompts and other excluded prompts do not contribute citations to the portfolio KPIs.

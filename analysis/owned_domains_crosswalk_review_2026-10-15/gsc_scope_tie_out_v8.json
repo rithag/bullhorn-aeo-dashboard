@@ -1,0 +1,12 @@
+{
+  "aeo_articles": 611,
+  "site_analytics_articles": 611,
+  "site_daily_rows": 583,
+  "article_daily_rows": 2810,
+  "candidate_topic_article_references": 3456,
+  "candidate_topic_article_references_resolve": true,
+  "site_daily_duplicate_keys": 0,
+  "article_daily_duplicate_keys": 0,
+  "unscoped_measurement": "site_daily rows; one observation per site and date",
+  "scoped_measurement": "article_daily rows restricted by reviewed candidate-topic article IDs; one observation per article and date"
+}

@@ -11,9 +11,9 @@ Each chart is released only after its source universe, calculation, filter behav
 | Date range | Filters retained history | Uses the latest complete score date in range | Latest complete citation snapshot only | Latest complete citation snapshot only |
 | Workstream | Exact prompt-history filter | Exact prompt cohort | Exact workstream rank | Exact prompt universe |
 | Race | Exact prompt-history filter | Exact prompt cohort | Exact race rank when a peer universe exists | Exact prompt universe |
-| Candidate | Exact prompt-history filter | Exact prompt cohort | Not recalculated, disclosed | Exact prompt universe |
-| Topic | Exact prompt-history filter | Exact prompt cohort | Not recalculated, disclosed | Exact prompt universe |
-| Prompt | Exact prompt-history filter | Exact prompt cohort | Not recalculated, disclosed | Exact prompt universe |
+| Candidate | Exact prompt-history filter | Exact prompt cohort | Exact aggregate across the candidate's selected prompts | Exact prompt universe |
+| Topic | Exact prompt-history filter | Exact prompt cohort | Exact aggregate across the selected topic prompts | Exact prompt universe |
+| Prompt | Exact prompt-history filter | Exact prompt cohort | Exact literal-prompt rank | Exact prompt universe |
 | Owned domain | Exact domain filter | Citation cohort for that domain | Exact selected owned domain rank | Citation and relevant-article details for that domain |
 
 ## Chart registry
@@ -42,7 +42,14 @@ Each chart is released only after its source universe, calculation, filter behav
 
 - 3,849 owned-domain rank rows and 289 category leaderboards passed row-by-row rank, citation, and population checks.
 - The chart reads prompt-level history for citation frequency and URL detail. Ten legacy Heartland citations without a prompt ID remain only in unfiltered totals, preventing an inaccurate association with any individual prompt.
-- Candidate, topic, and prompt filters are intentionally disclosed as not changing peer rank until a dedicated peer prompt-domain artifact exists. Race filter is exact where measured.
+- Race and workstream ranks use the compact category-domain cube. A later v6 prompt peer artifact supplies exact ranks for candidate, topic, and literal-prompt scopes.
+
+## Prompt peer-ranking release v6 validation
+
+- The source extraction scanned all **108** sorted race partitions from the same immutable citation release, covering **16,357,296** raw rows and retaining **37,863** prompt-category-domain totals at the latest complete snapshot.
+- The merged output validated contiguous partition coverage from 0 through 108, one source manifest generation, and one latest-complete date.
+- The v6 browser asset contains **5,770** literal-prompt category leaderboards and **87,944** owned-domain rank rows. Every emitted owned row matched its leaderboard's rank, citation total, and population.
+- Candidate and topic filters aggregate the literal prompt leaderboards in the selected cohort. This makes their peer rank an exact sum of observed citations for the selected prompts, not a race-level proxy.
 
 ## Crosswalk release v5 validation
 

@@ -707,7 +707,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v5/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v6/';
 let ownedDomainsLoadPromise = null;
 function ensureOwnedDomainsLoaded(){
   if(!ownedDomainsLoadPromise){
@@ -5071,6 +5071,30 @@ function renderOwnedPeerRanking(page,filters){
   const scope=filters.race!=='all'?'race::'+filters.race:(filters.workstream==='all'?'all':filters.workstream);
   const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain));
   const promptLimited=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
+  if(promptLimited && OWNED_DOMAINS.prompt_peer_rankings?.leaderboards){
+    const selected=odFilteredPrompts(filters), promptPeer=OWNED_DOMAINS.prompt_peer_rankings, totals={};
+    selected.forEach(prompt=>['Local/Regional News','National News','Blog/Informal Content'].forEach(category=>{
+      (promptPeer.leaderboards[category+'||prompt::'+prompt.prompt_id]||[]).forEach(entry=>{
+        const key=category+'||'+entry.domain; totals[key]=(totals[key]||0)+(+entry.citations||0);
+      });
+    }));
+    const byCategory={}; Object.entries(totals).forEach(([key,citations])=>{const [category,domain]=key.split('||');(byCategory[category]||(byCategory[category]=[])).push({domain,citations});});
+    const cache={}, config=OWNED_DOMAINS.groups[filters.group], promptRows=[];
+    Object.entries(config.domain_peer_categories||{}).forEach(([domain,category])=>{
+      const key=category+'||selected::'+selected.map(p=>p.prompt_id).sort().join(',');
+      if(!cache[key]) cache[key]=(byCategory[category]||[]).sort((a,b)=>b.citations-a.citations||a.domain.localeCompare(b.domain)).map((entry,index)=>({...entry,rank:index+1}));
+      const entries=cache[key]; if(!entries.length) return;
+      const entry=entries.find(item=>item.domain===domain)||{domain,citations:0,rank:entries.length+1};
+      promptRows.push({category,category_label:category.replace('Blog/Informal Content','Blogs'),domain,rank:entry.rank,citations:entry.citations,population:entries.length,leaderboard_key:key});
+    });
+    const displayed=filters.domain==='all'?promptRows:promptRows.filter(row=>row.domain===filters.domain);
+    el.innerHTML=`<div class="small-muted" style="margin-bottom:8px;">Exact selected-prompt ranking across ${selected.length} monitored prompt${selected.length===1?'':'s'} from the latest complete snapshot. Select an owned-domain row to open the complete ranked peer list.</div>${displayed.length?`<table><tr><th>Category</th><th>Owned domain</th><th>Rank</th><th>Citations</th><th>Domains ranked</th></tr>${displayed.map((r,i)=>`<tr class="clickable" data-od-prompt-peer="${i}"><td>${odEsc(r.category_label)}</td><td>${odEsc(r.domain)}</td><td>${odEsc(r.rank)}</td><td>${odNum(r.citations)}</td><td>${odNum(r.population)}</td></tr>`).join('')}</table>`:'<div class="small-muted">No peer ranking is measured for this filter yet.</div>`;
+    el.querySelectorAll('[data-od-prompt-peer]').forEach(node=>node.addEventListener('click',()=>{
+      const row=displayed[+node.dataset.odPromptPeer], leaders=cache[row.leaderboard_key]||[];
+      openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · exact selected-prompt cohort · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#EAF2FC;font-weight:700;':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}</table></div>`,{wide:true});
+    }));
+    return;
+  }
   el.innerHTML=`<div class="small-muted" style="margin-bottom:8px;">${odEsc(peer.scope)}. ${promptLimited?'Candidate, topic, and prompt filters do not change the peer rank yet because the peer cube is measured by race, not literal prompt. ':''}Select an owned-domain row to open the complete ranked peer list.</div>${rows.length?`<table><tr><th>Category</th><th>Owned domain</th><th>Rank</th><th>Citations</th><th>Domains ranked</th></tr>${rows.map((r,i)=>`<tr class="clickable" data-od-peer="${i}"><td>${odEsc(r.category_label)}</td><td>${odEsc(r.domain)}</td><td>${odEsc(r.rank)}</td><td>${odNum(r.citations)}</td><td>${odNum(r.population)}</td></tr>`).join('')}</table>`:'<div class="small-muted">No peer ranking is measured for this filter yet.</div>`;
   el.querySelectorAll('[data-od-peer]').forEach(node=>node.addEventListener('click',()=>{
     const row=rows[+node.dataset.odPeer], leaders=(peer.leaderboards||{})[row.leaderboard_key]||[];

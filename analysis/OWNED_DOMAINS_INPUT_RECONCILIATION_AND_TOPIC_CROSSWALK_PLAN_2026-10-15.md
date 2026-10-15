@@ -300,7 +300,9 @@ The completed evidence review and smallest reliable completion path are recorded
 
 ## Google Search Console
 
-No additional field specification is needed. A fresh OAuth authentication is the remaining access
-step. After it is available, refresh the 37-property domain and URL extracts, retain property/date
-coverage, canonicalize URLs against the article registry, and publish clicks and impressions only
-for the observed range. Traffic data remains independent of the citation completeness manifest.
+The current audited source is `gsc-refresh-20261015-v1`, created after a complete read-only OAuth
+refresh. It covers all 37 AEO properties and a 611-article canonical URL inventory. The dashboard
+keeps Google traffic separate from citation completeness: it shows site-level totals for an
+unscoped portfolio view and reviewed article-level totals when a workstream, race, candidate,
+topic, or prompt scope is selected. Future refreshes must retain property/date coverage and
+canonicalize URLs against the article registry before publishing observed clicks and impressions.

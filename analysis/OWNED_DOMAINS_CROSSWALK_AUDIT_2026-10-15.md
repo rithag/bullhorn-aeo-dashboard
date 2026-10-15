@@ -2,7 +2,7 @@
 
 ## Release reviewed
 
-- Dashboard release: `owned-domains-2026-10-15-v2`
+- Dashboard release: `owned-domains-2026-10-15-v6`
 - Citation snapshot used for reach and peer ranking: October 11, 2026, the latest complete delivery.
 - In-scope monitored prompts: 2,610 across WS1, WS2, WS3, and CO-04. LA Mayor and other excluded workstreams are not in this release.
 - Topic groups: 16 controlled labels.

@@ -30,7 +30,7 @@
 - Site Analytics Search Console impressions, clicks, CTR, and trend line.
 - Domain citation frequency, cited URL list, and latest complete prompt/provider drilldown.
 - Category peer rank with complete clickable leaderboard for each owned domain, filtered to all in-scope workstreams or a selected workstream.
-- Default ranked candidate-topic coverage queue, candidate-by-topic heatmap, and prompt/article drilldown.
+- Candidate coverage portfolio with prompts reached and uncovered topic-group count, followed by the ranked candidate-topic queue, candidate-by-topic heatmap, and prompt/article drilldown.
 
 ## Honest measurement limitations retained in the interface
 

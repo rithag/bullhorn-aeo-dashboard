@@ -707,7 +707,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v3/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v4/';
 let ownedDomainsLoadPromise = null;
 function ensureOwnedDomainsLoaded(){
   if(!ownedDomainsLoadPromise){
@@ -4831,8 +4831,10 @@ function odSelectedFilters(page){
   return {
     group,
     workstream:document.getElementById('od-workstream-'+page)?.value || state.workstream || 'all',
+    race:document.getElementById('od-race-'+page)?.value || state.race || 'all',
     candidate:document.getElementById('od-candidate-'+page)?.value || state.candidate || 'all',
     topic:document.getElementById('od-topic-'+page)?.value || state.topic || 'all',
+    prompt:document.getElementById('od-prompt-'+page)?.value || state.prompt || 'all',
     domain:document.getElementById('od-domain-'+page)?.value || state.domain || 'all',
     window:document.getElementById('od-window-'+page)?.value || state.window || '7',
     start:document.getElementById('od-start-'+page)?.value || state.start || dates[0] || '',
@@ -4842,16 +4844,33 @@ function odSelectedFilters(page){
 function odFilteredPrompts(filters){
   return odPromptRows(filters.group).filter(row=>
     (filters.workstream==='all'||row.workstream===filters.workstream) &&
+    (filters.race==='all'||row.race===filters.race) &&
     (filters.candidate==='all'||row.candidate_id===filters.candidate) &&
-    (filters.topic==='all'||row.topic_group===filters.topic)
+    (filters.topic==='all'||row.topic_group===filters.topic) &&
+    (filters.prompt==='all'||row.prompt_id===filters.prompt)
   );
 }
 function odFilteredCoverage(filters){
   const ids=new Set(odFilteredPrompts(filters).map(row=>row.prompt_id));
   return (OWNED_DOMAINS.coverage_rows||[]).filter(row=>row.group===filters.group&&ids.has(row.prompt_id));
 }
+function odHasPromptScope(filters){
+  return filters.workstream!=='all'||filters.race!=='all'||filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
+}
 function odFilteredHistory(filters){
-  return odDateRows(filters.group).filter(row=>
+  // Keep the compact, fully reconciled domain history as the source for an
+  // unfiltered view. A small number of legacy observations lack a retained
+  // prompt ID, so they cannot participate in a prompt-level drilldown but
+  // must remain in the portfolio total.
+  if(!odHasPromptScope(filters)){
+    return (OWNED_DOMAINS.citation_history||[]).filter(row=>row.group===filters.group&&
+      (!filters.start||row.date>=filters.start)&&(!filters.end||row.date<=filters.end)&&
+      (filters.domain==='all'||row.domain===filters.domain)
+    );
+  }
+  const allowed=new Set(odFilteredPrompts(filters).map(row=>row.prompt_id));
+  const rows=OWNED_DOMAINS.citation_prompt_history||[];
+  return rows.filter(row=>row.group===filters.group&&allowed.has(row.prompt_id)&&
     (!filters.start||row.date>=filters.start)&&(!filters.end||row.date<=filters.end)&&
     (filters.domain==='all'||row.domain===filters.domain)
   );
@@ -4873,16 +4892,20 @@ function buildOwnedDomainsPage(page){
   if(!config) throw new Error('No Owned Domains configuration exists for this page.');
   const prompts=odPromptRows(group), dates=odDates(group), state=odState(page);
   const workstreams=[...new Set(prompts.map(r=>r.workstream))].sort();
+  const races=[...new Set(prompts.map(r=>r.race))].sort().map(value=>({value,label:value}));
   const candidates=[...new Map(prompts.map(r=>[r.candidate_id,r.candidate])).entries()].map(([value,label])=>({value,label})).sort((a,b)=>a.label.localeCompare(b.label));
   const topics=[...new Map(prompts.map(r=>[r.topic_group,r.topic_label])).entries()].map(([value,label])=>({value,label})).sort((a,b)=>a.label.localeCompare(b.label));
+  const promptOptions=prompts.map(row=>({value:row.prompt_id,label:`${row.candidate} · ${row.prompt}`})).sort((a,b)=>a.label.localeCompare(b.label));
   const domains=(config.domains||[]).map(value=>({value,label:value})).sort((a,b)=>a.label.localeCompare(b.label));
   const host=document.getElementById('page-'+page);
   host.innerHTML=`
     <div class="page-head"><div><div class="page-title">${odEsc(config.label)}</div><div class="page-desc">Project-content performance, citation visibility, and the next addressable coverage gaps.</div></div></div>
     <div class="filterbar" id="od-filterbar-${page}">
       <div class="fitem"><label>Workstream</label><select id="od-workstream-${page}">${odSelectOptions(workstreams.map(value=>({value,label:value})),state.workstream,'All in scope')}</select></div>
+      <div class="fitem"><label>Race</label><select id="od-race-${page}">${odSelectOptions(races,state.race,'All races')}</select></div>
       <div class="fitem"><label>Candidate</label><select id="od-candidate-${page}">${odSelectOptions(candidates,state.candidate,'All candidates')}</select></div>
       <div class="fitem"><label>Topic</label><select id="od-topic-${page}">${odSelectOptions(topics,state.topic,'All topics')}</select></div>
+      <div class="fitem"><label>Prompt</label><select id="od-prompt-${page}">${odSelectOptions(promptOptions,state.prompt,'All monitored prompts')}</select></div>
       <div class="fitem"><label>Domain</label><select id="od-domain-${page}">${odSelectOptions(domains,state.domain,'All domains')}</select></div>
       <div class="fitem"><label>Performance window</label><select id="od-window-${page}"><option value="7"${String(state.window||'7')==='7'?' selected':''}>First 7 days</option><option value="14"${String(state.window)==='14'?' selected':''}>First 14 days</option><option value="30"${String(state.window)==='30'?' selected':''}>First 30 days</option></select></div>
       <div class="fitem"><label>Citation range start</label><input type="date" id="od-start-${page}" value="${odEsc(state.start||dates[0]||'')}"></div>
@@ -4905,7 +4928,7 @@ function buildOwnedDomainsPage(page){
     </section>
     <div class="small-muted" style="margin-top:22px;">Method notes: ${odEsc((OWNED_DOMAINS.assumptions||[]).join(' '))}</div>`;
   host.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',()=>{
-    odSetState(page,{workstream:document.getElementById('od-workstream-'+page).value,candidate:document.getElementById('od-candidate-'+page).value,topic:document.getElementById('od-topic-'+page).value,domain:document.getElementById('od-domain-'+page).value,window:document.getElementById('od-window-'+page).value,start:document.getElementById('od-start-'+page).value,end:document.getElementById('od-end-'+page).value});
+    odSetState(page,{workstream:document.getElementById('od-workstream-'+page).value,race:document.getElementById('od-race-'+page).value,candidate:document.getElementById('od-candidate-'+page).value,topic:document.getElementById('od-topic-'+page).value,prompt:document.getElementById('od-prompt-'+page).value,domain:document.getElementById('od-domain-'+page).value,window:document.getElementById('od-window-'+page).value,start:document.getElementById('od-start-'+page).value,end:document.getElementById('od-end-'+page).value});
     renderOwnedDomainsPage(page);
   }));
   renderOwnedDomainsPage(page);
@@ -4929,8 +4952,7 @@ function renderOwnedDomainsPage(page){
   const cost=config.cost||{};
   const planned=cost.planned_articles||cost.planned_articles_minimum;
   const costPer=cost.commitment_usd&&planned ? cost.commitment_usd/planned : null;
-  const scopedHistory=odFilteredScopedHistory(filters);
-  const citedTotal=(filters.workstream==='all'?projectHistory:odProjectHistory(scopedHistory,group)).reduce((s,r)=>s+(+r.citations||0),0);
+  const citedTotal=projectHistory.reduce((s,r)=>s+(+r.citations||0),0);
   document.getElementById('od-performance-kpis-'+page).innerHTML=`
     <div class="kpi hi"><div class="kpi-label">Project citations</div><div class="kpi-value">${odNum(citedTotal)}</div><div class="kpi-sub">source appearances in selected period</div></div>
     <div class="kpi"><div class="kpi-label">Prompts reached</div><div class="kpi-value">${odNum(reached.size)} of ${odNum(prompts.length)}</div><div class="kpi-sub">latest complete snapshot</div></div>
@@ -4997,11 +5019,10 @@ function renderOwnedDomainQuality(page,filters){
 
 function renderOwnedDomainVisibility(page,filters,history){
   const group=filters.group, el=document.getElementById('od-domain-frequency-'+page), byDomain={};
-  const scoped=filters.workstream==='all'?history:odFilteredScopedHistory(filters);
-  odProjectHistory(scoped,group).forEach(r=>{(byDomain[r.domain]||(byDomain[r.domain]={}))[r.date]=(byDomain[r.domain][r.date]||0)+r.citations;});
-  const dates=[...new Set(scoped.map(r=>r.date))].sort(), domains=Object.keys(byDomain).sort((a,b)=>Object.values(byDomain[b]).reduce((s,v)=>s+v,0)-Object.values(byDomain[a]).reduce((s,v)=>s+v,0));
+  odProjectHistory(history,group).forEach(r=>{(byDomain[r.domain]||(byDomain[r.domain]={}))[r.date]=(byDomain[r.domain][r.date]||0)+r.citations;});
+  const dates=[...new Set(history.map(r=>r.date))].sort(), domains=Object.keys(byDomain).sort((a,b)=>Object.values(byDomain[b]).reduce((s,v)=>s+v,0)-Object.values(byDomain[a]).reduce((s,v)=>s+v,0));
   const note=document.getElementById('od-domain-note-'+page);
-  note.textContent=filters.workstream==='all' ? 'The frequency trend covers the selected period and domain filter.' : 'The frequency trend is filtered to '+filters.workstream+'. URL detail below remains period-wide because historical URL data is not retained by workstream.';
+  note.textContent='The frequency trend, URL table, and citation total respond to the selected workstream, race, candidate, topic, prompt, domain, and date filters.';
   if(domains.length&&dates.length) lineChart('od-domain-frequency-'+page,dates,domains.slice(0,12).map((domain,i)=>({name:domain,values:dates.map(d=>byDomain[domain][d]||0),color:['#2E5EAA','#B56A47','#4F8B8B','#C98A2E','#8B7FB0','#7FA98F','#9A5872'][i%7]})),{min:0,max:Math.max(1,...domains.flatMap(d=>Object.values(byDomain[d]))),height:270});
   else el.innerHTML='<div class="small-muted">No matching citation observations.</div>';
   const byUrl={}; odProjectHistory(history,group).forEach(r=>{const k=r.domain+'||'+r.url;(byUrl[k]||(byUrl[k]={domain:r.domain,url:r.url,citations:0,dates:new Set()})).citations+=r.citations;byUrl[k].dates.add(r.date);});
@@ -5013,8 +5034,8 @@ function renderOwnedDomainVisibility(page,filters,history){
   const selected=urls.find(r=>r.domain+'||'+r.url===key), drill=document.getElementById('od-prompt-table-'+page), caption=document.getElementById('od-url-caption-'+page);
   if(!selected){caption.textContent='Select a URL to inspect its latest complete prompt citations.';drill.innerHTML='<div class="small-muted">No URL selected.</div>';return;}
   caption.textContent=selected.url;
-  const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(p=>[p.prompt_id,p])), byPrompt={};
-  (OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>r.group===group&&(r.project || !['courier','heartland'].includes(group))&&r.domain===selected.domain&&r.url===selected.url).forEach(r=>{(byPrompt[r.prompt_id]||(byPrompt[r.prompt_id]={citations:0,providers:new Set()})).citations+=r.citations;byPrompt[r.prompt_id].providers.add(r.provider);});
+  const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(p=>[p.prompt_id,p])), allowed=new Set(odFilteredPrompts(filters).map(p=>p.prompt_id)), byPrompt={};
+  (OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>r.group===group&&(r.project || !['courier','heartland'].includes(group))&&allowed.has(r.prompt_id)&&r.domain===selected.domain&&r.url===selected.url).forEach(r=>{(byPrompt[r.prompt_id]||(byPrompt[r.prompt_id]={citations:0,providers:new Set()})).citations+=r.citations;byPrompt[r.prompt_id].providers.add(r.provider);});
   const promptRows=Object.entries(byPrompt).map(([id,v])=>({id,...v,prompt:promptById[id]})).sort((a,b)=>b.citations-a.citations);
   drill.innerHTML=`<table><tr><th>Prompt</th><th>Race</th><th>Providers</th><th>Citations</th></tr>${promptRows.length?promptRows.map(r=>`<tr><td style="max-width:360px;white-space:normal;">${odEsc(r.prompt?.prompt||'Prompt text unavailable')}</td><td style="max-width:170px;white-space:normal;">${odEsc(r.prompt?.race||'')}</td><td>${odEsc([...r.providers].join(', '))}</td><td>${odNum(r.citations)}</td></tr>`).join(''):'<tr><td colspan="4" class="small-muted">No latest-complete prompt citations for this URL.</td></tr>'}</table>`;
 }
@@ -5047,13 +5068,13 @@ function renderOwnedPeerRanking(page,filters){
   if(!peer){ el.textContent='Peer-category ranking data will load with the next compact release artifact.'; return; }
   // The renderer is intentionally tolerant of a missing category or filter cube: it shows an
   // honest not-measured state rather than turning a lack of matching observations into rank zero.
-  const scope=filters.workstream==='all'?'all':filters.workstream;
+  const scope=filters.race!=='all'?'race::'+filters.race:(filters.workstream==='all'?'all':filters.workstream);
   const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain));
-  const narrowed=filters.candidate!=='all'||filters.topic!=='all';
-  el.innerHTML=`<div class="small-muted" style="margin-bottom:8px;">${odEsc(peer.scope)}. ${narrowed?'Candidate and topic filters do not change this category-level rank yet; the underlying peer cube is measured by workstream and race rather than individual prompt. ':''}Select an owned-domain row to open the complete ranked peer list.</div>${rows.length?`<table><tr><th>Category</th><th>Owned domain</th><th>Rank</th><th>Citations</th><th>Domains ranked</th></tr>${rows.map((r,i)=>`<tr class="clickable" data-od-peer="${i}"><td>${odEsc(r.category_label)}</td><td>${odEsc(r.domain)}</td><td>${odEsc(r.rank)}</td><td>${odNum(r.citations)}</td><td>${odNum(r.population)}</td></tr>`).join('')}</table>`:'<div class="small-muted">No peer ranking is measured for this filter yet.</div>`;
+  const promptLimited=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
+  el.innerHTML=`<div class="small-muted" style="margin-bottom:8px;">${odEsc(peer.scope)}. ${promptLimited?'Candidate, topic, and prompt filters do not change the peer rank yet because the peer cube is measured by race, not literal prompt. ':''}Select an owned-domain row to open the complete ranked peer list.</div>${rows.length?`<table><tr><th>Category</th><th>Owned domain</th><th>Rank</th><th>Citations</th><th>Domains ranked</th></tr>${rows.map((r,i)=>`<tr class="clickable" data-od-peer="${i}"><td>${odEsc(r.category_label)}</td><td>${odEsc(r.domain)}</td><td>${odEsc(r.rank)}</td><td>${odNum(r.citations)}</td><td>${odNum(r.population)}</td></tr>`).join('')}</table>`:'<div class="small-muted">No peer ranking is measured for this filter yet.</div>`;
   el.querySelectorAll('[data-od-peer]').forEach(node=>node.addEventListener('click',()=>{
     const row=rows[+node.dataset.odPeer], leaders=(peer.leaderboards||{})[row.leaderboard_key]||[];
-    openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · ${odEsc(scope==='all'?'all in-scope workstreams':scope)} · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#EAF2FC;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}${leaders.some(entry=>entry.domain===row.domain)?'':`<tr style="background:#EAF2FC;font-weight:700;"><td>${row.rank}</td><td>${odEsc(row.domain)}</td><td>0</td></tr>`}</table></div>`,{wide:true});
+    openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · ${odEsc(scope==='all'?'all in-scope workstreams':scope.replace(/^race::/,'race: '))} · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#EAF2FC;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}${leaders.some(entry=>entry.domain===row.domain)?'':`<tr style="background:#EAF2FC;font-weight:700;"><td>${row.rank}</td><td>${odEsc(row.domain)}</td><td>0</td></tr>`}</table></div>`,{wide:true});
   }));
 }
 

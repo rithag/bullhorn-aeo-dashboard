@@ -1,0 +1,872 @@
+{
+  "latest_complete": "2026-10-11",
+  "score_rows": 1792952,
+  "cohorts": {
+    "aeo_sites||affordabilitydemocrats.com": {
+      "prompt_provider_pairs": 10,
+      "score_rows": 1902,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 15,
+        "narrative": 34
+      },
+      "first_to_latest_pp": {
+        "visibility": -1.9948,
+        "favorability": -1.6572,
+        "depth": 14.5085,
+        "accuracy": 18.75,
+        "narrative": 20.9091
+      }
+    },
+    "aeo_sites||all": {
+      "prompt_provider_pairs": 2078,
+      "score_rows": 387916,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 33,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.0977,
+        "favorability": -0.6882,
+        "depth": 8.6427,
+        "accuracy": 20.4571,
+        "narrative": 12.1599
+      }
+    },
+    "aeo_sites||allentownwatch.com": {
+      "prompt_provider_pairs": 20,
+      "score_rows": 3784,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 23,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 1.6131,
+        "favorability": -0.7069,
+        "depth": 15.6087,
+        "accuracy": 7.2222,
+        "narrative": -1.1471
+      }
+    },
+    "aeo_sites||badgerstatereport.com": {
+      "prompt_provider_pairs": 6,
+      "score_rows": 1284,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 19,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 6.9158,
+        "favorability": -1.485,
+        "depth": -6.6667,
+        "accuracy": 33.3333,
+        "narrative": 16.6667
+      }
+    },
+    "aeo_sites||capitalcitywatch.com": {
+      "prompt_provider_pairs": 12,
+      "score_rows": 2024,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 16,
+        "narrative": 27
+      },
+      "first_to_latest_pp": {
+        "visibility": 4.8301,
+        "favorability": 0.548,
+        "depth": -26.0036,
+        "accuracy": 6.6667,
+        "narrative": -21.8727
+      }
+    },
+    "aeo_sites||centennialstatereport.com": {
+      "prompt_provider_pairs": 91,
+      "score_rows": 15681,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 20,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -0.0185,
+        "favorability": -0.0292,
+        "depth": 6.8362,
+        "accuracy": 33.7542,
+        "narrative": 11.3159
+      }
+    },
+    "aeo_sites||democraticwomenhouse.com": {
+      "prompt_provider_pairs": 2,
+      "score_rows": 428,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 5,
+        "narrative": 0
+      },
+      "first_to_latest_pp": {
+        "visibility": 0.7819,
+        "favorability": 0.1775,
+        "depth": -83.8384,
+        "accuracy": 66.6667,
+        "narrative": null
+      }
+    },
+    "aeo_sites||deserttake.com": {
+      "prompt_provider_pairs": 7,
+      "score_rows": 1300,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 10,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -3.1384,
+        "favorability": 0.5499,
+        "depth": 20.7358,
+        "accuracy": 49.3213,
+        "narrative": 22.6329
+      }
+    },
+    "aeo_sites||desmoinesmetrocourier.com": {
+      "prompt_provider_pairs": 81,
+      "score_rows": 16232,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 29,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 0.5661,
+        "favorability": -0.4352,
+        "depth": 3.7745,
+        "accuracy": 2.5457,
+        "narrative": 18.1957
+      }
+    },
+    "aeo_sites||driftlesstake.com": {
+      "prompt_provider_pairs": 22,
+      "score_rows": 4633,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 17,
+        "narrative": 34
+      },
+      "first_to_latest_pp": {
+        "visibility": 0.4863,
+        "favorability": -1.022,
+        "depth": 13.591,
+        "accuracy": 14.8948,
+        "narrative": 27.8102
+      }
+    },
+    "aeo_sites||eauclairebeacon.com": {
+      "prompt_provider_pairs": 43,
+      "score_rows": 8194,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 25,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 4.3307,
+        "favorability": -0.2001,
+        "depth": 7.2968,
+        "accuracy": -2.6419,
+        "narrative": 14.5547
+      }
+    },
+    "aeo_sites||electriccitywatch.com": {
+      "prompt_provider_pairs": 13,
+      "score_rows": 2670,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 17,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -1.0052,
+        "favorability": -1.4615,
+        "depth": 23.0769,
+        "accuracy": 13.1653,
+        "narrative": -2.8519
+      }
+    },
+    "aeo_sites||grandcanyonstatereport.com": {
+      "prompt_provider_pairs": 236,
+      "score_rows": 40455,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 29,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.3476,
+        "favorability": -0.5812,
+        "depth": 15.1803,
+        "accuracy": 20.6225,
+        "narrative": 11.1465
+      }
+    },
+    "aeo_sites||harrisburgbeacon.com": {
+      "prompt_provider_pairs": 52,
+      "score_rows": 10621,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -0.0264,
+        "favorability": -2.3648,
+        "depth": 21.3114,
+        "accuracy": 17.9487,
+        "narrative": 9.5556
+      }
+    },
+    "aeo_sites||hawkeyewatch.com": {
+      "prompt_provider_pairs": 16,
+      "score_rows": 3367,
+      "non_null_days_by_dimension": {
+        "visibility": 34,
+        "favorability": 34,
+        "depth": 34,
+        "accuracy": 20,
+        "narrative": 34
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.6308,
+        "favorability": 0.5475,
+        "depth": 25.6687,
+        "accuracy": 23.6842,
+        "narrative": 5.2963
+      }
+    },
+    "aeo_sites||henricocourier.com": {
+      "prompt_provider_pairs": 30,
+      "score_rows": 5014,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 20,
+        "narrative": 31
+      },
+      "first_to_latest_pp": {
+        "visibility": 6.5686,
+        "favorability": -1.6885,
+        "depth": -2.9975,
+        "accuracy": 12.299,
+        "narrative": 0.656
+      }
+    },
+    "aeo_sites||henricotake.com": {
+      "prompt_provider_pairs": 5,
+      "score_rows": 860,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 14,
+        "narrative": 26
+      },
+      "first_to_latest_pp": {
+        "visibility": -0.0016,
+        "favorability": -2.9277,
+        "depth": -10.7692,
+        "accuracy": 15.9091,
+        "narrative": -9.7202
+      }
+    },
+    "aeo_sites||iowacitybeacon.com": {
+      "prompt_provider_pairs": 71,
+      "score_rows": 14158,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 2.7432,
+        "favorability": -0.9551,
+        "depth": 14.5559,
+        "accuracy": 3.474,
+        "narrative": 24.4738
+      }
+    },
+    "aeo_sites||kalamazoobeacon.com": {
+      "prompt_provider_pairs": 24,
+      "score_rows": 4797,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 23,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.3934,
+        "favorability": -1.3797,
+        "depth": 6.2321,
+        "accuracy": 27.2263,
+        "narrative": -10.1967
+      }
+    },
+    "aeo_sites||keystonestatebulletin.com": {
+      "prompt_provider_pairs": 110,
+      "score_rows": 23177,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -3.4191,
+        "favorability": -1.8467,
+        "depth": 16.1577,
+        "accuracy": 2.7027,
+        "narrative": 9.4631
+      }
+    },
+    "aeo_sites||lakeshoretake.com": {
+      "prompt_provider_pairs": 20,
+      "score_rows": 4013,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 21,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 0.6581,
+        "favorability": -2.0379,
+        "depth": 3.4961,
+        "accuracy": 26.7474,
+        "narrative": -8.6658
+      }
+    },
+    "aeo_sites||lehighvalleycourier.com": {
+      "prompt_provider_pairs": 59,
+      "score_rows": 11950,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -7.196,
+        "favorability": -0.5561,
+        "depth": 14.6369,
+        "accuracy": -5.3388,
+        "narrative": 9.4624
+      }
+    },
+    "aeo_sites||lonestarstatereport.com": {
+      "prompt_provider_pairs": 13,
+      "score_rows": 2676,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 17,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 0.1719,
+        "favorability": -2.7197,
+        "depth": 8.6731,
+        "accuracy": 1.6667,
+        "narrative": 17.3589
+      }
+    },
+    "aeo_sites||magnoliastatereport.com": {
+      "prompt_provider_pairs": 40,
+      "score_rows": 8550,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 17,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 19.6284,
+        "favorability": 0.5856,
+        "depth": -5.8659,
+        "accuracy": 21.7949,
+        "narrative": 20.9595
+      }
+    },
+    "aeo_sites||olddominionstatereport.com": {
+      "prompt_provider_pairs": 7,
+      "score_rows": 1498,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 20,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -2.6321,
+        "favorability": -2.0021,
+        "depth": 1.8011,
+        "accuracy": 15.9341,
+        "narrative": 19.3548
+      }
+    },
+    "aeo_sites||oldpueblowatch.com": {
+      "prompt_provider_pairs": 13,
+      "score_rows": 2682,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -4.9964,
+        "favorability": -0.9378,
+        "depth": 16.417,
+        "accuracy": 38.8112,
+        "narrative": 36.648
+      }
+    },
+    "aeo_sites||paradisevalleybeacon.com": {
+      "prompt_provider_pairs": 34,
+      "score_rows": 6287,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 23,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 7.5332,
+        "favorability": 0.4942,
+        "depth": 27.6157,
+        "accuracy": 15.8222,
+        "narrative": 17.103
+      }
+    },
+    "aeo_sites||peachstatebulletin.com": {
+      "prompt_provider_pairs": 27,
+      "score_rows": 5428,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 16,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 5.0908,
+        "favorability": -0.5676,
+        "depth": 11.1017,
+        "accuracy": 30.0866,
+        "narrative": 24.9324
+      }
+    },
+    "aeo_sites||publicsafetydemocrats.com": {
+      "prompt_provider_pairs": 6,
+      "score_rows": 1269,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 11,
+        "narrative": 21
+      },
+      "first_to_latest_pp": {
+        "visibility": -9.4742,
+        "favorability": -0.8767,
+        "depth": 15.8748,
+        "accuracy": 25.0,
+        "narrative": -60.4651
+      }
+    },
+    "aeo_sites||rivertowntake.com": {
+      "prompt_provider_pairs": 6,
+      "score_rows": 1265,
+      "non_null_days_by_dimension": {
+        "visibility": 34,
+        "favorability": 34,
+        "depth": 34,
+        "accuracy": 13,
+        "narrative": 34
+      },
+      "first_to_latest_pp": {
+        "visibility": 2.1527,
+        "favorability": -1.5067,
+        "depth": 13.9152,
+        "accuracy": 27.2727,
+        "narrative": 3.0899
+      }
+    },
+    "aeo_sites||scrantonbeacon.com": {
+      "prompt_provider_pairs": 71,
+      "score_rows": 14275,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -0.2259,
+        "favorability": -2.0357,
+        "depth": 13.2153,
+        "accuracy": 8.5399,
+        "narrative": 13.9366
+      }
+    },
+    "aeo_sites||silverstatereport.com": {
+      "prompt_provider_pairs": 348,
+      "score_rows": 69157,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.762,
+        "favorability": -0.8046,
+        "depth": 9.5815,
+        "accuracy": 29.6326,
+        "narrative": 12.0865
+      }
+    },
+    "aeo_sites||tarheelstatereport.com": {
+      "prompt_provider_pairs": 404,
+      "score_rows": 76566,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 5.7865,
+        "favorability": 0.1144,
+        "depth": 6.7076,
+        "accuracy": 24.1142,
+        "narrative": 16.51
+      }
+    },
+    "aeo_sites||tucsonmetrobeacon.com": {
+      "prompt_provider_pairs": 20,
+      "score_rows": 4009,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 26,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -1.9016,
+        "favorability": -0.1834,
+        "depth": 17.0815,
+        "accuracy": -15.9649,
+        "narrative": 24.5455
+      }
+    },
+    "aeo_sites||wolverinestatereport.com": {
+      "prompt_provider_pairs": 376,
+      "score_rows": 61977,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 31,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 6.121,
+        "favorability": -0.3644,
+        "depth": 12.4327,
+        "accuracy": 30.966,
+        "narrative": 20.6532
+      }
+    },
+    "courier||all": {
+      "prompt_provider_pairs": 703,
+      "score_rows": 129365,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 32,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 2.1089,
+        "favorability": -1.2588,
+        "depth": 8.1981,
+        "accuracy": 5.6256,
+        "narrative": 13.1587
+      }
+    },
+    "courier||coppercourier.com": {
+      "prompt_provider_pairs": 118,
+      "score_rows": 21546,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 30,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 6.5357,
+        "favorability": -0.8072,
+        "depth": 11.7605,
+        "accuracy": 5.619,
+        "narrative": 15.9517
+      }
+    },
+    "courier||gandernewsroom.com": {
+      "prompt_provider_pairs": 79,
+      "score_rows": 14189,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 5.5286,
+        "favorability": -1.7301,
+        "depth": 14.3693,
+        "accuracy": 12.6568,
+        "narrative": 15.1911
+      }
+    },
+    "courier||iowastartingline.com": {
+      "prompt_provider_pairs": 225,
+      "score_rows": 44262,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 2.6129,
+        "favorability": -1.1013,
+        "depth": 4.6908,
+        "accuracy": 2.7473,
+        "narrative": 10.8374
+      }
+    },
+    "courier||keystonenewsroom.com": {
+      "prompt_provider_pairs": 187,
+      "score_rows": 32507,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 32,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -2.9864,
+        "favorability": -1.2936,
+        "depth": 9.9703,
+        "accuracy": 9.1421,
+        "narrative": 10.223
+      }
+    },
+    "courier||upnorthnewswi.com": {
+      "prompt_provider_pairs": 49,
+      "score_rows": 8717,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 19,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": -0.6799,
+        "favorability": -1.068,
+        "depth": -3.6376,
+        "accuracy": 8.0645,
+        "narrative": 18.4025
+      }
+    },
+    "courier||vadogwood.com": {
+      "prompt_provider_pairs": 45,
+      "score_rows": 8144,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 22,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 6.0071,
+        "favorability": -2.3026,
+        "depth": 11.3617,
+        "accuracy": -7.1059,
+        "narrative": 15.122
+      }
+    },
+    "forward_majority||all": {
+      "prompt_provider_pairs": 600,
+      "score_rows": 83464,
+      "non_null_days_by_dimension": {
+        "visibility": 17,
+        "favorability": 17,
+        "depth": 17,
+        "accuracy": 9,
+        "narrative": 17
+      },
+      "first_to_latest_pp": {
+        "visibility": -2.4889,
+        "favorability": 1.7413,
+        "depth": -2.0874,
+        "accuracy": 13.4909,
+        "narrative": 8.2123
+      }
+    },
+    "forward_majority||policyinformationcenter.org": {
+      "prompt_provider_pairs": 600,
+      "score_rows": 83464,
+      "non_null_days_by_dimension": {
+        "visibility": 17,
+        "favorability": 17,
+        "depth": 17,
+        "accuracy": 9,
+        "narrative": 17
+      },
+      "first_to_latest_pp": {
+        "visibility": -2.4889,
+        "favorability": 1.7413,
+        "depth": -2.0874,
+        "accuracy": 13.4909,
+        "narrative": 8.2123
+      }
+    },
+    "heartland||all": {
+      "prompt_provider_pairs": 99,
+      "score_rows": 19711,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.3353,
+        "favorability": -0.9331,
+        "depth": 6.7601,
+        "accuracy": -8.8438,
+        "narrative": 15.4906
+      }
+    },
+    "heartland||heartlandsignal.com": {
+      "prompt_provider_pairs": 99,
+      "score_rows": 19711,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 28,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 3.3353,
+        "favorability": -0.9331,
+        "depth": 6.7601,
+        "accuracy": -8.8438,
+        "narrative": 15.4906
+      }
+    },
+    "local_voter_guide||all": {
+      "prompt_provider_pairs": 199,
+      "score_rows": 33674,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 27,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 11.2702,
+        "favorability": 0.6128,
+        "depth": -2.5105,
+        "accuracy": 35.6722,
+        "narrative": 9.4145
+      }
+    },
+    "local_voter_guide||localvoterguide.com": {
+      "prompt_provider_pairs": 199,
+      "score_rows": 33674,
+      "non_null_days_by_dimension": {
+        "visibility": 35,
+        "favorability": 35,
+        "depth": 35,
+        "accuracy": 27,
+        "narrative": 35
+      },
+      "first_to_latest_pp": {
+        "visibility": 11.2702,
+        "favorability": 0.6128,
+        "depth": -2.5105,
+        "accuracy": 35.6722,
+        "narrative": 9.4145
+      }
+    }
+  },
+  "all_cited_pairs_have_score_rows": true,
+  "cohort_count": 48
+}

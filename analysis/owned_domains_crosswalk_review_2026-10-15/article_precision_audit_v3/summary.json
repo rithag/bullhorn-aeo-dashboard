@@ -1,0 +1,18 @@
+{
+  "articles": 660,
+  "by_owner": {
+    "aeo_sites": 611,
+    "courier": 41,
+    "heartland": 8
+  },
+  "precision_status": {
+    "verified": 640,
+    "corrected_topic_scope": 20
+  },
+  "decisions": {
+    "all_assigned_topics_verified": 640,
+    "removed_unsubstantiated_topic": 20
+  },
+  "topic_removals": 20,
+  "blockers": 0
+}

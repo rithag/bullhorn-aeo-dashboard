@@ -1,6 +1,6 @@
 # Owned Domains crosswalk and chart tie-out audit
 
-**Release audited:** `owned-domains-2026-10-15-v8`  
+**Release audited:** `owned-domains-2026-10-15-v9`  
 **Latest complete citation snapshot:** October 11, 2026  
 **Audit status:** passed
 
@@ -13,9 +13,17 @@
 - Candidate-specific direct links require both a shared controlled topic and an exact candidate or confirmed race scope. AEO candidate profiles may be parent-topic links only for that same candidate. Unscoped local explainers remain visible in citation-frequency reporting but cannot fill a candidate-specific coverage gap.
 - Article-performance windows ignore source events dated before an article’s verified first-live date. Two AEO URLs had such historical aliases; the citation-history view retains the observed source events, while time-to-first-citation and 7/14/30-day article metrics begin at the verified publication date.
 
+## Independent second pass
+
+- A separate v4 audit reread all **660** sources rather than reusing the v3 decision. It wrote **11,220** per-article/topic evidence records, including title terms, tags, headings, corroborating body sentences, and a row-level disposition. The evidence ledger is `owned_domains_crosswalk_review_2026-10-15/article_precision_audit_v4/article_topic_evidence_v4.csv`.
+- The second pass retained **1,880** directly supported article-topic assignments, removed **20** further secondary assignments, and found **no unreadable partner source or unresolved candidate/race scope**.
+- A structured retention ledger preserves valid coverage that appears in a dedicated FAQ answer, paragraph, bullet, or office-specific description rather than an exact heading. It avoids the converse mistake of allowing a tag or a generic mention to establish coverage.
+- The audit records **768** structurally visible secondary-subject observations for later content planning. They do not enter on-topic share or prompt-coverage KPIs unless added through a separately reviewed crosswalk expansion.
+- Twenty articles now have an explicit **No direct topic** decision. They remain in citations, rankings, URL drilldowns, and article-performance metrics, but cannot make an issue gap look covered.
+
 ## Release-wide chart reconciliation
 
-The release audit recomputes every compact chart input from its retained raw owned-event ledger. Its machine-readable results are in `owned_domains_crosswalk_review_2026-10-15/release_chart_tie_out_v8.json`.
+The release audit recomputes every compact chart input from its retained raw owned-event ledger. Its machine-readable results are in `owned_domains_crosswalk_review_2026-10-15/release_chart_tie_out_v9.json`.
 
 | Input checked | Result |
 | --- | --- |
@@ -25,7 +33,7 @@ The release audit recomputes every compact chart input from its retained raw own
 | Citation history | 9,768 rows, 687,619 source appearances |
 | Prompt-level citation history | 66,880 rows, totals exactly match citation history |
 | Latest citation drilldown | 7,491 rows, 62,812 source appearances |
-| Reviewed article-prompt links | 14,136: 12,105 direct and 2,031 parent-topic |
+| Reviewed article-prompt links | 14,108: 12,076 direct and 2,032 parent-topic |
 | Candidate-topic coverage cells | 7,749, all recalculated from the reviewed links |
 | Article milestones | 660 articles, all 7/14/30-day windows reconciled |
 | Category peer rankings | 289 leaderboards and 3,849 owned-domain rank rows |
@@ -35,7 +43,7 @@ All citation-history, prompt-history, workstream-history, latest-drilldown, cove
 
 ## Answer-quality cohort reconciliation
 
-The quality trend selects exact prompt-provider pairs from the latest cited cohort, then calculates the five dimensions from the immutable score aggregate. The domain-level and all-domain cohort audit is in `owned_domains_crosswalk_review_2026-10-15/quality_cohort_tie_out_v8.json`.
+The quality trend selects exact prompt-provider pairs from the latest cited cohort, then calculates the five dimensions from the immutable score aggregate. The domain-level and all-domain cohort audit is in `owned_domains_crosswalk_review_2026-10-15/quality_cohort_tie_out_v9.json`.
 
 - **48** all-domain and individual-domain cohorts were checked.
 - **3,180** cited prompt-provider pairs were checked.

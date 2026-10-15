@@ -30,6 +30,7 @@
 12. The October 15 interface audit confirmed that workstream, race, candidate, topic, prompt, and domain selections constrain the corresponding article-window, quality, Search Console, and coverage views. Domain-specific coverage is recomputed from that domain’s own latest citations rather than inherited from the network total.
 13. The semantic remediation reviewed each prompt from literal wording before metadata. It corrected 299 primary-topic classifications, eliminated generic profile/comparison prompts inheriting unrelated issues, and records the complete v2 rationale and confidence ledger alongside the dashboard source.
 14. The v3 article audit read every local source and all 49 confirmed publisher pages. It narrowed 20 unsupported issue mappings, prevented unscoped explainers from masking candidate-specific content gaps, excluded pre-publication URL aliases from article-speed clocks, and normalized Google AI Mode to the score-release provider key.
+15. The v4 audit reread the same 660 pages independently and wrote 11,220 per-article/topic evidence records. It identified 20 additional secondary issue assignments that did not have enough direct topical evidence to count as coverage. The affected articles remain fully represented in citation-frequency, URL, ranking, and performance views. Where no direct controlled topic remains, the article is explicitly classified as **No direct topic** rather than inheriting a seed topic.
 
 ## What is live
 
@@ -42,12 +43,13 @@
 - Citation frequency, URL detail, citation total, and latest prompt drilldown filters for workstream, race, candidate, topic, prompt, domain, and date.
 - Candidate coverage portfolio with prompts reached and uncovered topic-group count, followed by a top-25 ranked candidate-topic queue, expandable full queue, optional candidate-by-topic heatmap, and prompt/article drilldown. Partial coverage is classified separately from full reach.
 
-## v8 crosswalk remediation
+## v8 and v9 crosswalk remediation
 
 - General candidate-profile and head-to-head prompts now appear under **Candidate information & qualifications** unless they explicitly name an issue.
 - Multi-issue questions retain all literal subjects. A matching source seed can set their display order but cannot add a topic that does not appear in the question.
 - Word-boundary matching prevents false classifications caused by raw substrings, including the prior case where “different” could be read as “rent.”
 - The corrected v2 audit has complete coverage: 2,610 unique prompt records and 660 unique project-article records, with no blank topic, rationale, or semantic-basis field.
+- The v4 audit preserves legitimate dedicated paragraphs, FAQ answers, and office-specific explanations through a documented retention ledger, while rejecting a tag or one-off secondary mention as sufficient coverage on its own. It does not silently add newly discovered secondary subjects to KPI coverage; those remain visible as planning observations pending a separately reviewed expansion.
 
 ## Honest measurement limitations retained in the interface
 

@@ -19,7 +19,7 @@
 - The second pass retained **1,880** directly supported article-topic assignments, removed **20** further secondary assignments, and found **no unreadable partner source or unresolved candidate/race scope**.
 - A structured retention ledger preserves valid coverage that appears in a dedicated FAQ answer, paragraph, bullet, or office-specific description rather than an exact heading. It avoids the converse mistake of allowing a tag or a generic mention to establish coverage.
 - The audit records **768** structurally visible secondary-subject observations for later content planning. They do not enter on-topic share or prompt-coverage KPIs unless added through a separately reviewed crosswalk expansion.
-- Twenty articles now have an explicit **No direct topic** decision. They remain in citations, rankings, URL drilldowns, and article-performance metrics, but cannot make an issue gap look covered.
+- Two articles now have an explicit **No direct topic** decision. The 20 narrowed assignments span 20 articles; the remaining 18 retain another directly supported topic. All 20 remain in citations, rankings, URL drilldowns, and article-performance metrics, but cannot make the removed issue gap look covered.
 
 ## Release-wide chart reconciliation
 

@@ -4,14 +4,14 @@
 
 - Dashboard source deployed: `a0d9975` (`Add multi-window owned-domain performance metrics`)
 - Production page: `https://bullhorn-dashboard.netlify.app/`
-- Owned Domains release: `owned-domains-2026-10-15-v2`
-- Immutable data object: `gs://aeo-dashboard-assets-bullhorn/dashboard-data/owned-domain-releases/owned-domains-2026-10-15-v2/owned_domains_release.json`
+- Owned Domains release: `owned-domains-2026-10-15-v3`
+- Immutable data object: `gs://aeo-dashboard-assets-bullhorn/dashboard-data/owned-domain-releases/owned-domains-2026-10-15-v3/owned_domains_release.json`
 - Data object size: 12,334,749 bytes
 - SHA-256: `12773ccc41b095005635ec92bee5d25fe616ce23555410a2a6d89aa0c40f9634`
 
 ## Data validations passed
 
-1. Latest complete citation observation is October 11, 2026. Partial deliveries are excluded.
+1. Latest complete citation observation is October 11, 2026. Partial deliveries are excluded. The 7/14/30-day eligibility clock reads the citation release manifest's delivery-status calendar directly, rather than inferring complete dates from citation activity.
 2. The compact project citation history reconciles exactly to the owned-event evidence ledger after applying the correct outlet scope:
    - AEO Sites: all network URLs
    - Courier and Heartland Signal: confirmed project URLs and tracked aliases only
@@ -19,7 +19,7 @@
 3. Latest-snapshot prompt reach matches independently for all five groups.
 4. The release has coverage rows for every in-scope group: AEO Sites, Courier, Heartland Signal, Local Voter Guide, and Forward Majority.
 5. Every article metric has a consistent 7, 14, and 30-day milestone record. The legacy seven-day fields reconcile to the seven-day nested milestone record.
-6. The released HTML served in production contains `owned-domains-2026-10-15-v2` and the full-score load required for the five-dimension quality chart.
+6. The released HTML served in production contains `owned-domains-2026-10-15-v3` and the full-score load required for the five-dimension quality chart.
 7. The Site Analytics tab points to the current Google Search Console release: `gsc-refresh-20261015-v1`.
 
 ## What is live

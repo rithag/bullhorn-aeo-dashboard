@@ -5200,7 +5200,7 @@ function renderOwnedDomainsPage(page){
   const performanceKpis=document.getElementById('od-performance-kpis-'+page);
   if(performanceKpis) performanceKpis.innerHTML=[
     odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`),
-    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?'':`${odNum(direct)} direct-topic citations`),
+    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?`No citations in completed ${windowDays}-day article windows`:`${odNum(direct)} direct-topic citations`),
     odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible articles')
   ].join('');
   const citationTrend=document.getElementById('od-citation-trend-'+page), citationDates=[...new Set(projectHistory.map(row=>row.date))].sort();

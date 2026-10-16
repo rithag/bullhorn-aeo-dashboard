@@ -747,7 +747,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-16-v13-social-media/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-16-v14-social-crosswalk/';
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
 let ownedDomainsQualityLoadPromise = null;
@@ -4988,13 +4988,27 @@ function odState(page){ return window.__ownedDomainState?.[page] || {}; }
 function odSetState(page, patch){ window.__ownedDomainState=window.__ownedDomainState||{}; window.__ownedDomainState[page]={...odState(page),...patch}; }
 function odDates(group){ return [...new Set(odDateRows(group).map(r=>r.date))].sort(); }
 function odRankPeriod(page, filters){
-  const choice=odState(page).rankPeriod||'week';
+  const choice=odState(page).citationFrequencyPeriod||odState(page).rankPeriod||'week';
   if(choice==='selected') return {choice,filters};
   const end=OWNED_DOMAINS.latest_complete_citation_snapshot||odDates(filters.group).at(-1)||filters.end;
   if(!end) return {choice,filters};
   const cursor=new Date(end+'T12:00:00Z');
   cursor.setUTCDate(cursor.getUTCDate()-(choice==='day'?0:6));
   return {choice,filters:{...filters,start:cursor.toISOString().slice(0,10),end}};
+}
+function odFrequencyPeriodToggle(page, filters){
+  const choice=odRankPeriod(page,filters).choice;
+  return `<span class="od-toggle od-frequency-period-toggle"><button type="button" data-od-frequency-period="week" class="${choice==='week'?'active':''}">Latest 7 days</button><button type="button" data-od-frequency-period="day" class="${choice==='day'?'active':''}">Latest day</button><button type="button" data-od-frequency-period="selected" class="${choice==='selected'?'active':''}">Selected dates</button></span>`;
+}
+function odWireFrequencyPeriodToggle(page){
+  document.querySelectorAll('#page-'+page+' .od-frequency-period-toggle [data-od-frequency-period]').forEach(button=>{
+    if(button.dataset.odFrequencyWired) return;
+    button.dataset.odFrequencyWired='1';
+    button.addEventListener('click',()=>{
+      odSetState(page,{citationFrequencyPeriod:button.dataset.odFrequencyPeriod,rankPeriod:button.dataset.odFrequencyPeriod});
+      renderOwnedDomainsPage(page);
+    });
+  });
 }
 function odSelectedFilters(page){
   const group=odGroupForPage(page), state=odState(page), dates=odDates(group);
@@ -5007,6 +5021,7 @@ function odSelectedFilters(page){
     prompt:document.getElementById('od-prompt-'+page)?.value || state.prompt || 'all',
     domain:document.getElementById('od-domain-'+page)?.value || state.domain || (group==='social_media'?'reddit.com':'all'),
     window:document.getElementById('od-window-'+page)?.value || state.window || '7',
+    qualityCohort:state.qualityCohort || 'overlap',
     start:document.getElementById('od-start-'+page)?.value || state.start || dates[0] || '',
     end:document.getElementById('od-end-'+page)?.value || state.end || dates[dates.length-1] || '',
   };
@@ -5127,7 +5142,7 @@ function odPageTemplate(group){
   // tracker includes each post's publication date, so its 7/14/30-day yield
   // and observed time to first citation are measurable without an article
   // crosswalk.
-  if(group==='social_media') return {atGlance:false,yield:true,domainPath:true,portfolio:false,coverageMap:false,quality:true,ranking:false,gaps:false};
+  if(group==='social_media') return {atGlance:true,yield:true,domainPath:true,portfolio:true,coverageMap:true,quality:true,ranking:true,gaps:true};
   return {atGlance:true,yield:true,domainPath:true,portfolio:true,coverageMap:true,quality:true,ranking:true,gaps:true};
 }
 
@@ -5147,13 +5162,13 @@ function buildOwnedDomainsPage(page){
   const isSocialMedia=group==='social_media';
   const investmentHtml=['courier','heartland'].includes(group)?`<div class="card od-at-glance od-investment section-gap"><div class="card-title">Investment efficiency</div><div class="card-caption" id="od-investment-caption-${page}">Loading commitment allocation and citation efficiency.</div><div class="kpis" id="od-investment-kpis-${page}"></div></div>`:'';
   const atGlanceHtml=layout.atGlance?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div>${investmentHtml}</section>`:'';
-  const performanceExtras=layout.yield?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">${isSocialMedia?'The share of eligible tracked posts cited by the selected milestone and time to first observed citation.':'The share of eligible articles cited by the selected milestone, on-topic citation share, and time to first observed citation.'}</div><div id="od-conversion-chart-${page}"></div></div></div>`:'';
-  const qualityHtml=layout.quality?`<div class="card section-gap"><div class="card-title">Answer quality where cited</div><div class="card-caption">The five answer-quality measures for the cited prompt-provider cohort. Read the score change beside the trend before opening any response detail.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>`:'';
+  const performanceExtras=layout.yield?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">The share of eligible ${isSocialMedia?'tracked posts':'articles'} cited by the selected milestone, the share of citations that directly match the post or article's reviewed topic, and time to first observed citation.</div><div id="od-conversion-chart-${page}"></div></div></div>`:'';
+  const qualityHtml=layout.quality?`<div class="card section-gap"><div class="card-title">Answer quality where cited <span class="od-toggle" id="od-quality-toggle-${page}"></span></div><div class="card-caption">The five answer-quality measures for cited prompt-provider pairs. Choose whether to retain overlapping owned-portfolio citations or isolate answers citing this portfolio alone.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>`:'';
   const performanceScorecard=layout.yield?`<div class="card-caption" id="od-performance-caption-${page}" style="margin-bottom:12px;"></div><div class="kpis od-scorecard" id="od-performance-kpis-${page}"></div>`:'';
-  const domainPath=layout.domainPath?`<div class="card section-gap"><div class="card-title"><span id="od-domain-title-${page}">${isSocialMedia?'Citation frequency by tracked Reddit post':'Citation frequency by owned domain'}</span> ${isSocialMedia?`<button class="od-back" id="od-clear-social-theme-${page}"${state.socialTheme?'':' style="display:none;"'}>Show all content themes</button>`:`<button class="od-back" id="od-clear-domain-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}>Show all domains</button>`}</div><div class="card-caption" id="od-domain-caption-${page}">${isSocialMedia?'Each tracked post is ranked by final-answer citation frequency. Select a post for the monitored prompts, dates, and models behind it.':'The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.'}</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}" class="od-action-row"></div><div class="od-url-selection" id="od-url-selection-${page}"${state.urlKey?'':' style="display:none;"'}><div class="card-title">Prompt, date, and model detail <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>`:'';
+  const domainPath=layout.domainPath?`<div class="card section-gap"><div class="card-title"><span id="od-domain-title-${page}">${isSocialMedia?'Citation frequency by tracked Reddit post':'Citation frequency by owned domain'}</span> ${isSocialMedia?`<button class="od-back" id="od-clear-social-theme-${page}"${state.socialTheme?'':' style="display:none;"'}>Show all content themes</button>`:`<button class="od-back" id="od-clear-domain-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}>Show all domains</button>`}</div><div class="card-caption" id="od-domain-caption-${page}">${isSocialMedia?'Each tracked post is ranked by final-answer citation frequency. Select a post for the monitored prompts, dates, and models behind it.':'The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.'}</div><div class="small-muted" style="margin:8px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span>Citation-frequency period</span>${odFrequencyPeriodToggle(page,{group,workstream:state.workstream||'all',race:state.race||'all',candidate:state.candidate||'all',topic:state.topic||'all',prompt:state.prompt||'all',domain:state.domain||(group==='social_media'?'reddit.com':'all'),start:state.start||dates[0]||'',end:state.end||dates[dates.length-1]||''})}</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}" class="od-action-row"></div><div class="od-url-selection" id="od-url-selection-${page}"${state.urlKey?'':' style="display:none;"'}><div class="card-title">Prompt, date, and model detail <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>`:'';
   const portfolio=layout.portfolio?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Candidate coverage portfolio <button class="od-back" id="od-clear-candidate-${page}"${state.candidate&&state.candidate!=='all'?'':' style="display:none;"'}>Show all candidates</button></div><div class="card-caption">Candidates with the most unreached prompts are listed first. Select one to focus the gap queue.</div><div class="scroll-table" id="od-candidate-portfolio-${page}"></div><div id="od-candidate-expand-${page}" class="od-action-row"></div></div>${layout.coverageMap?`<div class="card"><div class="card-title">Coverage map</div><div class="card-caption">Use the map when looking for a pattern across candidates or topics. Select a cell for its prompts and article evidence.</div><details class="od-detail-fold"><summary>Show candidate × topic coverage map</summary><div class="scroll-table" id="od-coverage-heatmap-${page}"></div></details></div>`:''}</div>`:'';
   const domainFilterHtml=isSocialMedia?'':`<div class="fitem"><label>Domain</label><select id="od-domain-${page}">${odSelectOptions(domains,state.domain,'All domains')}</select></div>`;
-  const pageDescription=isSocialMedia?'Track whether the volunteer-posted Reddit content is appearing in monitored AI answers and which prompts cite each post.':'See whether project content is being found, where it is appearing, and which coverage gaps should be addressed next.';
+  const pageDescription=isSocialMedia?'Track how the reviewed volunteer-posted Reddit content performs, which monitored prompts it reaches, and which candidate-topic gaps remain.':'See whether project content is being found, where it is appearing, and which coverage gaps should be addressed next.';
   const visibilityIntro=layout.ranking?'Peer standing comes first, followed by the owned-domain, URL, and prompt path behind that visibility.':'Tracked Reddit posts are ranked by citation frequency. Open a post for the exact prompt, date, and model evidence.';
   const peerRankingHtml=layout.ranking?`<div class="card"><div class="card-title">Citation frequency ranking</div><div class="card-caption" id="od-peer-caption-${page}">Ranks use the latest complete citation snapshot (${odEsc(odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot))}). The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe.</div><div id="od-peer-ranking-${page}" class="small-muted">Preparing citation frequency ranking…</div></div>`:'';
   const gapsHtml=layout.gaps?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">3. Where are there still gaps?</div><div class="card-caption" style="margin-bottom:12px;">Start with the largest candidate-topic opportunities. A partial group stays visible until every monitored prompt in that group is reached.</div>
@@ -5202,6 +5217,13 @@ function buildOwnedDomainsPage(page){
   if(clearDomain) clearDomain.addEventListener('click',()=>{odSetState(page,{domain:'all',urlKey:null}); buildOwnedDomainsPage(page);});
   const clearUrl=host.querySelector('#od-clear-url-'+page);
   if(clearUrl) clearUrl.addEventListener('click',()=>{odSetState(page,{urlKey:null});renderOwnedDomainsPage(page);});
+  odWireFrequencyPeriodToggle(page);
+  const qualityToggle=host.querySelector('#od-quality-toggle-'+page);
+  if(qualityToggle){
+    const current=state.qualityCohort||'overlap';
+    qualityToggle.innerHTML=[['overlap','Overlap allowed'],['exclusive','Portfolio only']].map(([value,label])=>`<button type="button" data-od-quality-cohort="${value}" class="${current===value?'active':''}">${label}</button>`).join('');
+    qualityToggle.querySelectorAll('[data-od-quality-cohort]').forEach(button=>button.addEventListener('click',()=>{odSetState(page,{qualityCohort:button.dataset.odQualityCohort});renderOwnedDomainsPage(page);}));
+  }
   renderOwnedDomainsPage(page);
 }
 
@@ -5224,15 +5246,6 @@ function renderOwnedDomainsPage(page){
   const scopedArticleMetrics=(OWNED_DOMAINS.article_metrics[group]||[]).filter(r=>{
     const item=articleById[r.article_id]||{};
     if(filters.domain!=='all'&&item.domain!==filters.domain) return false;
-    // Social has no article-to-topic crosswalk because its page intentionally
-    // omits gap/on-topic metrics. Keep post-window metrics responsive to the
-    // tracked post's candidate and race metadata instead of treating every
-    // prompt-level filter as an empty article scope.
-    if(isSocialMedia){
-      if(filters.candidate!=='all'&&!(item.candidate_refs||[]).includes(filters.candidate)) return false;
-      if(filters.race!=='all'&&!(item.race_scopes||[]).includes(filters.race)) return false;
-      return true;
-    }
     return !isNarrowed||narrowedIds.has(r.article_id);
   });
   const metrics=scopedArticleMetrics.filter(r=>milestoneFor(r)?.status==='eligible');
@@ -5248,8 +5261,6 @@ function renderOwnedDomainsPage(page){
   const citedTotal=projectHistory.reduce((s,r)=>s+(+r.citations||0),0);
   const allocatedCostPerCitation=allocatedCost!=null&&citedTotal>0 ? allocatedCost/citedTotal : null;
   const reachRate=measuredCoverage.length?reached.size/measuredCoverage.length:null, citedRate=eligibleArticles?citedArticles.length/eligibleArticles:null, onTopic=allMilestone?direct/allMilestone:null, medianDays=firstDays.length?odMedian(firstDays):null;
-  const socialCandidateIds=isSocialMedia?new Set((OWNED_DOMAINS.articles||[]).filter(article=>article.group==='social_media').flatMap(article=>article.candidate_refs||[])):new Set(), socialPromptRows=isSocialMedia?odFilteredPrompts(filters).filter(prompt=>socialCandidateIds.has(prompt.candidate_id)):[], socialReached=isSocialMedia?new Set((OWNED_DOMAINS.latest_citation_drilldown||[]).filter(row=>row.group==='social_media'&&socialPromptRows.some(prompt=>prompt.prompt_id===row.prompt_id)).map(row=>row.prompt_id)):new Set();
-  const socialPromptReach=isSocialMedia&&socialPromptRows.length?socialReached.size/socialPromptRows.length:null;
   const footprintCaption=document.getElementById('od-footprint-caption-'+page);
   if(footprintCaption) footprintCaption.textContent=`${odNum(measuredCoverage.length)} monitored prompts successfully checked in ${odScopeLabel(filters)}. Citation frequency uses the selected period; prompt reach uses the latest complete citation snapshot.`;
   const footprint=document.getElementById('od-footprint-kpis-'+page);
@@ -5277,6 +5288,7 @@ function renderOwnedDomainsPage(page){
   const performanceKpis=document.getElementById('od-performance-kpis-'+page);
   if(performanceKpis) performanceKpis.innerHTML=(isSocialMedia?[
     odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible post${eligibleArticles===1?'':'s'}`),
+    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?`No citations in completed ${windowDays}-day post windows`:`${odNum(direct)} direct-topic citations`),
     odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible posts')
   ]:[
     odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`),
@@ -5380,7 +5392,7 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics
   if(conversion){
     const onTopic=summary.onTopic, citedRate=summary.citedRate, medianDays=summary.firstDays.length?odMedian(summary.firstDays):null;
     const citedLabel=isSocialMedia?'Posts':'Articles';
-    const onTopicRow=isSocialMedia?'':`<div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div>`;
+    const onTopicRow=`<div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div>`;
     conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">${citedLabel} cited by day ${windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div>${onTopicRow}<div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
   }
 }
@@ -5391,7 +5403,15 @@ function renderOwnedDomainQuality(page,filters){
   const projectEligible=r=>r.project || !['courier','heartland'].includes(r.group);
   // Both the citation release and the compact quality cohort use the canonical provider key
   // (for example `chatgpt_search`). Do not translate it to the display label here.
-  const cohort=new Set((OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>r.group===filters.group&&projectEligible(r)&&allowed.has(r.prompt_id)&&(filters.domain==='all'||r.domain===filters.domain)).map(r=>r.prompt_id+'|'+r.provider));
+  const latestRows=(OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>projectEligible(r)&&allowed.has(r.prompt_id));
+  const targetPairs=new Set(latestRows.filter(r=>r.group===filters.group&&(filters.domain==='all'||r.domain===filters.domain)).map(r=>r.prompt_id+'|'+r.provider));
+  const portfoliosByPair={};
+  latestRows.forEach(row=>{
+    const key=row.prompt_id+'|'+row.provider;
+    (portfoliosByPair[key]||(portfoliosByPair[key]=new Set())).add(row.group);
+  });
+  const qualityMode=filters.qualityCohort||'overlap';
+  const cohort=new Set([...targetPairs].filter(key=>qualityMode==='overlap'||(portfoliosByPair[key]||new Set()).size===1));
   const compact=OWNED_DOMAINS.quality_cohort;
   if(!compact || !compact.columns || !compact.row_count){
     const chart=document.getElementById('od-quality-chart-'+page), note=document.getElementById('od-quality-note-'+page), change=document.getElementById('od-quality-change-'+page);
@@ -5430,7 +5450,8 @@ function renderOwnedDomainQuality(page,filters){
   const baselineIndex=dates.indexOf(baselineDate);
   const changes=dims.map(dim=>{const last=series[dim].map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop(),a=baselineIndex<0?null:series[dim][baselineIndex],b=last==null?null:series[dim][last],delta=a==null||b==null?null:b-a;return {dim,a,b,delta};});
   const baselineLabel=baselineDate?odShortDate(baselineDate):'Baseline';
-  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort. The y-axis begins at ${axisMin} to make movement readable; changes use the ${baselineLabel} baseline where measured.`;
+  const overlapCount=targetPairs.size-cohort.size;
+  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort. ${qualityMode==='exclusive'?(overlapCount?`${overlapCount} pair${overlapCount===1?' was':'s were'} excluded because another owned portfolio was also cited in that final answer.`:'No other owned portfolio overlapped this cohort.'):'Overlap with other owned portfolios is allowed.'} The y-axis begins at ${axisMin} to make movement readable; changes use the ${baselineLabel} baseline where measured.`;
   if(change) change.innerHTML=`<div class="small-muted" style="grid-column:1/-1;">${odEsc(baselineLabel)} / latest / change</div>${changes.map(row=>`<div class="od-quality-change-row"><span class="dim">${odEsc(DIM_LABELS[row.dim])}</span><span>${row.a==null?'Not measured':fmt1(row.a)}</span><span>${row.b==null?'—':fmt1(row.b)}</span><span class="delta ${row.delta==null?'neutral':row.delta>.5?'good':row.delta<-.5?'bad':'neutral'}">${row.delta==null?'—':(row.delta>0?'+':'')+fmt1(row.delta)+' pp'}</span></div>`).join('')}`;
 }
 
@@ -5443,25 +5464,26 @@ function odSocialPostLabel(post){
   return (match?'r/'+match[1]:'Reddit')+' · '+odShortDate(post.article?.published_on||'');
 }
 function renderSocialMediaVisibility(page,filters,history){
+  const period=odRankPeriod(page,filters), periodFilters=period.filters;
   const title=document.getElementById('od-domain-title-'+page), caption=document.getElementById('od-domain-caption-'+page);
   const note=document.getElementById('od-domain-note-'+page), expand=document.getElementById('od-domain-expand-'+page);
   const selection=document.getElementById('od-url-selection-'+page), clearTheme=document.getElementById('od-clear-social-theme-'+page);
   const articles=(OWNED_DOMAINS.articles||[]).filter(article=>article.group==='social_media');
   const historyByUrl={};
-  odProjectHistory(history,'social_media').forEach(row=>{
+  odProjectHistory(odFilteredHistory(periodFilters),'social_media').forEach(row=>{
     const key=odCitationUrlKey(row.url);
     historyByUrl[key]=(historyByUrl[key]||0)+(+row.citations||0);
   });
   const posts=articles.map(article=>{
     const url=odCitationUrlKey(article.url), key='reddit.com||'+url;
-    return {article,url,key,theme:article.title||'Tracked Reddit post',citations:historyByUrl[url]||0};
+    return {article,url,key,theme:article.content_theme||article.title||'Tracked Reddit post',citations:historyByUrl[url]||0};
   }).sort((a,b)=>b.citations-a.citations||a.url.localeCompare(b.url));
   const state=odState(page), theme=posts.some(post=>post.theme===state.socialTheme)?state.socialTheme:null;
   if(clearTheme) clearTheme.style.display=theme?'':'none';
   if(expand) expand.innerHTML='';
   if(!theme){
     if(title) title.textContent='Citation frequency by Reddit content theme';
-    if(caption) caption.textContent='Posts carrying the same voter-guide content are grouped together. Select a theme to see each individual Reddit post and its citation frequency.';
+    if(caption) caption.textContent=`Posts carrying the same voter-guide content are grouped together. Showing ${period.choice==='selected'?`${odShortDate(periodFilters.start)}–${odShortDate(periodFilters.end)}`:period.choice==='day'?'the latest complete day':'the latest 7 complete days'}. Select a theme to see each individual Reddit post and its citation frequency.`;
     if(note) note.textContent='Only the canonical posts and short-link aliases in the volunteer tracker are included; each theme is a distinct local voter-guide message.';
     if(selection) selection.style.display='none';
     const themes={};
@@ -5476,7 +5498,7 @@ function renderSocialMediaVisibility(page,filters,history){
     return;
   }
   if(title) title.textContent='Citation frequency by Reddit post';
-  if(caption) caption.textContent='Posts carrying “'+theme+'” are ranked by final-answer citation frequency. Select a post for the exact prompt, date, and model evidence.';
+  if(caption) caption.textContent='Posts carrying “'+theme+'” are ranked by final-answer citation frequency in the selected citation-frequency period. Select a post for the exact prompt, date, and model evidence.';
   if(note) note.textContent='Post labels show the subreddit and tracker posting date rather than the full URL.';
   const themedPosts=posts.filter(post=>post.theme===theme);
   const current=themedPosts.some(post=>post.key===state.urlKey)?state.urlKey:null;
@@ -5507,13 +5529,13 @@ function renderSocialMediaVisibility(page,filters,history){
     return;
   }
   const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(prompt=>[prompt.prompt_id,prompt]));
-  const allowed=new Set(odFilteredPrompts(filters).map(prompt=>prompt.prompt_id)), observations={};
+  const allowed=new Set(odFilteredPrompts(periodFilters).map(prompt=>prompt.prompt_id)), observations={};
   allEvents.filter(event=>
     event.source_type==='sources_cited' &&
     normalizeDomain(event.domain)==='reddit.com' &&
     odCitationUrlKey(event.url)===selected.url &&
     allowed.has(event.promptId) &&
-    (!filters.start||event.date>=filters.start) && (!filters.end||event.date<=filters.end)
+    (!periodFilters.start||event.date>=periodFilters.start) && (!periodFilters.end||event.date<=periodFilters.end)
   ).forEach(event=>{
     const model=event.model||'Not retained in this citation-detail release';
     const key=[event.promptId,event.date,model].join('||');
@@ -5525,8 +5547,9 @@ function renderSocialMediaVisibility(page,filters,history){
 }
 function renderOwnedDomainVisibility(page,filters,history){
   if(filters.group==='social_media'){ renderSocialMediaVisibility(page,filters,history); return; }
+  const period=odRankPeriod(page,filters), periodFilters=period.filters;
   const group=filters.group, config=OWNED_DOMAINS.groups[group], el=document.getElementById('od-domain-frequency-'+page), byDomain={};
-  odProjectHistory(history,group).forEach(r=>{(byDomain[r.domain]||(byDomain[r.domain]={}))[r.date]=(byDomain[r.domain][r.date]||0)+r.citations;});
+  odProjectHistory(odFilteredHistory(periodFilters),group).forEach(r=>{(byDomain[r.domain]||(byDomain[r.domain]={}))[r.date]=(byDomain[r.domain][r.date]||0)+r.citations;});
   const domains=[...new Set([...(config.domains||[]),...Object.keys(byDomain)])].sort((a,b)=>Object.values(byDomain[b]||{}).reduce((s,v)=>s+v,0)-Object.values(byDomain[a]||{}).reduce((s,v)=>s+v,0));
   const note=document.getElementById('od-domain-note-'+page);
   const title=document.getElementById('od-domain-title-'+page), caption=document.getElementById('od-domain-caption-'+page);
@@ -5537,7 +5560,7 @@ function renderOwnedDomainVisibility(page,filters,history){
   if(filters.domain==='all'){
     if(title) title.textContent='Citation frequency by owned domain';
     if(caption) caption.textContent='The top domains are shown first. Select one to drill into its cited URLs; select a URL for the monitored prompts, dates, and models behind it.';
-    note.textContent=`Each bar is total citation frequency from ${odShortDate(filters.start)} through ${odShortDate(filters.end)}.`;
+    note.textContent=`Each bar is total citation frequency from ${odShortDate(periodFilters.start)} through ${odShortDate(periodFilters.end)}.`;
     if(urlSelection) urlSelection.style.display='none';
     odRankBars('od-domain-frequency-'+page,domainRows,row=>{odSetState(page,{domain:row.domain,urlKey:null});buildOwnedDomainsPage(page);},domainLimit);
     if(expand) expand.innerHTML=domainRows.length>10?`<button class="od-back" type="button">${state.showAllDomains?'Show top 10':'Show all '+domainRows.length+' domains'}</button>`:'';
@@ -5546,13 +5569,13 @@ function renderOwnedDomainVisibility(page,filters,history){
   }
   if(title) title.textContent=group==='social_media'?'Citation frequency by tracked Reddit post':'Citation frequency by URL';
   if(caption) caption.textContent=group==='social_media'
-    ? `Tracked Reddit posts are ranked by citation frequency from ${odShortDate(filters.start)} through ${odShortDate(filters.end)}. Select one post for the exact prompt, date, and model evidence.`
-    : `URLs on ${filters.domain} are ranked by citation frequency from ${odShortDate(filters.start)} through ${odShortDate(filters.end)}. Select one URL for the exact prompt, date, and model evidence.`;
+    ? `Tracked Reddit posts are ranked by citation frequency from ${odShortDate(periodFilters.start)} through ${odShortDate(periodFilters.end)}. Select one post for the exact prompt, date, and model evidence.`
+    : `URLs on ${filters.domain} are ranked by citation frequency from ${odShortDate(periodFilters.start)} through ${odShortDate(periodFilters.end)}. Select one URL for the exact prompt, date, and model evidence.`;
   note.textContent=group==='social_media'
     ? 'Only canonical Reddit posts and short-link aliases recorded in the volunteer tracker are included.'
     : `Showing URLs for ${filters.domain}. Use “Show all domains” to return to the domain ranking.`;
   if(expand) expand.innerHTML='';
-  const byUrl={}; odProjectHistory(history,group).forEach(r=>{const k=r.domain+'||'+r.url;(byUrl[k]||(byUrl[k]={domain:r.domain,url:r.url,citations:0,dates:new Set()})).citations+=r.citations;byUrl[k].dates.add(r.date);});
+  const byUrl={}; odProjectHistory(odFilteredHistory(periodFilters),group).forEach(r=>{const k=r.domain+'||'+r.url;(byUrl[k]||(byUrl[k]={domain:r.domain,url:r.url,citations:0,dates:new Set()})).citations+=r.citations;byUrl[k].dates.add(r.date);});
   const urls=Object.values(byUrl).sort((a,b)=>b.citations-a.citations||a.url.localeCompare(b.url));
   const selectedState=odState(page), current=selectedState.urlKey;
   const key=urls.some(r=>r.domain+'||'+r.url===current)?current:null;
@@ -5578,13 +5601,13 @@ function renderOwnedDomainVisibility(page,filters,history){
     return;
   }
   const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(p=>[p.prompt_id,p]));
-  const allowed=new Set(odFilteredPrompts(filters).map(p=>p.prompt_id)), byObservation={};
+  const allowed=new Set(odFilteredPrompts(periodFilters).map(p=>p.prompt_id)), byObservation={};
   allEvents.filter(event=>
     event.source_type==='sources_cited' &&
     normalizeDomain(event.domain)===normalizeDomain(selected.domain) &&
     event.url===selected.url &&
     allowed.has(event.promptId) &&
-    (!filters.start||event.date>=filters.start) && (!filters.end||event.date<=filters.end)
+    (!periodFilters.start||event.date>=periodFilters.start) && (!periodFilters.end||event.date<=periodFilters.end)
   ).forEach(event=>{
     const model=event.model||'Not retained in this citation-detail release';
     const observationKey=[event.promptId,event.date,model].join('||');
@@ -5663,7 +5686,10 @@ function renderOwnedPeerRanking(page,filters){
   let peer=OWNED_DOMAINS.peer_rankings;
   if(!peer){ el.textContent='Peer-category ranking data will load with the next compact release artifact.'; return; }
   const rankPeriod=odRankPeriod(page,filters), rankFilters=rankPeriod.filters;
-  const dateRangeRank=rankPeriod.choice!=='selected'||odPeerRangeIsCustom(rankFilters);
+  // An explicit period is part of the metric definition.  "Selected dates"
+  // therefore always uses the page's date range, even when it matches the
+  // full available history.
+  const dateRangeRank=true;
   const exactPromptScope=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
   if(dateRangeRank&&exactPromptScope){
     el.innerHTML='<div class="small-muted">A date-range citation ranking is available for the portfolio, workstream, and race filters. Candidate, topic, and literal-prompt peer ranks require dated prompt-level peer data, which this release does not retain.</div>';
@@ -5681,7 +5707,7 @@ function renderOwnedPeerRanking(page,filters){
     : `Ranks use the latest complete citation snapshot (${odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot)}). The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe. Each category bar shows the portfolio’s share of citations in that category.`;
   // The renderer is intentionally tolerant of a missing category or filter cube: it shows an
   // honest not-measured state rather than turning a lack of matching observations into rank zero.
-  const scope=dateRangeRank?peer.scope_key:(rankFilters.race!=='all'?'race::'+filters.race:(rankFilters.workstream==='all'?'all':filters.workstream));
+  const scope=dateRangeRank?peer.scope_key:(rankFilters.race!=='all'?'race::'+rankFilters.race:(rankFilters.workstream==='all'?'all':rankFilters.workstream));
   const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain)).sort((a,b)=>a.rank-b.rank||b.citations-a.citations||a.domain.localeCompare(b.domain));
   const allOwnedRows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope);
   const rankedOwnedRows=filters.domain==='all'?allOwnedRows:rows;
@@ -5698,12 +5724,9 @@ function renderOwnedPeerRanking(page,filters){
   const overallLeaders=overallEntries;
   const portfolioCitations=categorySummary.reduce((sum,row)=>sum+row.owned,0), overallRank=overallLeaders.length?1+overallLeaders.filter(row=>(+row.citations||0)>portfolioCitations).length:null;
   const categorySummaryHtml=categorySummary.length?`<div class="kpis" style="margin:0 0 12px;"><div class="kpi"><div class="kpi-label">Portfolio citation frequency</div><div class="kpi-value">${odNum(portfolioCitations)}</div><div class="kpi-sub">combined citations across selected domains</div></div><div class="kpi clickable" id="od-portfolio-rank-card-${page}" role="button" tabindex="0" title="Open the full domain ranking"><div class="kpi-label">Overall portfolio rank</div><div class="kpi-value">${overallRank==null?'Not measured':'#'+overallRank+' of '+odNum(overallLeaders.length)}</div><div class="kpi-sub">combined network total versus individual peer domains</div></div></div><button class="od-back" id="od-open-portfolio-ranking-${page}">Open full ${odNum(overallLeaders.length)}-domain ranking</button><div class="small-muted" style="margin:8px 0;">Select the rank card or button to open the full list. The portfolio rank is a network-level benchmark; individual-domain ranks appear below.</div>${categorySummary.map(row=>`<div class="topic-row"><div class="topic-name" style="width:175px;white-space:normal;">${odEsc(row.category.replace('Blog/Informal Content','Blogs'))}</div><div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*(row.share||0),0,100)}%;background:#2E5EAA;"></div></div><div class="topic-pct" style="width:190px;text-align:right;">${row.rank==null?'—':'#'+row.rank+' of '+odNum(row.population)} · ${odNum(row.owned)} · ${row.share==null?'—':fmt1(100*row.share)+'%'}</div></div>`).join('')}<hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">`:'';
-  const rankingPeriodHtml=`<div class="small-muted" style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span>Citation-frequency period</span><span class="od-toggle" id="od-rank-period-toggle-${page}"><button type="button" data-od-rank-period="week" class="${rankPeriod.choice==='week'?'active':''}">Latest 7 days</button><button type="button" data-od-rank-period="day" class="${rankPeriod.choice==='day'?'active':''}">Latest day</button><button type="button" data-od-rank-period="selected" class="${rankPeriod.choice==='selected'?'active':''}">Selected dates</button></span></div>`;
+  const rankingPeriodHtml=`<div class="small-muted" style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span>Citation-frequency period</span>${odFrequencyPeriodToggle(page,filters)}</div>`;
   const wirePortfolioRankingOverlay=()=>{
-    el.querySelectorAll('[data-od-rank-period]').forEach(button=>button.addEventListener('click',()=>{
-      odSetState(page,{rankPeriod:button.dataset.odRankPeriod});
-      renderOwnedPeerRanking(page,odSelectedFilters(page));
-    }));
+    odWireFrequencyPeriodToggle(page);
     const openRanking=()=>{
       const portfolio={domain:odGroupLabel(filters.group)+' portfolio',category:'Combined portfolio',citations:portfolioCitations,portfolio:true};
       const ordered=[...overallEntries,portfolio].sort((a,b)=>b.citations-a.citations||(a.portfolio?-1:b.portfolio?1:a.domain.localeCompare(b.domain)));

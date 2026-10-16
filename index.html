@@ -5078,7 +5078,8 @@ function buildOwnedDomainsPage(page){
 function renderOwnedDomainsPage(page){
   const filters=odSelectedFilters(page), group=filters.group, config=OWNED_DOMAINS.groups[group];
   const prompts=odFilteredPrompts(filters), coverage=odFilteredCoverage(filters), history=odFilteredHistory(filters), projectHistory=odProjectHistory(history,group);
-  const reached=new Set(coverage.filter(r=>r.reached).map(r=>r.prompt_id));
+  const measuredCoverage=coverage.filter(r=>r.measured!==false);
+  const reached=new Set(measuredCoverage.filter(r=>r.reached).map(r=>r.prompt_id));
   const articleById=Object.fromEntries((OWNED_DOMAINS.articles||[]).map(a=>[a.id,a]));
   const articleIndex=new Map((OWNED_DOMAINS.candidate_topic_articles||[]).filter(r=>r.group===group).map(r=>[r.candidate_id+'|'+r.topic_group,r]));
   const narrowedIds=new Set(coverage.flatMap(r=>{const x=articleIndex.get(r.candidate_id+'|'+r.topic_group)||{};return [...(x.direct_article_ids||[]),...(x.parent_article_ids||[])];}));
@@ -5099,13 +5100,13 @@ function renderOwnedDomainsPage(page){
   const planned=cost.planned_articles||cost.planned_articles_minimum;
   const costPer=!isNarrowed&&filters.domain==='all'&&cost.commitment_usd&&planned ? cost.commitment_usd/planned : null;
   const citedTotal=projectHistory.reduce((s,r)=>s+(+r.citations||0),0);
-  const reachRate=prompts.length?reached.size/prompts.length:null, citedRate=eligibleArticles?citedArticles.length/eligibleArticles:null, onTopic=allMilestone?direct/allMilestone:null, medianDays=firstDays.length?odMedian(firstDays):null;
+  const reachRate=measuredCoverage.length?reached.size/measuredCoverage.length:null, citedRate=eligibleArticles?citedArticles.length/eligibleArticles:null, onTopic=allMilestone?direct/allMilestone:null, medianDays=firstDays.length?odMedian(firstDays):null;
   const footprintCaption=document.getElementById('od-footprint-caption-'+page);
-  if(footprintCaption) footprintCaption.textContent=`${odNum(prompts.length)} monitored prompts in ${odScopeLabel(filters)}. Citation frequency uses the selected period; prompt reach uses the latest complete citation snapshot.`;
+  if(footprintCaption) footprintCaption.textContent=`${odNum(measuredCoverage.length)} monitored prompts successfully checked in ${odScopeLabel(filters)}. Citation frequency uses the selected period; prompt reach uses the latest complete citation snapshot.`;
   const footprint=document.getElementById('od-footprint-kpis-'+page);
   if(footprint) footprint.innerHTML=[
     odKpi('AI citations',odNum(citedTotal),'final-answer source appearances','',true),
-    odKpi('Prompts reached',reachRate==null?'Not measured':fmt1(100*reachRate)+'%',`${odNum(reached.size)} of ${odNum(prompts.length)} monitored prompts`),
+    odKpi('Prompts reached',reachRate==null?'Not measured':fmt1(100*reachRate)+'%',`${odNum(reached.size)} of ${odNum(measuredCoverage.length)} checked prompts`),
     odKpi(`Articles cited by day ${windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`)
   ].join('');
   const caption=document.getElementById('od-performance-caption-'+page);

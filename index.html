@@ -5358,10 +5358,11 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics
       const label={eligible:`Eligible by day ${windowDays}`,zero:'No citation',low:'1–2 citations',high:'3+ citations'}[kind]||kind;
       const rows=bucket.map(metric=>{
         const article=articleById[metric.article_id]||{}, milestone=milestoneFor(metric)||{};
-        return `<tr><td style="white-space:normal;max-width:360px;"><a href="${escXAttr(article.url||'#')}" target="_blank" rel="noopener">${odEsc(article.title||article.url||metric.article_id)}</a></td><td>${odEsc(article.domain||'')}</td><td>${odEsc(article.published_on||'Not measured')}</td><td>${odNum(milestone.citation_count||0)}</td><td>${odNum(milestone.direct_topic_citations||0)}</td></tr>`;
+        return `<tr><td style="white-space:normal;max-width:360px;"><a href="${escXAttr(article.url||'#')}" target="_blank" rel="noopener">${odEsc(article.title||article.url||metric.article_id)}</a></td><td>${odEsc(article.domain||'')}</td><td>${odEsc(article.published_on||'Not measured')}</td><td>${odNum(milestone.citation_count||0)}</td>${isSocialMedia?'':`<td>${odNum(milestone.direct_topic_citations||0)}</td>`}</tr>`;
       }).join('');
       const heading=isSocialMedia?'Tracked post':'Article', dateHeading=isSocialMedia?'Posted':'Published';
-      openSidePanel(`<div class="card-title">${odEsc(label)} · ${windowDays}-day window</div><div class="card-caption">${bucket.length} ${unit}${bucket.length===1?'':'s'} in the current ${unit} and filter scope. The count is measured at the first complete citation snapshot at least ${windowDays} calendar days after ${isSocialMedia?'posting':'publication'}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>${heading}</th><th>Domain</th><th>${dateHeading}</th><th>Citations</th><th>On-topic</th></tr>${rows||`<tr><td colspan="5" class="small-muted">No ${unitPlural} match this bucket.</td></tr>`}</table></div>`,{wide:true});
+      const onTopicHeading=isSocialMedia?'':'<th>On-topic</th>', colspan=isSocialMedia?4:5;
+      openSidePanel(`<div class="card-title">${odEsc(label)} · ${windowDays}-day window</div><div class="card-caption">${bucket.length} ${unit}${bucket.length===1?'':'s'} in the current ${unit} and filter scope. The count is measured at the first complete citation snapshot at least ${windowDays} calendar days after ${isSocialMedia?'posting':'publication'}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>${heading}</th><th>Domain</th><th>${dateHeading}</th><th>Citations</th>${onTopicHeading}</tr>${rows||`<tr><td colspan="${colspan}" class="small-muted">No ${unitPlural} match this bucket.</td></tr>`}</table></div>`,{wide:true});
     }));
   }
   if(conversion){

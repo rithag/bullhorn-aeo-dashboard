@@ -732,7 +732,7 @@ const CITATION_RELEASE_PREFIX = 'citation-releases/refresh-sep28-oct11-20261014-
 // This overlay is derived from (but never mutates) the sealed citation release above.  It adds
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
 // the complete Sources-URL corpus.
-const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/refresh-sep28-oct11-20261014-v1/';
+const CITATION_DETAIL_RELEASE_PREFIX = 'citation-detail-releases/refresh-sep28-oct11-20261016-v2/';
 const SITE_ANALYTICS_RELEASE_PREFIX = 'site-analytics-releases/gsc-refresh-20261015-v1/';
 function scoreAssetUrl(relPath){ return heavyAssetUrl(SCORE_RELEASE_PREFIX + relPath); }
 function scoreBootstrapUrl(relPath){ return heavyAssetUrl(SCORE_BOOTSTRAP_PREFIX + relPath); }
@@ -748,7 +748,9 @@ const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-1
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
 let ownedDomainsQualityLoadPromise = null;
+let ownedPeerHistoryLoadPromise = null;
 let OWNED_QUALITY_ROWS = null;
+let OWNED_PEER_HISTORY = null;
 function ensureOwnedDomainsLoaded(){
   if(!ownedDomainsLoadPromise){
     ownedDomainsLoadPromise = fetch(heavyAssetUrl(OWNED_DOMAINS_RELEASE_PREFIX+'owned_domains_release.json')).then(r=>{
@@ -798,6 +800,31 @@ function ownedQualityRows(){
   const fields=Object.keys(columns), rows=new Array(compact.row_count);
   for(let index=0;index<compact.row_count;index++){const row={};fields.forEach(field=>row[field]=columns[field][index]);rows[index]=row;}
   OWNED_QUALITY_ROWS=rows; return rows;
+}
+function decodeOwnedPeerColumn(value, count){
+  if(Array.isArray(value)) return value;
+  if(value&&Array.isArray(value.v)&&Array.isArray(value.i)&&value.i.length===count) return value.i.map(index=>value.v[index]);
+  throw new Error('Peer-history category asset has an unsupported column encoding.');
+}
+function ensureOwnedPeerHistoryLoaded(){
+  if(OWNED_PEER_HISTORY) return Promise.resolve(OWNED_PEER_HISTORY);
+  if(!ownedPeerHistoryLoadPromise){
+    const sources=OWNED_DOMAINS?.peer_rankings?.source_assets||{};
+    const categories=['Local/Regional News','National News','Blog/Informal Content'].filter(category=>sources[category]?.object_name);
+    // Manifest identities are bucket object names ("dashboard-data/…"), while the authenticated
+    // dashboard proxy itself prepends that bucket prefix. Strip it exactly once before fetching.
+    ownedPeerHistoryLoadPromise=Promise.all(categories.map(category=>{
+      const objectName=sources[category].object_name.replace(/^dashboard-data\//,'');
+      return fetch(heavyAssetUrl(objectName)).then(response=>{
+      if(!response.ok) throw new Error('Peer history for '+category+' is unavailable ('+response.status+').');
+      return response.json();
+    }).then(raw=>{
+      const fields=['report_date','race','source_type','source_count','domain'];
+      if(!raw||!Array.isArray(raw.columns)||!raw.data||!Number.isInteger(raw.row_count)||!fields.every(field=>raw.columns.includes(field))) throw new Error('Peer history for '+category+' has an invalid release contract.');
+      return {category,count:raw.row_count,columns:Object.fromEntries(fields.map(field=>[field,decodeOwnedPeerColumn(raw.data[field],raw.row_count)]))};
+    });})).then(rows=>{OWNED_PEER_HISTORY=rows;return rows;}).catch(error=>{ownedPeerHistoryLoadPromise=null;throw error;});
+  }
+  return ownedPeerHistoryLoadPromise;
 }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
@@ -1605,6 +1632,10 @@ function buildCitationEventsFromRaw(raw){
       // blank, broken UI row rather than an honestly-labeled edge case.
       raceIdx, race, date: cd.report_date[i], domain: col('domain') ? cd.domain[i] || '(no domain)' : null,
       url: col('url') ? cd.url[i] : null, source_type: cd.source_type[i], count: +cd.source_count[i],
+      // A model is present in the raw citation partitions, but older detail releases did not
+      // preserve it. Keep it whenever the selected release supplies it so URL evidence can
+      // identify the exact date/model observation without manufacturing a provider label.
+      model: col('model') ? cd.model[i] || null : null,
       catKey: cd.aeo_site_category[i],
       // promptCategory/topic (2026-09-09): joined at ingestion (scripts/pipeline/evertune_citations.py)
       // from the citation row's literal prompt text against our own WS1/WS2 catalogs, NOT Evertune's
@@ -5016,6 +5047,37 @@ function odRankBars(containerId, rows, onClick, maxRows){
   el.innerHTML=visible.length?visible.map((r,index)=>`<div class="topic-row"${onClick?' style="cursor:pointer;" data-od-rank="'+index+'"':''} title="${escXAttr(r.title||r.label)}"><div class="topic-name" style="width:220px;white-space:normal;">${odEsc(r.label)}</div><div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*(+r.value||0)/max,0,100)}%;background:${r.color||'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;text-align:right;">${odEsc(r.valueLabel||odNum(r.value))}</div></div>`).join(''):'<div class="small-muted">No matching citation observations.</div>';
   if(onClick) el.querySelectorAll('[data-od-rank]').forEach(node=>node.addEventListener('click',()=>onClick(visible[+node.dataset.odRank])));
 }
+function odPeerRangeIsCustom(filters){
+  const dates=odDates(filters.group);
+  return !!(filters.start&&filters.end&&dates.length&&(filters.start!==dates[0]||filters.end!==dates[dates.length-1]));
+}
+function odBuildDateRangePeerRankings(filters){
+  const config=OWNED_DOMAINS.groups[filters.group], prompts=odFilteredPrompts(filters);
+  const allowedDates=new Set(odDates(filters.group).filter(day=>(!filters.start||day>=filters.start)&&(!filters.end||day<=filters.end)));
+  const allowedRaces=new Set(prompts.map(prompt=>prompt.race));
+  const categories=['Local/Regional News','National News','Blog/Informal Content'];
+  const ownedByCategory={};
+  Object.entries(config.domain_peer_categories||{}).forEach(([domain,category])=>{(ownedByCategory[category]||(ownedByCategory[category]=[])).push(domain);});
+  const scopeKey=`range::${filters.start}::${filters.end}`;
+  const leaderboards={}, rows=[];
+  (OWNED_PEER_HISTORY||[]).forEach(source=>{
+    const category=source.category, totals={}, cols=source.columns;
+    for(let index=0;index<source.count;index++){
+      if(cols.source_type[index]!=='sources_cited'||!allowedDates.has(cols.report_date[index])||!allowedRaces.has(cols.race[index])) continue;
+      const domain=normalizeDomain(cols.domain[index]), value=+cols.source_count[index]||0;
+      if(domain&&value>0) totals[domain]=(totals[domain]||0)+value;
+    }
+    (ownedByCategory[category]||[]).forEach(domain=>{if(!(domain in totals)) totals[domain]=0;});
+    const entries=Object.entries(totals).map(([domain,citations])=>({domain,citations})).sort((a,b)=>b.citations-a.citations||a.domain.localeCompare(b.domain)).map((row,index)=>({...row,rank:index+1}));
+    leaderboards[category+'||'+scopeKey]=entries;
+    const lookup=Object.fromEntries(entries.map(row=>[row.domain,row]));
+    (ownedByCategory[category]||[]).forEach(domain=>{
+      const entry=lookup[domain];
+      rows.push({group:filters.group,workstream:scopeKey,category,category_label:category.replace('Blog/Informal Content','Blogs'),domain,rank:entry?.rank||null,citations:entry?.citations||0,population:entries.length,leaderboard_key:category+'||'+scopeKey});
+    });
+  });
+  return {rows,leaderboards,range_label:`${odShortDate(filters.start)}–${odShortDate(filters.end)}`,scope_key:scopeKey,dynamic_date_range:true};
+}
 function odSearchPerformanceHtml(page){ return page==='siteanalytics'?`<div class="card od-at-glance"><div class="card-title">Google Search reach</div><div class="card-caption" id="od-search-caption-${page}">Loading Search Console impressions and clicks.</div><div class="kpis" id="od-search-kpis-${page}"></div></div>`:''; }
 function odSearchTrendHtml(page){ return page==='siteanalytics'?`<div class="card"><div class="card-title">Google Search trend</div><div class="card-caption" id="od-search-trend-caption-${page}">Impressions and clicks from Google Search Console.</div><div class="row-eq" style="margin-top:10px;"><div><div class="small-muted" style="margin-bottom:4px;">Impressions</div><div id="od-search-impressions-${page}"></div></div><div><div class="small-muted" style="margin-bottom:4px;">Clicks</div><div id="od-search-clicks-${page}"></div></div></div></div>`:''; }
 
@@ -5051,9 +5113,9 @@ function buildOwnedDomainsPage(page){
       <div class="card section-gap"><div class="card-title">Answer quality where cited</div><div class="card-caption">The five answer-quality measures for the cited prompt-provider cohort. Read the score change beside the trend before opening any response detail.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>
     </section>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">2. Where is it showing up?</div><div class="card-caption" style="margin-bottom:12px;">Peer standing comes first, followed by the owned-domain, URL, and prompt path behind that visibility.</div>
-      <div class="card"><div class="card-title">Citation frequency ranking</div><div class="card-caption">Ranks use the latest complete citation snapshot (${odEsc(odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot))}). The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe.</div><div id="od-peer-ranking-${page}" class="small-muted">Preparing citation frequency ranking…</div></div>
+      <div class="card"><div class="card-title">Citation frequency ranking</div><div class="card-caption" id="od-peer-caption-${page}">Ranks use the latest complete citation snapshot (${odEsc(odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot))}). The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe.</div><div id="od-peer-ranking-${page}" class="small-muted">Preparing citation frequency ranking…</div></div>
       <div class="card section-gap"><div class="card-title">Citation frequency by owned domain <button class="od-back" id="od-clear-domain-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}>Show all domains</button></div><div class="card-caption">The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}" class="od-action-row"></div></div>
-      <div class="card section-gap"><div class="card-title">Cited URLs</div><div class="card-caption">URLs are ranked by citation frequency. Select one URL to see the monitored prompts it was cited for.</div><div id="od-url-bars-${page}" class="od-url-bars"></div><div class="od-url-selection"><div class="card-title">Prompts citing selected URL <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>
+      <div class="card section-gap" id="od-url-card-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}><div class="card-title">Citation frequency by URL</div><div class="card-caption">URLs for the selected domain are ranked by citation frequency in the selected date range. Select one URL to see the exact prompts, dates, and models behind it.</div><div id="od-url-bars-${page}" class="od-url-bars"></div><div class="od-url-selection" id="od-url-selection-${page}"${state.urlKey?'':' style="display:none;"'}><div class="card-title">Prompt, date, and model detail <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>
     </section>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">3. Where are there still gaps?</div><div class="card-caption" style="margin-bottom:12px;">Start with the largest candidate-topic opportunities. A partial group stays visible until every monitored prompt in that group is reached.</div>
       <div class="card"><div class="card-title">Largest addressable gaps</div><div class="card-caption">Each row says whether to create focused content, improve the discoverability of an existing article, or reinforce partial coverage. Open a row for exact prompts and mapped articles.</div><div class="scroll-table" id="od-gap-queue-${page}"></div><div id="od-gap-expand-${page}"></div></div>
@@ -5244,13 +5306,18 @@ function renderOwnedDomainVisibility(page,filters,history){
   odProjectHistory(history,group).forEach(r=>{(byDomain[r.domain]||(byDomain[r.domain]={}))[r.date]=(byDomain[r.domain][r.date]||0)+r.citations;});
   const domains=[...new Set([...(config.domains||[]),...Object.keys(byDomain)])].sort((a,b)=>Object.values(byDomain[b]||{}).reduce((s,v)=>s+v,0)-Object.values(byDomain[a]||{}).reduce((s,v)=>s+v,0));
   const note=document.getElementById('od-domain-note-'+page);
-  note.textContent='Each bar is total citation frequency in the selected period. Select a domain to update the URL and prompt drilldown below.';
+  note.textContent=`Each bar is total citation frequency from ${odShortDate(filters.start)} through ${odShortDate(filters.end)}. Select a domain to update the URL and prompt drilldown below.`;
   const domainRows=domains.map(domain=>({label:domain,value:Object.values(byDomain[domain]||{}).reduce((s,v)=>s+v,0),color:filters.domain===domain?'#B56A47':'#2E5EAA',domain}));
   const state=odState(page), domainLimit=state.showAllDomains?50:10;
   odRankBars('od-domain-frequency-'+page,domainRows,row=>{odSetState(page,{domain:row.domain});buildOwnedDomainsPage(page);},domainLimit);
   const expand=document.getElementById('od-domain-expand-'+page);
   if(expand) expand.innerHTML=domainRows.length>10?`<button class="od-back" type="button">${state.showAllDomains?'Show top 10':'Show all '+domainRows.length+' domains'}</button>`:'';
   if(expand?.firstElementChild) expand.firstElementChild.addEventListener('click',()=>{odSetState(page,{showAllDomains:!state.showAllDomains});renderOwnedDomainsPage(page);});
+  const urlCard=document.getElementById('od-url-card-'+page);
+  if(urlCard) urlCard.style.display=filters.domain==='all'?'none':'';
+  // Keep the visibility path deliberately sequential. Until a reader selects a domain, URL
+  // and prompt detail would be a second and third unrelated chart rather than a drill-down.
+  if(filters.domain==='all') return;
   const byUrl={}; odProjectHistory(history,group).forEach(r=>{const k=r.domain+'||'+r.url;(byUrl[k]||(byUrl[k]={domain:r.domain,url:r.url,citations:0,dates:new Set()})).citations+=r.citations;byUrl[k].dates.add(r.date);});
   const urls=Object.values(byUrl).sort((a,b)=>b.citations-a.citations||a.url.localeCompare(b.url));
   const selectedState=odState(page), current=selectedState.urlKey;
@@ -5258,15 +5325,41 @@ function renderOwnedDomainVisibility(page,filters,history){
   if(key!==current) odSetState(page,{urlKey:key});
   const clearUrlButton=document.getElementById('od-clear-url-'+page);
   if(clearUrlButton) clearUrlButton.style.display=key?'':'none';
+  const urlSelection=document.getElementById('od-url-selection-'+page);
+  if(urlSelection) urlSelection.style.display=key?'':'none';
   const urlRows=urls.map(item=>({label:odUrlLabel(item.url),title:item.url,value:item.citations,valueLabel:`${odNum(item.citations)} citations`,color:item.domain+'||'+item.url===key?'#B56A47':'#2E5EAA',item}));
   odRankBars('od-url-bars-'+page,urlRows,row=>{odSetState(page,{urlKey:row.item.domain+'||'+row.item.url});renderOwnedDomainsPage(page);},50);
   const selected=urls.find(r=>r.domain+'||'+r.url===key), drill=document.getElementById('od-prompt-table-'+page), caption=document.getElementById('od-url-caption-'+page);
-  if(!selected){caption.textContent='Select a URL to inspect its latest complete prompt citations.';drill.innerHTML='<div class="small-muted">No URL selected.</div>';return;}
+  if(!selected){caption.textContent='Select a URL to inspect the final-answer citation observations behind it.';drill.innerHTML='<div class="small-muted">No URL selected.</div>';return;}
   caption.textContent=selected.url;
-  const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(p=>[p.prompt_id,p])), allowed=new Set(odFilteredPrompts(filters).map(p=>p.prompt_id)), byPrompt={};
-  (OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>r.group===group&&(r.project || !['courier','heartland'].includes(group))&&allowed.has(r.prompt_id)&&r.domain===selected.domain&&r.url===selected.url).forEach(r=>{(byPrompt[r.prompt_id]||(byPrompt[r.prompt_id]={citations:0,providers:new Set()})).citations+=r.citations;byPrompt[r.prompt_id].providers.add(r.provider);});
-  const promptRows=Object.entries(byPrompt).map(([id,v])=>({id,...v,prompt:promptById[id]})).sort((a,b)=>b.citations-a.citations);
-  drill.innerHTML=`<table><tr><th>Prompt</th><th>Race</th><th>Providers</th><th>Citations</th></tr>${promptRows.length?promptRows.map(r=>`<tr><td style="max-width:360px;white-space:normal;">${odEsc(r.prompt?.prompt||'Prompt text unavailable')}</td><td style="max-width:170px;white-space:normal;">${odEsc(r.prompt?.race||'')}</td><td>${odEsc([...r.providers].join(', '))}</td><td>${odNum(r.citations)}</td></tr>`).join(''):'<tr><td colspan="4" class="small-muted">No latest-complete prompt citations for this URL.</td></tr>'}</table>`;
+  const shardKey=crossRaceDomainShard(normalizeDomain(selected.domain)).toString(16).padStart(2,'0');
+  const allEvents=CITATION_CROSS_RACE_DETAIL_EVENTS[shardKey];
+  if(!allEvents){
+    caption.textContent=`Loading prompt, date, and model evidence for ${selected.url}…`;
+    drill.innerHTML='<div class="small-muted">Loading the compact citation-detail shard for this selected domain.</div>';
+    ensureCitationCrossRaceDomainDetail(selected.domain).then(()=>renderOwnedDomainVisibility(page,odSelectedFilters(page),odFilteredHistory(odSelectedFilters(page)))).catch(error=>{
+      console.error('Owned-domain URL citation detail failed',error);
+      caption.textContent=selected.url;
+      drill.innerHTML='<div class="small-muted">Prompt/date/model detail could not load for this URL.</div>';
+    });
+    return;
+  }
+  const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(p=>[p.prompt_id,p]));
+  const allowed=new Set(odFilteredPrompts(filters).map(p=>p.prompt_id)), byObservation={};
+  allEvents.filter(event=>
+    event.source_type==='sources_cited' &&
+    normalizeDomain(event.domain)===normalizeDomain(selected.domain) &&
+    event.url===selected.url &&
+    allowed.has(event.promptId) &&
+    (!filters.start||event.date>=filters.start) && (!filters.end||event.date<=filters.end)
+  ).forEach(event=>{
+    const model=event.model||'Not retained in this citation-detail release';
+    const observationKey=[event.promptId,event.date,model].join('||');
+    const observation=byObservation[observationKey]||(byObservation[observationKey]={promptId:event.promptId,date:event.date,model,citations:0});
+    observation.citations+=+event.count||0;
+  });
+  const promptRows=Object.values(byObservation).map(row=>({...row,prompt:promptById[row.promptId]})).sort((a,b)=>b.citations-a.citations||b.date.localeCompare(a.date)||a.model.localeCompare(b.model));
+  drill.innerHTML=`<table><tr><th>Prompt</th><th>Race</th><th>Date</th><th>Model</th><th>Citations</th></tr>${promptRows.length?promptRows.map(r=>`<tr><td style="max-width:360px;white-space:normal;">${odEsc(r.prompt?.prompt||'Prompt text unavailable')}</td><td style="max-width:170px;white-space:normal;">${odEsc(r.prompt?.race||'')}</td><td>${odEsc(r.date)}</td><td>${odEsc(r.model)}</td><td>${odNum(r.citations)}</td></tr>`).join(''):'<tr><td colspan="5" class="small-muted">No matching final-answer citation observations for this URL in the selected date range and prompt scope.</td></tr>'}</table>`;
 }
 
 function renderOwnedGapViews(page,filters,coverage){
@@ -5330,11 +5423,27 @@ function renderOwnedGapViews(page,filters,coverage){
 
 function renderOwnedPeerRanking(page,filters){
   const el=document.getElementById('od-peer-ranking-'+page);
-  const peer=OWNED_DOMAINS.peer_rankings;
+  let peer=OWNED_DOMAINS.peer_rankings;
   if(!peer){ el.textContent='Peer-category ranking data will load with the next compact release artifact.'; return; }
+  const dateRangeRank=odPeerRangeIsCustom(filters);
+  const exactPromptScope=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
+  if(dateRangeRank&&exactPromptScope){
+    el.innerHTML='<div class="small-muted">A date-range citation ranking is available for the portfolio, workstream, and race filters. Candidate, topic, and literal-prompt peer ranks require dated prompt-level peer data, which this release does not retain.</div>';
+    return;
+  }
+  if(dateRangeRank&&!OWNED_PEER_HISTORY){
+    el.innerHTML='<div class="small-muted">Loading the dated peer citation universe for this ranking…</div>';
+    ensureOwnedPeerHistoryLoaded().then(()=>renderOwnedPeerRanking(page,odSelectedFilters(page))).catch(error=>{console.error('Owned Domains dated peer history failed',error);el.innerHTML='<div class="small-muted">The dated peer citation universe could not load for this range.</div>';});
+    return;
+  }
+  if(dateRangeRank) peer=odBuildDateRangePeerRankings(filters);
+  const peerCaption=document.getElementById('od-peer-caption-'+page);
+  if(peerCaption) peerCaption.textContent=dateRangeRank
+    ? `Ranks use citation frequency from ${odShortDate(filters.start)} through ${odShortDate(filters.end)}. The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe.`
+    : `Ranks use the latest complete citation snapshot (${odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot)}). The portfolio rank treats the selected owned domains as one network and compares that combined total with individual domains in the matching category universe.`;
   // The renderer is intentionally tolerant of a missing category or filter cube: it shows an
   // honest not-measured state rather than turning a lack of matching observations into rank zero.
-  const scope=filters.race!=='all'?'race::'+filters.race:(filters.workstream==='all'?'all':filters.workstream);
+  const scope=dateRangeRank?peer.scope_key:(filters.race!=='all'?'race::'+filters.race:(filters.workstream==='all'?'all':filters.workstream));
   const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain)).sort((a,b)=>a.rank-b.rank||b.citations-a.citations||a.domain.localeCompare(b.domain));
   const allOwnedRows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope);
   const rankedOwnedRows=filters.domain==='all'?allOwnedRows:rows;
@@ -5359,10 +5468,10 @@ function renderOwnedPeerRanking(page,filters){
       const portfolio={domain:odGroupLabel(filters.group)+' portfolio',category:'Combined portfolio',citations:portfolioCitations,portfolio:true};
       const ordered=[...overallEntries,portfolio].sort((a,b)=>b.citations-a.citations||(a.portfolio?-1:b.portfolio?1:a.domain.localeCompare(b.domain)));
       const portfolioRank=ordered.findIndex(row=>row.portfolio)+1;
-      openSidePanel(`<div class="card-title">Full citation frequency ranking</div><div class="card-caption">Latest complete snapshot · ${odEsc(odGroupLabel(filters.group))}. The highlighted portfolio combines ${rankedOwnedRows.length} selected owned domain${rankedOwnedRows.length===1?'':'s'}; the other rows are individual domains from the matching peer categories.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Category</th><th>Citations</th></tr>${ordered.map((row,index)=>`<tr${row.portfolio?' style="background:#DDECFB;color:#174A84;font-weight:700;"':''}><td>${index+1}</td><td>${odEsc(row.domain)}</td><td>${odEsc(row.category.replace('Blog/Informal Content','Blogs'))}</td><td>${odNum(row.citations)}</td></tr>`).join('')}</table></div><div class="small-muted" style="margin-top:10px;">${odEsc(odGroupLabel(filters.group))} is #${portfolioRank} of ${ordered.length} when its selected domains are treated as one combined network.</div>`,{wide:true});
+      openSidePanel(`<div class="card-title">Full citation frequency ranking</div><div class="card-caption">${dateRangeRank?odEsc(peer.range_label)+' citation range':'Latest complete snapshot'} · ${odEsc(odGroupLabel(filters.group))}. The highlighted portfolio combines ${rankedOwnedRows.length} selected owned domain${rankedOwnedRows.length===1?'':'s'}; the other rows are individual domains from the matching peer categories.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Category</th><th>Citations</th></tr>${ordered.map((row,index)=>`<tr${row.portfolio?' style="background:#DDECFB;color:#174A84;font-weight:700;"':''}><td>${index+1}</td><td>${odEsc(row.domain)}</td><td>${odEsc(row.category.replace('Blog/Informal Content','Blogs'))}</td><td>${odNum(row.citations)}</td></tr>`).join('')}</table></div><div class="small-muted" style="margin-top:10px;">${odEsc(odGroupLabel(filters.group))} is #${portfolioRank} of ${ordered.length} when its selected domains are treated as one combined network.</div>`,{wide:true});
     });
   };
-  const promptLimited=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
+  const promptLimited=exactPromptScope;
   if(promptLimited && OWNED_DOMAINS.prompt_peer_rankings?.leaderboards){
     const selected=odFilteredPrompts(filters), promptPeer=OWNED_DOMAINS.prompt_peer_rankings, totals={};
     selected.forEach(prompt=>['Local/Regional News','National News','Blog/Informal Content'].forEach(category=>{

@@ -718,7 +718,7 @@ function heavyAssetUrl(relPath){ return (HEAVY_DATA_BASE_URL || 'dashboard_data/
 const SCORE_RELEASE_PREFIX = 'score-releases/refresh-sep28-oct11-20261014-v2/';
 // This derivative is immutable and records the exact source aggregate it summarizes. Keeping it
 // separate from the raw score release means adding a performance view never mutates scoring data.
-const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/refresh-sep28-oct11-20261014-v2/';
+const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/refresh-sep28-oct11-20261014-v4/';
 const CITATION_RELEASE_PREFIX = 'citation-releases/refresh-sep28-oct11-20261014-v3/';
 // This overlay is derived from (but never mutates) the sealed citation release above.  It adds
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
@@ -2692,6 +2692,17 @@ function ovFilters(){
   const [i0,i1] = dateRangeIdx('ov-cmp');
   return {party:document.getElementById('ov-cmp-party').value, candidateType:document.getElementById('ov-cmp-ctype').value, state:document.getElementById('ov-cmp-state').value, office:document.getElementById('ov-cmp-office').value, level:document.getElementById('ov-cmp-level').value, location:document.getElementById('ov-cmp-location').value, race:document.getElementById('ov-cmp-race').value, i0, i1};
 }
+function overviewRangeAvailableFromBootstrap(range){
+  // Fail closed for old or partial bootstrap assets.  The Aggregate page can avoid the full score
+  // corpus only when every entity and every dimension has a complete compact daily series for
+  // the selected endpoint.  Missing values inside a series are represented as a real zero-total
+  // bucket, not an omitted day, so this check never turns unavailable data into a score.
+  const endpoint = range && range[1];
+  return Number.isInteger(endpoint) && ENTITIES.length>0 && ENTITIES.every(entity=>{
+    const metric = METRICS[entity.id];
+    return metric && DIM_KEYS.every(dim=>Array.isArray(metric.dailyBucketTotals && metric.dailyBucketTotals[dim]) && metric.dailyBucketTotals[dim].length>endpoint);
+  });
+}
 /* Shared Dem/Rep/NP bar-group builder for every "Democrats vs. Republicans" chart (2026-08-31 fix —
    see aeo_dashboard_party_ctype_filter_gap memory). Party picks which bar(s) appear — applied AFTER
    the role/party split, never as a pre-filter on the race pool, because "our side" in this dataset
@@ -2808,10 +2819,12 @@ async function renderOverview(){
   const f = ovFilters();
   const range = [f.i0,f.i1];
   const isFullHistory = f.i0===0 && f.i1===DATES.length-1;
-  // The compact bootstrap intentionally has enough information for the unfiltered landing view,
-  // but not for a narrowed date interval.  Fetch the authoritative aggregate only when a user
-  // actually changes the date range; do not make the normal landing page parse the large asset.
-  if(!isFullHistory && !FULL_SCORE_DATA_READY){
+  // The compact bootstrap now carries response-weighted daily bucket totals.  A narrowed
+  // Aggregate range, including a single calendar day, can therefore render exactly without
+  // downloading the 300 MB response-level corpus.  Retain the full-data fallback only for an
+  // older bootstrap that predates that compact daily asset.
+  const compactRangeReady = overviewRangeAvailableFromBootstrap(range);
+  if(!isFullHistory && !FULL_SCORE_DATA_READY && !compactRangeReady){
     const chart = document.getElementById('ov-chart');
     if(chart) chart.innerHTML = '<div class="small-muted" style="padding:18px 0;">Loading the selected date range…</div>';
     try { await ensureFullScoreData(); }
@@ -3352,6 +3365,17 @@ function entityBucketTotals(ent, key, modelFilter, rangeOverride, blindOverride)
   if(!modelFilter && fullHistoryRange && (blindOverride===undefined || blindOverride==='all')){
     const compact = METRICS[ent.id] && METRICS[ent.id].bucketTotals && METRICS[ent.id].bucketTotals[key];
     if(compact) return compact;
+  }
+  // Date-filtered Aggregate views need only the per-entity, per-day bucket denominators and
+  // numerators.  Those are part of the compact bootstrap so a one-day selection does not make
+  // the browser parse every individual scored response before it can draw a chart.  Provider,
+  // topic, and blind-only filters still intentionally use the detailed corpus because their
+  // extra dimensions are not represented in this compact asset.
+  if(!FULL_SCORE_DATA_READY && !modelFilter && (blindOverride===undefined || blindOverride==='all') && Array.isArray(rangeOverride)){
+    const daily = METRICS[ent.id] && METRICS[ent.id].dailyBucketTotals && METRICS[ent.id].dailyBucketTotals[key];
+    if(Array.isArray(daily) && daily.length>=rangeOverride[1]+1){
+      return mergeBucketTotals(daily.slice(rangeOverride[0], rangeOverride[1]+1));
+    }
   }
   const data = scoresByCategoryForEntity(ent, key, null, modelFilter, rangeOverride, blindOverride);
   return mergeBucketTotals(Object.values(data.byCategory));

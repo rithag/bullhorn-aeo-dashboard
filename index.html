@@ -707,16 +707,43 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v9/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-15-v10/';
 let ownedDomainsLoadPromise = null;
+let ownedDomainsDetailLoadPromise = null;
+let OWNED_QUALITY_ROWS = null;
 function ensureOwnedDomainsLoaded(){
   if(!ownedDomainsLoadPromise){
     ownedDomainsLoadPromise = fetch(heavyAssetUrl(OWNED_DOMAINS_RELEASE_PREFIX+'owned_domains_release.json')).then(r=>{
       if(!r.ok) throw new Error('Owned Domains release is unavailable ('+r.status+').');
       return r.json();
-    }).then(raw=>{ OWNED_DOMAINS=raw; return raw; });
+    }).then(raw=>{ OWNED_DOMAINS=raw; OWNED_QUALITY_ROWS=null; return raw; });
   }
   return ownedDomainsLoadPromise;
+}
+function ensureOwnedDomainsDetailLoaded(){
+  if(OWNED_DOMAINS && OWNED_DOMAINS.citation_prompt_history && OWNED_DOMAINS.prompt_peer_rankings) return Promise.resolve(OWNED_DOMAINS);
+  if(!ownedDomainsDetailLoadPromise){
+    const asset=(OWNED_DOMAINS&&OWNED_DOMAINS.detail_asset)||'owned_domains_detail.json';
+    ownedDomainsDetailLoadPromise=fetch(heavyAssetUrl(OWNED_DOMAINS_RELEASE_PREFIX+asset)).then(r=>{
+      if(!r.ok) throw new Error('Owned Domains detail is unavailable ('+r.status+').');
+      return r.json();
+    }).then(detail=>{
+      if(!detail || detail.artifact_category!=='owned_domains_dashboard_detail' || detail.latest_complete_citation_snapshot!==OWNED_DOMAINS.latest_complete_citation_snapshot) throw new Error('Owned Domains detail has an invalid release contract.');
+      Object.assign(OWNED_DOMAINS,{citation_prompt_history:detail.citation_prompt_history||[],prompt_peer_rankings:detail.prompt_peer_rankings||{}});
+      return OWNED_DOMAINS;
+    }).catch(error=>{ownedDomainsDetailLoadPromise=null;throw error;});
+  }
+  return ownedDomainsDetailLoadPromise;
+}
+function ownedQualityRows(){
+  if(OWNED_QUALITY_ROWS) return OWNED_QUALITY_ROWS;
+  const compact=OWNED_DOMAINS&&OWNED_DOMAINS.quality_cohort;
+  if(!compact || !compact.columns || !compact.row_count) return [];
+  const decode=value=>Array.isArray(value)?value:(value&&value.v&&value.i?value.i.map(index=>value.v[index]):[]);
+  const columns={}; Object.entries(compact.columns).forEach(([key,value])=>{columns[key]=decode(value);});
+  const fields=Object.keys(columns), rows=new Array(compact.row_count);
+  for(let index=0;index<compact.row_count;index++){const row={};fields.forEach(field=>row[field]=columns[field][index]);rows[index]=row;}
+  OWNED_QUALITY_ROWS=rows; return rows;
 }
 
 /* Text (full_response + Consistency's rationale/summary) is split into one file PER RACE by
@@ -965,7 +992,7 @@ async function openSiteAnalyticsPage(){
   }
   if(PAGE_BUILT.siteanalytics) return true;
   try{
-    await Promise.all([ensureSiteAnalyticsLoaded(), ensureOwnedDomainsLoaded(), ensureFullScoreData()]);
+    await Promise.all([ensureSiteAnalyticsLoaded(), ensureOwnedDomainsLoaded()]);
     buildOwnedDomainsPage('siteanalytics');
     PAGE_BUILT.siteanalytics=true;
     enhanceSelects(); collapseAllFilterbars();
@@ -1014,7 +1041,7 @@ async function openPartnerInsightsPage(page){
   if(!(await checkPartnerInsightsAuthed(partner))){ renderPartnerInsightsPasswordGate(page); return false; }
   if(PAGE_BUILT[page]) return true;
   try{
-    await Promise.all([ensureOwnedDomainsLoaded(), ensureFullScoreData()]);
+    await ensureOwnedDomainsLoaded();
     buildOwnedDomainsPage(page);
     PAGE_BUILT[page]=true;
     enhanceSelects(); collapseAllFilterbars();
@@ -4931,8 +4958,12 @@ function buildOwnedDomainsPage(page){
       <div class="card section-gap"><div class="card-title">Candidate × topic coverage heatmap</div><div class="card-caption">Green indicates more monitored prompts reached. The heatmap is a fast scan; the queue above provides the next action.</div><div class="scroll-table" id="od-coverage-heatmap-${page}"></div></div>
     </section>
     <div class="small-muted" style="margin-top:22px;">Method notes: ${odEsc((OWNED_DOMAINS.assumptions||[]).join(' '))}</div>`;
-  host.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',()=>{
+  host.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',async()=>{
     odSetState(page,{workstream:document.getElementById('od-workstream-'+page).value,race:document.getElementById('od-race-'+page).value,candidate:document.getElementById('od-candidate-'+page).value,topic:document.getElementById('od-topic-'+page).value,prompt:document.getElementById('od-prompt-'+page).value,domain:document.getElementById('od-domain-'+page).value,window:document.getElementById('od-window-'+page).value,start:document.getElementById('od-start-'+page).value,end:document.getElementById('od-end-'+page).value});
+    const next=odSelectedFilters(page);
+    if(odHasPromptScope(next)){
+      try{await ensureOwnedDomainsDetailLoaded();}catch(error){console.error('Owned Domains detail load failed',error);}
+    }
     renderOwnedDomainsPage(page);
   }));
   renderOwnedDomainsPage(page);
@@ -5024,18 +5055,24 @@ function renderOwnedDomainQuality(page,filters){
   const allowed=new Set(odFilteredPrompts(filters).map(p=>p.prompt_id));
   const projectEligible=r=>r.project || !['courier','heartland'].includes(r.group);
   const cohort=new Set((OWNED_DOMAINS.latest_citation_drilldown||[]).filter(r=>r.group===filters.group&&projectEligible(r)&&allowed.has(r.prompt_id)&&(filters.domain==='all'||r.domain===filters.domain)).map(r=>r.prompt_id+'|'+PROVIDER_TO_MODEL[r.provider]));
+  const compact=OWNED_DOMAINS.quality_cohort;
+  if(!compact || !compact.columns || !compact.row_count){
+    const chart=document.getElementById('od-quality-chart-'+page), note=document.getElementById('od-quality-note-'+page);
+    chart.innerHTML='<div class="small-muted">The compact answer-quality dataset is not available for this release.</div>'; note.textContent=''; return;
+  }
   const dims=['visibility','favorability','depth','accuracy','narrative'];
   const dates=DATES.filter(d=>d<=''+latest);
   const series={}; dims.forEach(dim=>series[dim]=[]);
+  const rowsByDay={}; ownedQualityRows().forEach(row=>{if(cohort.has(row.prompt_id+'|'+row.ai_provider))(rowsByDay[row.report_date]||(rowsByDay[row.report_date]=[])).push(row);});
   dates.forEach(day=>{
-    const rows=aggRowsCache.filter(r=>r.report_date===day&&cohort.has(r.prompt_id+'|'+r.ai_provider));
-    const promptRows={}; rows.forEach(r=>{ promptRows[r.prompt_id+'|'+r.ai_provider]=r; });
-    const dedup=Object.values(promptRows);
+    const rows=rowsByDay[day]||[];
+    const dedup=rows;
     const vis=dedup.filter(r=>visibilityEligible(r,'candidate')).map(r=>+r.prompt_level_visibility_score_candidate).filter(Number.isFinite);
     const fav=dedup.map(r=>({p:r.prompt_level_favorability_pct_positive_candidate,n:r.prompt_level_favorability_pct_negative_candidate})).filter(r=>r.p!==''&&r.p!=null&&r.n!==''&&r.n!=null).map(r=>50+(+r.p-+r.n)/2);
     series.visibility.push(avg(vis)); series.favorability.push(avg(fav));
-    [['depth','depth_score_candidate'],['accuracy','accuracy_score_candidate'],['narrative','narrative_alignment_score_candidate']].forEach(([dim,field])=>{
-      const vals=rows.map(r=>r[field]).filter(v=>v!==''&&v!=null); series[dim].push(vals.length?100*vals.filter(v=>String(v)==='2').length/vals.length:null);
+    ['depth','accuracy','narrative'].forEach(dim=>{
+      const total=rows.reduce((sum,row)=>sum+(+row[dim+'_total']||0),0), good=rows.reduce((sum,row)=>sum+(+row[dim+'_good']||0),0);
+      series[dim].push(total?100*good/total:null);
     });
   });
   const colors={visibility:'#2E5EAA',favorability:'#7FA98F',depth:'#B79A5C',accuracy:'#B23B3B',narrative:'#4F8B8B'};
@@ -5085,7 +5122,7 @@ function renderOwnedGapViews(page,filters,coverage){
   },{})).sort((a,b)=>(b.total-b.reached)-(a.total-a.reached)||b.uncovered-a.uncovered||a.candidate.localeCompare(b.candidate));
   const portfolio=document.getElementById('od-candidate-portfolio-'+page);
   portfolio.innerHTML=`<table><tr><th>Candidate</th><th>Prompts reached</th><th>Uncovered topic groups</th></tr>${candidatePortfolio.length?candidatePortfolio.map((r,i)=>`<tr class="clickable" data-od-candidate="${i}"><td>${odEsc(r.candidate)}</td><td>${r.reached} of ${r.total}</td><td style="background:${r.uncovered?'#FBEBCB':'#DDEFE7'};font-weight:600;">${r.uncovered} of ${r.topics}</td></tr>`).join(''):'<tr><td colspan="3" class="small-muted">No candidate coverage rows match the filters.</td></tr>'}</table>`;
-  portfolio.querySelectorAll('[data-od-candidate]').forEach(node=>node.addEventListener('click',()=>{const item=candidatePortfolio[+node.dataset.odCandidate];odSetState(page,{candidate:item.candidate_id});buildOwnedDomainsPage(page);}));
+  portfolio.querySelectorAll('[data-od-candidate]').forEach(node=>node.addEventListener('click',async()=>{const item=candidatePortfolio[+node.dataset.odCandidate];odSetState(page,{candidate:item.candidate_id});try{await ensureOwnedDomainsDetailLoaded();}catch(error){console.error('Owned Domains detail load failed',error);}buildOwnedDomainsPage(page);}));
   const queue=document.getElementById('od-gap-queue-'+page);
   queue.innerHTML=`<table><tr><th>Candidate</th><th>Topic</th><th>Reached</th><th>Diagnosis</th><th>Mapped articles</th></tr>${rows.length?rows.slice(0,80).map((r,i)=>`<tr class="clickable" data-od-gap="${i}"><td>${odEsc(r.candidate)}</td><td>${odEsc(r.topic_label)}</td><td>${r.reached} of ${r.total}</td><td><span style="background:${odDiagnosisColor(r.diagnosis)};padding:3px 6px;border-radius:10px;font-size:11px;">${odEsc(odDiagnosisLabel(r.diagnosis))}</span></td><td>${r.mappedArticleIds.length}</td></tr>`).join(''):'<tr><td colspan="5" class="small-muted">No monitored prompt groups match the filters.</td></tr>'}</table>`;
   queue.querySelectorAll('[data-od-gap]').forEach(row=>row.addEventListener('click',()=>{const cell=rows[+row.dataset.odGap], ids=cell.mappedArticleIds, ps=cell.promptIds.map(id=>promptsById[id]).filter(Boolean);openSidePanel(`<div class="card-title">${odEsc(cell.candidate)} · ${odEsc(cell.topic_label)}</div><div class="card-caption">${cell.reached} of ${cell.total} monitored prompts reached in the latest complete snapshot. ${odEsc(odDiagnosisLabel(cell.diagnosis))}.</div><h4>Monitored prompts</h4>${ps.map(p=>`<div style="padding:8px 0;border-bottom:1px solid var(--border);">${odEsc(p.prompt)}</div>`).join('')||'<div class="small-muted">No prompt text is available.</div>'}<h4 style="margin-top:16px;">Relevant articles</h4>${ids.length?ids.map(id=>articlesById[id]).filter(Boolean).map(a=>`<div style="padding:6px 0;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${odEsc(a.title||a.url)}</a><div class="small-muted">${odEsc(a.topic_label||'')}</div></div>`).join(''):'<div class="small-muted">No deterministically mapped article is in the current inventory.</div>'}`,{wide:true});}));

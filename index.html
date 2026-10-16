@@ -5314,7 +5314,14 @@ function renderOwnedDomainQuality(page,filters){
     return;
   }
   const dims=['visibility','favorability','depth','accuracy','narrative'];
-  const dates=DATES.filter(d=>d<=''+latest);
+  // Forward Majority is a WS3-only view. WS3 was not scored on Aug. 31, so its
+  // quality trend and percentage-point deltas must begin with the first WS3
+  // observation rather than borrowing the global dashboard baseline.
+  const allDates=DATES.filter(d=>d<=''+latest);
+  const ws3PromptIds=new Set((OWNED_DOMAINS.prompts||[]).filter(prompt=>prompt.workstream==='WS3').map(prompt=>prompt.prompt_id));
+  const forwardBaselineDate=ownedQualityRows().filter(row=>ws3PromptIds.has(row.prompt_id)&&row.report_date).map(row=>row.report_date).sort()[0]||null;
+  const baselineDate=filters.group==='forward_majority' ? forwardBaselineDate : '2026-08-31';
+  const dates=allDates.filter(day=>!baselineDate||day>=baselineDate);
   const series={}; dims.forEach(dim=>series[dim]=[]);
   const rowsByDay={}; ownedQualityRows().forEach(row=>{if(cohort.has(row.prompt_id+'|'+row.ai_provider))(rowsByDay[row.report_date]||(rowsByDay[row.report_date]=[])).push(row);});
   dates.forEach(day=>{
@@ -5334,10 +5341,11 @@ function renderOwnedDomainQuality(page,filters){
   const values=dims.flatMap(dim=>series[dim].filter(Number.isFinite));
   const axisMin=values.length?Math.max(0,Math.floor(Math.min(...values)/10)*10-5):0;
   lineChart('od-quality-chart-'+page,dates,dims.map(dim=>({name:DIM_LABELS[dim],values:series[dim],color:colors[dim]})),{min:axisMin,max:100,height:250});
-  const baselineIndex=dates.indexOf('2026-08-31');
+  const baselineIndex=dates.indexOf(baselineDate);
   const changes=dims.map(dim=>{const last=series[dim].map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop(),a=baselineIndex<0?null:series[dim][baselineIndex],b=last==null?null:series[dim][last],delta=a==null||b==null?null:b-a;return {dim,a,b,delta};});
-  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort. The y-axis begins at ${axisMin} to make movement readable; changes use the Aug. 31 baseline where measured.`;
-  if(change) change.innerHTML=`<div class="small-muted" style="grid-column:1/-1;">Aug. 31 / latest / change</div>${changes.map(row=>`<div class="od-quality-change-row"><span class="dim">${odEsc(DIM_LABELS[row.dim])}</span><span>${row.a==null?'Not measured':fmt1(row.a)}</span><span>${row.b==null?'—':fmt1(row.b)}</span><span class="delta ${row.delta==null?'neutral':row.delta>.5?'good':row.delta<-.5?'bad':'neutral'}">${row.delta==null?'—':(row.delta>0?'+':'')+fmt1(row.delta)+' pp'}</span></div>`).join('')}`;
+  const baselineLabel=baselineDate?odShortDate(baselineDate):'Baseline';
+  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort. The y-axis begins at ${axisMin} to make movement readable; changes use the ${baselineLabel} baseline where measured.`;
+  if(change) change.innerHTML=`<div class="small-muted" style="grid-column:1/-1;">${odEsc(baselineLabel)} / latest / change</div>${changes.map(row=>`<div class="od-quality-change-row"><span class="dim">${odEsc(DIM_LABELS[row.dim])}</span><span>${row.a==null?'Not measured':fmt1(row.a)}</span><span>${row.b==null?'—':fmt1(row.b)}</span><span class="delta ${row.delta==null?'neutral':row.delta>.5?'good':row.delta<-.5?'bad':'neutral'}">${row.delta==null?'—':(row.delta>0?'+':'')+fmt1(row.delta)+' pp'}</span></div>`).join('')}`;
 }
 
 function renderOwnedDomainVisibility(page,filters,history){

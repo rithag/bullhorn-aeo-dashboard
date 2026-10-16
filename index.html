@@ -135,6 +135,7 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
 .od-at-glance .kpis{grid-template-columns:repeat(3,minmax(0,1fr));margin:10px 0 0;}
 .od-at-glance .kpi{padding:11px 12px;box-shadow:none;}
 .od-at-glance .kpi-value{font-size:20px;}
+.od-investment .kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
 .od-at-glance-single{max-width:none;}
 .od-scorecard{grid-auto-rows:1fr;}
 .od-scorecard .kpi{display:flex;flex-direction:column;min-height:108px;box-shadow:none;}
@@ -156,7 +157,7 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
 .od-detail-fold summary{cursor:pointer;color:var(--brand);font-size:12px;font-weight:700;}
 .od-detail-fold[open] summary{margin-bottom:10px;}
 @media (max-width:1150px){.od-quality-layout{grid-template-columns:1fr;}.od-quality-change{border-left:0;border-top:1px solid var(--border);padding:12px 0 0;grid-template-columns:repeat(2,minmax(0,1fr));}.od-at-glance .kpis{grid-template-columns:repeat(3,minmax(0,1fr));}}
-@media (max-width:640px){.od-at-glance .kpis{grid-template-columns:1fr;}.od-quality-change{grid-template-columns:1fr;}}
+@media (max-width:640px){.od-at-glance .kpis,.od-investment .kpis{grid-template-columns:1fr;}.od-quality-change{grid-template-columns:1fr;}}
 .topic-name{width:140px;flex:none;}
 .topic-track{flex:1;height:10px;background:#EEF1F4;border-radius:5px;overflow:hidden;}
 .topic-fill{height:100%;border-radius:5px;}
@@ -5034,6 +5035,7 @@ function odDiagnosisLabel(value){ return ({reached:'Fully reached',partial_with_
 function odDiagnosisColor(value){ return ({reached:'#DDEFE7',partial_with_article:'#FFF0CE',partial_no_article:'#FBEBCB',relevant_article_not_cited:'#FFF0CE',no_relevant_article:'#F9E1E1',diagnosis_pending:'#ECEFF4'})[value]||'#ECEFF4'; }
 function odHeatColor(reached,total,diagnosis){ if(!total)return '#F6F7F9'; const pct=reached/total; if(pct===0)return diagnosis==='relevant_article_not_cited'?'#FFF0CE':'#F8DDDD'; return pct<.34?'#FBEBCB':pct<.67?'#FFF6DA':pct<1?'#E9F3EC':'#DDEFE7'; }
 function odCurrency(v){ return v==null?'Not measured':'$'+Math.round(v).toLocaleString('en-US'); }
+function odCurrencyCents(v){ return v==null||!Number.isFinite(v)?'Not measured':'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function odTone(pct, thresholds){ if(pct==null||!Number.isFinite(pct)) return ''; const [moderate,good]=thresholds||[.35,.7]; return pct>=good?'good':pct>=moderate?'moderate':'bad'; }
 function odInverseTone(value, goodAt, moderateAt){ if(value==null||!Number.isFinite(value)) return ''; return value<=goodAt?'good':value<=moderateAt?'moderate':'bad'; }
 function odKpi(label,value,sub,tone,primary){ return `<div class="kpi${primary?' hi':''}${tone?' '+tone:''}"><div class="kpi-label">${odEsc(label)}</div><div class="kpi-value">${value}</div><div class="kpi-sub">${odEsc(sub||'')}</div></div>`; }
@@ -5107,7 +5109,8 @@ function buildOwnedDomainsPage(page){
   const atGlanceLayout=page==='siteanalytics'?'row-eq':'od-at-glance-single';
   const performanceTrendLayout=page==='siteanalytics'?'row-eq section-gap':'section-gap';
   const layout=odPageTemplate(group);
-  const atGlanceHtml=layout.atGlance?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div></section>`:'';
+  const investmentHtml=['courier','heartland'].includes(group)?`<div class="card od-at-glance od-investment section-gap"><div class="card-title">Investment efficiency</div><div class="card-caption" id="od-investment-caption-${page}">Loading commitment allocation and citation efficiency.</div><div class="kpis" id="od-investment-kpis-${page}"></div></div>`:'';
+  const atGlanceHtml=layout.atGlance?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div>${investmentHtml}</section>`:'';
   const performanceExtras=layout.yield?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">The share of eligible articles cited by the selected milestone, on-topic citation share, and time to first observed citation.</div><div id="od-conversion-chart-${page}"></div></div></div>`:'';
   const qualityHtml=layout.quality?`<div class="card section-gap"><div class="card-title">Answer quality where cited</div><div class="card-caption">The five answer-quality measures for the cited prompt-provider cohort. Read the score change beside the trend before opening any response detail.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>`:'';
   const performanceScorecard=layout.yield?`<div class="card-caption" id="od-performance-caption-${page}" style="margin-bottom:12px;"></div><div class="kpis od-scorecard" id="od-performance-kpis-${page}"></div>`:'';
@@ -5183,8 +5186,11 @@ function renderOwnedDomainsPage(page){
   const firstDays=metrics.filter(r=>r.first_observed_citation_date&&milestoneFor(r)?.eligible_snapshot).map(r=>(Date.parse(r.first_observed_citation_date)-Date.parse((OWNED_DOMAINS.articles||[]).find(a=>a.id===r.article_id)?.published_on||''))/86400000).filter(v=>Number.isFinite(v)&&v>=0);
   const cost=config.cost||{};
   const planned=cost.planned_articles||cost.planned_articles_minimum;
-  const costPer=!isNarrowed&&filters.domain==='all'&&cost.commitment_usd&&planned ? cost.commitment_usd/planned : null;
+  const plannedCostPerArticle=cost.commitment_usd&&planned ? cost.commitment_usd/planned : null;
+  const liveProjectArticles=scopedArticleMetrics.length;
+  const allocatedCost=plannedCostPerArticle==null?null:plannedCostPerArticle*liveProjectArticles;
   const citedTotal=projectHistory.reduce((s,r)=>s+(+r.citations||0),0);
+  const allocatedCostPerCitation=allocatedCost!=null&&citedTotal>0 ? allocatedCost/citedTotal : null;
   const reachRate=measuredCoverage.length?reached.size/measuredCoverage.length:null, citedRate=eligibleArticles?citedArticles.length/eligibleArticles:null, onTopic=allMilestone?direct/allMilestone:null, medianDays=firstDays.length?odMedian(firstDays):null;
   const footprintCaption=document.getElementById('od-footprint-caption-'+page);
   if(footprintCaption) footprintCaption.textContent=`${odNum(measuredCoverage.length)} monitored prompts successfully checked in ${odScopeLabel(filters)}. Citation frequency uses the selected period; prompt reach uses the latest complete citation snapshot.`;
@@ -5194,6 +5200,20 @@ function renderOwnedDomainsPage(page){
     odKpi('Prompts reached',reachRate==null?'Not measured':fmt1(100*reachRate)+'%',`${odNum(reached.size)} of ${odNum(measuredCoverage.length)} checked prompts`),
     odKpi(`Articles cited by day ${windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`)
   ].join('');
+  const investmentCaption=document.getElementById('od-investment-caption-'+page), investmentKpis=document.getElementById('od-investment-kpis-'+page);
+  if(investmentKpis){
+    if(plannedCostPerArticle==null){
+      if(investmentCaption) investmentCaption.textContent='No approved partner commitment and final article-count basis is available for this view.';
+      investmentKpis.innerHTML=odKpi('Cost basis','Not measured','Awaiting a confirmed commitment and article roster.');
+    }else{
+      const commitmentLabel=cost.status==='allocated_minimum_commitment'?'minimum planned articles':'planned articles';
+      if(investmentCaption) investmentCaption.textContent=`Allocated at the approved planned-slot rate: ${odCurrency(allocatedCost)} across ${liveProjectArticles} live confirmed project article${liveProjectArticles===1?'':'s'}. Cost per citation uses ${odNum(citedTotal)} final-answer citation${citedTotal===1?'':'s'} in the selected period; it is not final-program ROI.`;
+      investmentKpis.innerHTML=[
+        odKpi('Planned cost per article',odCurrency(plannedCostPerArticle),`${odNum(planned)} ${commitmentLabel}`),
+        odKpi('Allocated cost per citation',odCurrencyCents(allocatedCostPerCitation),allocatedCostPerCitation==null?'No selected-period final-answer citations':`${odCurrency(allocatedCost)} allocated ÷ ${odNum(citedTotal)} citations`)
+      ].join('');
+    }
+  }
   const caption=document.getElementById('od-performance-caption-'+page);
   if(caption) caption.textContent='Use this scorecard to judge whether articles are earning citations quickly, on the intended subject, and at a meaningful rate.';
   const performanceKpis=document.getElementById('od-performance-kpis-'+page);

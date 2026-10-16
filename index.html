@@ -5248,7 +5248,7 @@ function renderOwnedDomainsPage(page){
   const citedTotal=projectHistory.reduce((s,r)=>s+(+r.citations||0),0);
   const allocatedCostPerCitation=allocatedCost!=null&&citedTotal>0 ? allocatedCost/citedTotal : null;
   const reachRate=measuredCoverage.length?reached.size/measuredCoverage.length:null, citedRate=eligibleArticles?citedArticles.length/eligibleArticles:null, onTopic=allMilestone?direct/allMilestone:null, medianDays=firstDays.length?odMedian(firstDays):null;
-  const socialPromptRows=isSocialMedia?odFilteredPrompts(filters):[], socialReached=isSocialMedia?new Set((OWNED_DOMAINS.latest_citation_drilldown||[]).filter(row=>row.group==='social_media'&&socialPromptRows.some(prompt=>prompt.prompt_id===row.prompt_id)).map(row=>row.prompt_id)):new Set();
+  const socialCandidateIds=isSocialMedia?new Set((OWNED_DOMAINS.articles||[]).filter(article=>article.group==='social_media').flatMap(article=>article.candidate_refs||[])):new Set(), socialPromptRows=isSocialMedia?odFilteredPrompts(filters).filter(prompt=>socialCandidateIds.has(prompt.candidate_id)):[], socialReached=isSocialMedia?new Set((OWNED_DOMAINS.latest_citation_drilldown||[]).filter(row=>row.group==='social_media'&&socialPromptRows.some(prompt=>prompt.prompt_id===row.prompt_id)).map(row=>row.prompt_id)):new Set();
   const socialPromptReach=isSocialMedia&&socialPromptRows.length?socialReached.size/socialPromptRows.length:null;
   const footprintCaption=document.getElementById('od-footprint-caption-'+page);
   if(footprintCaption) footprintCaption.textContent=`${odNum(measuredCoverage.length)} monitored prompts successfully checked in ${odScopeLabel(filters)}. Citation frequency uses the selected period; prompt reach uses the latest complete citation snapshot.`;

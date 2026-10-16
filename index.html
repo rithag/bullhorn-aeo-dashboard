@@ -992,10 +992,21 @@ async function openSiteAnalyticsPage(){
   }
   if(PAGE_BUILT.siteanalytics) return true;
   try{
-    await Promise.all([ensureSiteAnalyticsLoaded(), ensureOwnedDomainsLoaded()]);
+    // Build the owned-content reporting shell as soon as its own compact asset is ready.
+    // Search Console is a separate 30 MB release and should never hold the entire page hostage.
+    await ensureOwnedDomainsLoaded();
     buildOwnedDomainsPage('siteanalytics');
     PAGE_BUILT.siteanalytics=true;
     enhanceSelects(); collapseAllFilterbars();
+    ensureSiteAnalyticsLoaded().then(()=>{
+      if(PAGE_BUILT.siteanalytics){
+        renderOwnedSearchPerformance('siteanalytics', odSelectedFilters('siteanalytics'));
+      }
+    }).catch(e=>{
+      console.error('Google Search visibility load failed', e);
+      const caption=document.getElementById('od-search-caption-siteanalytics');
+      if(caption) caption.textContent='Google Search visibility could not load. Other Owned Domains reporting remains available.';
+    });
     return true;
   }catch(e){
     console.error('Site Analytics data load failed', e);
@@ -4909,7 +4920,7 @@ function odDiagnosisLabel(value){ return ({reached:'Reached in latest complete s
 function odDiagnosisColor(value){ return ({reached:'#DDEFE7',relevant_article_not_cited:'#FFF0CE',no_relevant_article:'#F9E1E1',diagnosis_pending:'#ECEFF4'})[value]||'#ECEFF4'; }
 function odHeatColor(reached,total){ if(!total)return '#F6F7F9'; const pct=reached/total; return pct===0?'#F8DDDD':pct<.34?'#FBEBCB':pct<.67?'#FFF6DA':'#DDEFE7'; }
 function odCurrency(v){ return v==null?'Not measured':'$'+Math.round(v).toLocaleString('en-US'); }
-function odSearchPerformanceHtml(page){ return page==='siteanalytics'?`<div class="card section-gap"><div class="card-title">Google Search visibility</div><div class="card-caption" id="od-search-caption-${page}">Search Console impressions and clicks for the selected AEO Site domain(s). This measures real Google searches, separately from AI-answer citations.</div><div class="kpis" id="od-search-kpis-${page}" style="margin-top:12px;"></div><div id="od-search-trend-${page}" style="margin-top:12px;"></div></div>`:''; }
+function odSearchPerformanceHtml(page){ return page==='siteanalytics'?`<div class="card section-gap"><div class="card-title">Google Search visibility</div><div class="card-caption" id="od-search-caption-${page}">Loading Search Console impressions and clicks. The rest of the Owned Domains page is ready to use.</div><div class="kpis" id="od-search-kpis-${page}" style="margin-top:12px;"></div><div id="od-search-trend-${page}" style="margin-top:12px;"></div></div>`:''; }
 
 function buildOwnedDomainsPage(page){
   const group=odGroupForPage(page), config=OWNED_DOMAINS.groups[group];

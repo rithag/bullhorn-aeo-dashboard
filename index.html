@@ -747,7 +747,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-16-v16-reference-database/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-16-v17-latest-snapshot/';
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
 let ownedDomainsQualityLoadPromise = null;
@@ -5241,7 +5241,7 @@ function renderOwnedDomainsPage(page){
   // selected workstream, race, candidate, topic, or literal prompt to the
   // articles that can answer it.
   const isNarrowed=odHasPromptScope(filters);
-  const windowDays=String(filters.window||'7');
+  const windowDays=String(filters.window||'7'), latestWindow=windowDays==='latest';
   const milestoneFor=r=>r.milestones?.[windowDays] || (windowDays==='7'?{status:r.status,eligible_snapshot:r.eligible_7_day_snapshot,citation_count:r.citation_count_at_7_day_snapshot,direct_topic_citations:r.direct_topic_citations_at_7_day_snapshot}:null);
   const scopedArticleMetrics=(OWNED_DOMAINS.article_metrics[group]||[]).filter(r=>{
     const item=articleById[r.article_id]||{};
@@ -5267,7 +5267,7 @@ function renderOwnedDomainsPage(page){
   if(footprint) footprint.innerHTML=[
     odKpi('AI citations',odNum(citedTotal),'final-answer source appearances','',true),
     odKpi('Prompts reached',reachRate==null?'Not measured':fmt1(100*reachRate)+'%',`${odNum(reached.size)} of ${odNum(measuredCoverage.length)} checked prompts`),
-    odKpi(`${isSocialMedia?'Posts':'Articles'} cited by day ${windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`)
+    odKpi(`${isSocialMedia?'Posts':'Articles'} cited ${latestWindow?'in latest snapshot':'by day '+windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`)
   ].join('');
   const investmentCaption=document.getElementById('od-investment-caption-'+page), investmentKpis=document.getElementById('od-investment-kpis-'+page);
   if(investmentKpis){
@@ -5287,12 +5287,12 @@ function renderOwnedDomainsPage(page){
   if(caption) caption.textContent=isSocialMedia?'Use this scorecard to judge whether tracked posts are earning citations quickly and at a meaningful rate.':'Use this scorecard to judge whether articles are earning citations quickly, on the intended subject, and at a meaningful rate.';
   const performanceKpis=document.getElementById('od-performance-kpis-'+page);
   if(performanceKpis) performanceKpis.innerHTML=(isSocialMedia?[
-    odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible post${eligibleArticles===1?'':'s'}`),
-    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?`No citations in completed ${windowDays}-day post windows`:`${odNum(direct)} direct-topic citations`),
+    odKpi(latestWindow?'Latest-snapshot citation yield':`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible post${eligibleArticles===1?'':'s'}`),
+    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?latestWindow?'No citations in latest snapshot':`No citations in completed ${windowDays}-day post windows`:`${odNum(direct)} direct-topic citations`),
     odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible posts')
   ]:[
-    odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`),
-    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?`No citations in completed ${windowDays}-day article windows`:`${odNum(direct)} direct-topic citations`),
+    odKpi(latestWindow?'Latest-snapshot citation yield':`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`),
+    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?latestWindow?'No citations in latest snapshot':`No citations in completed ${windowDays}-day article windows`:`${odNum(direct)} direct-topic citations`),
     odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible articles')
   ]).join('');
   const citationTrend=document.getElementById('od-citation-trend-'+page), citationDates=[...new Set(projectHistory.map(row=>row.date))].sort();
@@ -5355,23 +5355,26 @@ function renderOwnedSearchPerformance(page,filters){
 
 function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics,milestoneFor,windowDays,summary){
   const isSocialMedia=filters.group==='social_media', unit=isSocialMedia?'post':'article', unitPlural=isSocialMedia?'posts':'articles';
+  const latestWindow=windowDays==='latest', windowLabel=latestWindow?'latest complete snapshot':`${windowDays}-day milestone`;
   const toggle=document.getElementById('od-window-toggle-'+page);
   if(toggle){
-    toggle.innerHTML=['7','14','30'].map(day=>`<button type="button" data-od-window="${day}" class="${day===windowDays?'active':''}">${day}d</button>`).join('');
+    toggle.innerHTML=['7','14','30','latest'].map(day=>`<button type="button" data-od-window="${day}" class="${day===windowDays?'active':''}">${day==='latest'?'Latest snapshot':day+'d'}</button>`).join('');
     toggle.querySelectorAll('[data-od-window]').forEach(button=>button.addEventListener('click',()=>{odSetState(page,{window:button.dataset.odWindow});renderOwnedDomainsPage(page);}));
   }
   const yieldCaption=document.getElementById('od-yield-caption-'+page), yieldChart=document.getElementById('od-yield-chart-'+page), conversion=document.getElementById('od-conversion-chart-'+page);
-  const windows=['7','14','30'];
+  const windows=['7','14','30','latest'];
   const windowRows=windows.map(day=>{
     const eligible=scopedArticleMetrics.filter(row=>(row.milestones?.[day]||{}).status==='eligible');
     const values=eligible.map(row=>+(row.milestones?.[day]?.citation_count||0));
     return {day,total:new Set(scopedArticleMetrics.map(row=>row.article_id)).size,eligible:eligible.length,yield:avg(values),zero:values.filter(v=>v===0).length,low:values.filter(v=>v>0&&v<3).length,high:values.filter(v=>v>=3).length};
   });
   const selected=windowRows.find(row=>row.day===windowDays)||windowRows[0];
-  if(yieldCaption) yieldCaption.textContent=selected.eligible?`A ${windowDays}-day window is the first ${windowDays} calendar days after a ${unit} was posted. ${selected.eligible} of ${selected.total} tracked ${unitPlural} are old enough to complete it.`:`No tracked ${unit} has completed the ${windowDays}-day window yet.`;
+  if(yieldCaption) yieldCaption.textContent=latestWindow
+    ? `${selected.eligible} of ${selected.total} tracked ${unitPlural} were published by the latest complete citation snapshot (${OWNED_DOMAINS.latest_complete_citation_snapshot}). This is a current snapshot, not a lifetime sum.`
+    : selected.eligible?`Each ${unit} is measured at its first complete citation snapshot at least ${windowDays} days after publication. ${selected.eligible} of ${selected.total} tracked ${unitPlural} have reached that milestone.`:`No tracked ${unit} has a complete ${windowDays}-day milestone snapshot yet.`;
   if(yieldChart){
     const row=(label,count,color,kind,denominator=selected.eligible)=>`<div class="topic-row" data-od-yield-bucket="${kind}" style="cursor:pointer;" title="Open the ${unitPlural} in this bucket"><div class="topic-name" style="width:170px;">${label}</div><div class="topic-track"><div class="topic-fill core" style="width:${denominator?100*count/denominator:0}%;background:${color};"></div></div><div class="topic-pct" style="width:110px;">${odNum(count)} · ${fmt1(denominator?100*count/denominator:0)}%</div></div>`;
-    yieldChart.innerHTML=selected.eligible?`<div class="small-muted" style="margin:10px 0 12px;">Average: <strong>${fmt1(selected.yield)}</strong> citations per eligible ${unit}. Select a bar to inspect its ${unitPlural}.</div>${row('Eligible by day '+windowDays,selected.eligible,'#2E5EAA','eligible',selected.total)}${row('No citation',selected.zero,'#B23B3B','zero')}${row('1–2 citations',selected.low,'#C98A2E','low')}${row('3+ citations',selected.high,'#4F8B8B','high')}`:`<div class="small-muted">Not yet measurable for this ${unit}-age window.</div>`;
+    yieldChart.innerHTML=selected.eligible?`<div class="small-muted" style="margin:10px 0 12px;">Average: <strong>${fmt1(selected.yield)}</strong> citations per eligible ${unit} at the ${windowLabel}. Select a bar to inspect its ${unitPlural}.</div>${row(latestWindow?'Published by snapshot':'Eligible by day '+windowDays,selected.eligible,'#2E5EAA','eligible',selected.total)}${row('No citation',selected.zero,'#B23B3B','zero')}${row('1–2 citations',selected.low,'#C98A2E','low')}${row('3+ citations',selected.high,'#4F8B8B','high')}`:`<div class="small-muted">Not yet measurable for this ${windowLabel}.</div>`;
     const articleById=Object.fromEntries((OWNED_DOMAINS.articles||[]).map(article=>[article.id,article]));
     yieldChart.querySelectorAll('[data-od-yield-bucket]').forEach(node=>node.addEventListener('click',()=>{
       const kind=node.dataset.odYieldBucket;
@@ -5379,21 +5382,21 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics
         const count=+milestoneFor(metric).citation_count||0;
         return kind==='zero'?count===0:kind==='low'?count>0&&count<3:count>=3;
       });
-      const label={eligible:`Eligible by day ${windowDays}`,zero:'No citation',low:'1–2 citations',high:'3+ citations'}[kind]||kind;
+      const label={eligible:latestWindow?'Published by snapshot':`Eligible by day ${windowDays}`,zero:'No citation',low:'1–2 citations',high:'3+ citations'}[kind]||kind;
       const rows=bucket.map(metric=>{
         const article=articleById[metric.article_id]||{}, milestone=milestoneFor(metric)||{};
         return `<tr><td style="white-space:normal;max-width:360px;"><a href="${escXAttr(article.url||'#')}" target="_blank" rel="noopener">${odEsc(article.title||article.url||metric.article_id)}</a></td><td>${odEsc(article.domain||'')}</td><td>${odEsc(article.published_on||'Not measured')}</td><td>${odNum(milestone.citation_count||0)}</td>${isSocialMedia?'':`<td>${odNum(milestone.direct_topic_citations||0)}</td>`}</tr>`;
       }).join('');
       const heading=isSocialMedia?'Tracked post':'Article', dateHeading=isSocialMedia?'Posted':'Published';
       const onTopicHeading=isSocialMedia?'':'<th>On-topic</th>', colspan=isSocialMedia?4:5;
-      openSidePanel(`<div class="card-title">${odEsc(label)} · ${windowDays}-day window</div><div class="card-caption">${bucket.length} ${unit}${bucket.length===1?'':'s'} in the current ${unit} and filter scope. The count is measured at the first complete citation snapshot at least ${windowDays} calendar days after ${isSocialMedia?'posting':'publication'}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>${heading}</th><th>Domain</th><th>${dateHeading}</th><th>Citations</th>${onTopicHeading}</tr>${rows||`<tr><td colspan="${colspan}" class="small-muted">No ${unitPlural} match this bucket.</td></tr>`}</table></div>`,{wide:true});
+      openSidePanel(`<div class="card-title">${odEsc(label)} · ${windowLabel}</div><div class="card-caption">${bucket.length} ${unit}${bucket.length===1?'':'s'} in the current filter scope. Counts are measured ${latestWindow?'in the latest complete citation snapshot':'at the first complete snapshot at least '+windowDays+' calendar days after '+(isSocialMedia?'posting':'publication')}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>${heading}</th><th>Domain</th><th>${dateHeading}</th><th>Citations</th>${onTopicHeading}</tr>${rows||`<tr><td colspan="${colspan}" class="small-muted">No ${unitPlural} match this bucket.</td></tr>`}</table></div>`,{wide:true});
     }));
   }
   if(conversion){
     const onTopic=summary.onTopic, citedRate=summary.citedRate, medianDays=summary.firstDays.length?odMedian(summary.firstDays):null;
     const citedLabel=isSocialMedia?'Posts':'Articles';
     const onTopicRow=`<div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div>`;
-    conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">${citedLabel} cited by day ${windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div>${onTopicRow}<div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
+    conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">${citedLabel} cited ${latestWindow?'in latest snapshot':'by day '+windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div>${onTopicRow}<div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
   }
 }
 

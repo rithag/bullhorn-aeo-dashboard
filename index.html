@@ -2256,13 +2256,6 @@ document.querySelectorAll('.nav-item').forEach(item=>{
       return;
     }
     if(page==='siteanalytics'){
-      try{
-        await ensureFullScoreData();
-      }catch(e){
-        console.error('Detailed score data load failed', e);
-        document.getElementById('page-siteanalytics').innerHTML='<div class="err-banner">Detailed score data could not load: '+escXHtml(String(e.message||e))+'</div>';
-        return;
-      }
       await openSiteAnalyticsPage();
       return;
     }

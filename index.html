@@ -136,6 +136,15 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
 .od-at-glance .kpi{padding:11px 12px;box-shadow:none;}
 .od-at-glance .kpi-value{font-size:20px;}
 .od-at-glance-single{max-width:720px;}
+.od-scorecard{grid-auto-rows:1fr;}
+.od-scorecard .kpi{display:flex;flex-direction:column;min-height:108px;box-shadow:none;}
+.od-scorecard .kpi-label{min-height:25px;display:flex;align-items:flex-start;}
+.od-scorecard .kpi-value{min-height:29px;display:flex;align-items:baseline;}
+.od-scorecard .kpi-sub{margin-top:auto;min-height:15px;}
+.od-action-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.od-action-row .od-back{margin-left:0;}
+.od-url-bars{margin-top:10px;}
+.od-url-selection{margin-top:12px;border-top:1px solid var(--border);padding-top:12px;}
 .od-quality-layout{display:grid;grid-template-columns:minmax(0,2.25fr) minmax(250px,.75fr);gap:16px;align-items:start;}
 .od-quality-change{border-left:1px solid var(--border);padding-left:16px;display:grid;gap:7px;}
 .od-quality-change-row{display:grid;grid-template-columns:1fr auto auto auto;gap:7px;align-items:center;font-size:11.5px;}
@@ -4994,10 +5003,17 @@ function odInverseTone(value, goodAt, moderateAt){ if(value==null||!Number.isFin
 function odKpi(label,value,sub,tone,primary){ return `<div class="kpi${primary?' hi':''}${tone?' '+tone:''}"><div class="kpi-label">${odEsc(label)}</div><div class="kpi-value">${value}</div><div class="kpi-sub">${odEsc(sub||'')}</div></div>`; }
 function odScopeLabel(filters){ const parts=[]; if(filters.workstream!=='all')parts.push(filters.workstream); if(filters.race!=='all')parts.push(filters.race); if(filters.candidate!=='all'){const p=(OWNED_DOMAINS.prompts||[]).find(x=>x.candidate_id===filters.candidate);if(p)parts.push(p.candidate);} if(filters.topic!=='all'){const p=(OWNED_DOMAINS.prompts||[]).find(x=>x.topic_group===filters.topic);if(p)parts.push(p.topic_label);} return parts.length?parts.join(' · '):'all monitored workstreams'; }
 function odShortDate(value){ if(!value) return 'not measured'; const date=new Date(value+'T12:00:00Z'); return Number.isNaN(date.valueOf())?value:date.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function odUrlLabel(value){
+  try{
+    const url=new URL(/^https?:\/\//i.test(value)?value:'https://'+value);
+    const path=(url.pathname||'/')+(url.search||'');
+    return path.length>62?path.slice(0,59)+'…':path;
+  }catch(error){ return String(value||''); }
+}
 function odRankBars(containerId, rows, onClick, maxRows){
   const el=document.getElementById(containerId); if(!el) return;
   const visible=(rows||[]).slice(0,maxRows||40), max=Math.max(1,...visible.map(r=>+r.value||0));
-  el.innerHTML=visible.length?visible.map((r,index)=>`<div class="topic-row"${onClick?' style="cursor:pointer;" data-od-rank="'+index+'"':''}><div class="topic-name" style="width:220px;white-space:normal;">${odEsc(r.label)}</div><div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*(+r.value||0)/max,0,100)}%;background:${r.color||'#2E5EAA'};"></div></div><div class="topic-pct" style="width:88px;text-align:right;">${odEsc(r.valueLabel||odNum(r.value))}</div></div>`).join(''):'<div class="small-muted">No matching citation observations.</div>';
+  el.innerHTML=visible.length?visible.map((r,index)=>`<div class="topic-row"${onClick?' style="cursor:pointer;" data-od-rank="'+index+'"':''} title="${escXAttr(r.title||r.label)}"><div class="topic-name" style="width:220px;white-space:normal;">${odEsc(r.label)}</div><div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*(+r.value||0)/max,0,100)}%;background:${r.color||'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;text-align:right;">${odEsc(r.valueLabel||odNum(r.value))}</div></div>`).join(''):'<div class="small-muted">No matching citation observations.</div>';
   if(onClick) el.querySelectorAll('[data-od-rank]').forEach(node=>node.addEventListener('click',()=>onClick(visible[+node.dataset.odRank])));
 }
 function odSearchPerformanceHtml(page){ return page==='siteanalytics'?`<div class="card od-at-glance"><div class="card-title">Google Search reach</div><div class="card-caption" id="od-search-caption-${page}">Loading Search Console impressions and clicks.</div><div class="kpis" id="od-search-kpis-${page}"></div></div>`:''; }
@@ -5028,19 +5044,19 @@ function buildOwnedDomainsPage(page){
       <div class="fitem"><label>Citation range end</label><input type="date" id="od-end-${page}" value="${odEsc(state.end||dates[dates.length-1]||'')}"></div>
     </div>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div></section>
-    <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">1. How is our content performing?</div><div class="card-caption" id="od-performance-caption-${page}" style="margin-bottom:12px;"></div><div class="kpis" id="od-performance-kpis-${page}"></div>
+    <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">1. How is our content performing?</div><div class="card-caption" id="od-performance-caption-${page}" style="margin-bottom:12px;"></div><div class="kpis od-scorecard" id="od-performance-kpis-${page}"></div>
       <div class="row-eq section-gap"><div class="card"><div class="card-title">Citation frequency over time</div><div class="card-caption">Final-answer source appearances in the selected citation period.</div><div id="od-citation-trend-${page}"></div></div>${odSearchTrendHtml(page)}</div>
       <div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">The share of eligible articles cited by the selected milestone, on-topic citation share, and time to first observed citation.</div><div id="od-conversion-chart-${page}"></div></div></div>
       <div class="card section-gap"><div class="card-title">Answer quality where cited</div><div class="card-caption">The five answer-quality measures for the cited prompt-provider cohort. Read the score change beside the trend before opening any response detail.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>
     </section>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">2. Where is it showing up?</div><div class="card-caption" style="margin-bottom:12px;">Peer standing comes first, followed by the owned-domain, URL, and prompt path behind that visibility.</div>
-      <div class="card"><div class="card-title">Peer-category ranking</div><div class="card-caption">The portfolio summary compares all selected owned domains with the matching peer category. Individual domains remain ranked against other individual domains.</div><div id="od-peer-ranking-${page}" class="small-muted">Preparing peer-category ranking data…</div></div>
-      <div class="card section-gap"><div class="card-title">Citation frequency by owned domain</div><div class="card-caption">The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}"></div></div>
-      <details class="od-detail-fold"><summary>Open cited URL and prompt detail</summary><div class="row-eq"><div class="card"><div class="card-title">Cited URLs</div><div class="scroll-table" id="od-url-table-${page}"></div></div><div class="card"><div class="card-title">Prompts citing selected URL</div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div></details>
+      <div class="card"><div class="card-title">Citation frequency ranking</div><div class="card-caption">Ranks use the latest complete citation snapshot (${odEsc(odShortDate(OWNED_DOMAINS.latest_complete_citation_snapshot))}). The portfolio is shown as a combined entry alongside individual-domain ranks.</div><div id="od-peer-ranking-${page}" class="small-muted">Preparing citation frequency ranking…</div></div>
+      <div class="card section-gap"><div class="card-title">Citation frequency by owned domain <button class="od-back" id="od-clear-domain-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}>Show all domains</button></div><div class="card-caption">The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}" class="od-action-row"></div></div>
+      <div class="card section-gap"><div class="card-title">Cited URLs</div><div class="card-caption">URLs are ranked by citation frequency. Select one URL to see the monitored prompts it was cited for.</div><div id="od-url-bars-${page}" class="od-url-bars"></div><div class="od-url-selection"><div class="card-title">Prompts citing selected URL <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>
     </section>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">3. Where are there still gaps?</div><div class="card-caption" style="margin-bottom:12px;">Start with the largest candidate-topic opportunities. A partial group stays visible until every monitored prompt in that group is reached.</div>
       <div class="card"><div class="card-title">Largest addressable gaps</div><div class="card-caption">Each row says whether to create focused content, improve the discoverability of an existing article, or reinforce partial coverage. Open a row for exact prompts and mapped articles.</div><div class="scroll-table" id="od-gap-queue-${page}"></div><div id="od-gap-expand-${page}"></div></div>
-      <div class="row-eq section-gap"><div class="card"><div class="card-title">Candidate coverage portfolio <button class="od-back" id="od-clear-candidate-${page}"${state.candidate&&state.candidate!=='all'?'':' style="display:none;"'}>Show all candidates</button></div><div class="card-caption">Candidates with the most unreached prompts are listed first. Select one to focus the gap queue.</div><div class="scroll-table" id="od-candidate-portfolio-${page}"></div><div id="od-candidate-expand-${page}"></div></div><div class="card"><div class="card-title">Coverage map</div><div class="card-caption">Use the map when looking for a pattern across candidates or topics. Select a cell for its prompts and article evidence.</div><details class="od-detail-fold"><summary>Show candidate × topic coverage map</summary><div class="scroll-table" id="od-coverage-heatmap-${page}"></div></details></div></div>
+      <div class="row-eq section-gap"><div class="card"><div class="card-title">Candidate coverage portfolio <button class="od-back" id="od-clear-candidate-${page}"${state.candidate&&state.candidate!=='all'?'':' style="display:none;"'}>Show all candidates</button></div><div class="card-caption">Candidates with the most unreached prompts are listed first. Select one to focus the gap queue.</div><div class="scroll-table" id="od-candidate-portfolio-${page}"></div><div id="od-candidate-expand-${page}" class="od-action-row"></div></div><div class="card"><div class="card-title">Coverage map</div><div class="card-caption">Use the map when looking for a pattern across candidates or topics. Select a cell for its prompts and article evidence.</div><details class="od-detail-fold"><summary>Show candidate × topic coverage map</summary><div class="scroll-table" id="od-coverage-heatmap-${page}"></div></details></div></div>
     </section>`;
   host.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',async()=>{
     odSetState(page,{workstream:document.getElementById('od-workstream-'+page).value,race:document.getElementById('od-race-'+page).value,candidate:document.getElementById('od-candidate-'+page).value,topic:document.getElementById('od-topic-'+page).value,prompt:document.getElementById('od-prompt-'+page).value,domain:document.getElementById('od-domain-'+page).value,window:odState(page).window||'7',start:document.getElementById('od-start-'+page).value,end:document.getElementById('od-end-'+page).value});
@@ -5052,6 +5068,10 @@ function buildOwnedDomainsPage(page){
   }));
   const clearCandidate=host.querySelector('#od-clear-candidate-'+page);
   if(clearCandidate) clearCandidate.addEventListener('click',async()=>{odSetState(page,{candidate:'all'}); await ensureOwnedDomainsDetailLoaded().catch(error=>console.error('Owned Domains detail load failed',error)); buildOwnedDomainsPage(page);});
+  const clearDomain=host.querySelector('#od-clear-domain-'+page);
+  if(clearDomain) clearDomain.addEventListener('click',async()=>{odSetState(page,{domain:'all',urlKey:null}); await ensureOwnedDomainsDetailLoaded().catch(error=>console.error('Owned Domains detail load failed',error)); buildOwnedDomainsPage(page);});
+  const clearUrl=host.querySelector('#od-clear-url-'+page);
+  if(clearUrl) clearUrl.addEventListener('click',()=>{odSetState(page,{urlKey:null});renderOwnedDomainsPage(page);});
   renderOwnedDomainsPage(page);
 }
 
@@ -5069,7 +5089,8 @@ function renderOwnedDomainsPage(page){
   const isNarrowed=odHasPromptScope(filters);
   const windowDays=String(filters.window||'7');
   const milestoneFor=r=>r.milestones?.[windowDays] || (windowDays==='7'?{status:r.status,eligible_snapshot:r.eligible_7_day_snapshot,citation_count:r.citation_count_at_7_day_snapshot,direct_topic_citations:r.direct_topic_citations_at_7_day_snapshot}:null);
-  const metrics=(OWNED_DOMAINS.article_metrics[group]||[]).filter(r=>milestoneFor(r)?.status==='eligible'&&(!isNarrowed||narrowedIds.has(r.article_id))&&(filters.domain==='all'||articleById[r.article_id]?.domain===filters.domain));
+  const scopedArticleMetrics=(OWNED_DOMAINS.article_metrics[group]||[]).filter(r=>(!isNarrowed||narrowedIds.has(r.article_id))&&(filters.domain==='all'||articleById[r.article_id]?.domain===filters.domain));
+  const metrics=scopedArticleMetrics.filter(r=>milestoneFor(r)?.status==='eligible');
   const eligibleArticles=metrics.length, citedArticles=metrics.filter(r=>(+milestoneFor(r).citation_count||0)>0);
   const yieldAtWindow=avg(metrics.map(r=>+milestoneFor(r).citation_count||0));
   const direct=metrics.reduce((s,r)=>s+(+milestoneFor(r).direct_topic_citations||0),0), allMilestone=metrics.reduce((s,r)=>s+(+milestoneFor(r).citation_count||0),0);
@@ -5084,15 +5105,15 @@ function renderOwnedDomainsPage(page){
   const footprint=document.getElementById('od-footprint-kpis-'+page);
   if(footprint) footprint.innerHTML=[
     odKpi('AI citations',odNum(citedTotal),'final-answer source appearances','',true),
-    odKpi('Prompts reached',`${odNum(reached.size)} of ${odNum(prompts.length)}`,reachRate==null?'not measured':`${fmt1(100*reachRate)}% of monitored prompts`,odTone(reachRate)),
-    odKpi(`Articles cited by day ${windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`,odTone(citedRate))
+    odKpi('Prompts reached',reachRate==null?'Not measured':fmt1(100*reachRate)+'%',`${odNum(reached.size)} of ${odNum(prompts.length)} monitored prompts`),
+    odKpi(`Articles cited by day ${windowDays}`,citedRate==null?'Not measured':fmt1(100*citedRate)+'%',`${citedArticles.length} of ${eligibleArticles} eligible`)
   ].join('');
   const caption=document.getElementById('od-performance-caption-'+page);
   if(caption) caption.textContent='Use this scorecard to judge whether articles are earning citations quickly, on the intended subject, and at a meaningful rate.';
   document.getElementById('od-performance-kpis-'+page).innerHTML=[
-    odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`,yieldAtWindow==null?'':yieldAtWindow>=1?'good':yieldAtWindow>0?'moderate':'bad'),
-    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?'':`${odNum(direct)} direct-topic citations`,odTone(onTopic,[.4,.7])),
-    odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible articles',odInverseTone(medianDays,7,14))
+    odKpi(`${windowDays}-day citation yield`,yieldAtWindow==null?'Not measured':fmt1(yieldAtWindow),`${eligibleArticles} eligible article${eligibleArticles===1?'':'s'}`),
+    odKpi('On-topic citation share',onTopic==null?'Not measured':fmt1(100*onTopic)+'%',onTopic==null?'':`${odNum(direct)} direct-topic citations`),
+    odKpi('First citation',medianDays==null?'Not observed':fmt1(medianDays)+' days','median among cited eligible articles')
   ].join('');
   const citationTrend=document.getElementById('od-citation-trend-'+page), citationDates=[...new Set(projectHistory.map(row=>row.date))].sort();
   if(citationTrend){
@@ -5101,7 +5122,7 @@ function renderOwnedDomainsPage(page){
       lineChart('od-citation-trend-'+page,citationDates,[{name:'Citations',values:citationDates.map(day=>byDate[day]||0),color:'#2E5EAA'}],{min:0,max:Math.max(1,...citationDates.map(day=>byDate[day]||0)),height:190});
     }else citationTrend.innerHTML='<div class="small-muted">No matching final-answer citation observations are available in this period.</div>';
   }
-  renderOwnedPerformanceVisuals(page,filters,metrics,milestoneFor,windowDays,{yieldAtWindow,eligibleArticles,citedArticles,direct,allMilestone,firstDays,onTopic,citedRate});
+  renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics,milestoneFor,windowDays,{yieldAtWindow,eligibleArticles,citedArticles,direct,allMilestone,firstDays,onTopic,citedRate});
   renderOwnedDomainQuality(page,filters);
   if(page==='siteanalytics') renderOwnedSearchPerformance(page,filters);
   renderOwnedDomainVisibility(page,filters,history);
@@ -5150,7 +5171,7 @@ function renderOwnedSearchPerformance(page,filters){
   }
 }
 
-function renderOwnedPerformanceVisuals(page,filters,metrics,milestoneFor,windowDays,summary){
+function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics,milestoneFor,windowDays,summary){
   const toggle=document.getElementById('od-window-toggle-'+page);
   if(toggle){
     toggle.innerHTML=['7','14','30'].map(day=>`<button type="button" data-od-window="${day}" class="${day===windowDays?'active':''}">${day}d</button>`).join('');
@@ -5159,19 +5180,19 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,milestoneFor,windowD
   const yieldCaption=document.getElementById('od-yield-caption-'+page), yieldChart=document.getElementById('od-yield-chart-'+page), conversion=document.getElementById('od-conversion-chart-'+page);
   const windows=['7','14','30'];
   const windowRows=windows.map(day=>{
-    const eligible=metrics.filter(row=>(row.milestones?.[day]||{}).status==='eligible');
+    const eligible=scopedArticleMetrics.filter(row=>(row.milestones?.[day]||{}).status==='eligible');
     const values=eligible.map(row=>+(row.milestones?.[day]?.citation_count||0));
-    return {day,eligible:eligible.length,yield:avg(values),zero:values.filter(v=>v===0).length,low:values.filter(v=>v>0&&v<3).length,high:values.filter(v=>v>=3).length};
+    return {day,total:new Set(scopedArticleMetrics.map(row=>row.article_id)).size,eligible:eligible.length,yield:avg(values),zero:values.filter(v=>v===0).length,low:values.filter(v=>v>0&&v<3).length,high:values.filter(v=>v>=3).length};
   });
   const selected=windowRows.find(row=>row.day===windowDays)||windowRows[0];
-  if(yieldCaption) yieldCaption.textContent=selected.eligible?`${selected.eligible} articles have completed the ${windowDays}-day window. The distribution includes zero-cited articles.`:`No article has completed the ${windowDays}-day window yet.`;
+  if(yieldCaption) yieldCaption.textContent=selected.eligible?`A ${windowDays}-day window is the first ${windowDays} calendar days after an article was published. ${selected.eligible} of ${selected.total} published articles are old enough to complete it.`:`No published article has completed the ${windowDays}-day window yet.`;
   if(yieldChart){
-    const max=Math.max(1,...windowRows.map(row=>row.yield||0));
-    yieldChart.innerHTML=selected.eligible?`<div style="margin:10px 0 14px;"><div class="topic-row"><div class="topic-name" style="width:170px;">Citations per eligible article</div><div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*(selected.yield||0)/max,0,100)}%;background:#2E5EAA;"></div></div><div class="topic-pct" style="width:70px;">${fmt1(selected.yield)}</div></div></div><div class="topic-row"><div class="topic-name" style="width:170px;">No citation</div><div class="topic-track"><div class="topic-fill core" style="width:${selected.eligible?100*selected.zero/selected.eligible:0}%;background:#B23B3B;"></div></div><div class="topic-pct" style="width:70px;">${selected.zero} articles</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">1–2 citations</div><div class="topic-track"><div class="topic-fill core" style="width:${selected.eligible?100*selected.low/selected.eligible:0}%;background:#C98A2E;"></div></div><div class="topic-pct" style="width:70px;">${selected.low} articles</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">3+ citations</div><div class="topic-track"><div class="topic-fill core" style="width:${selected.eligible?100*selected.high/selected.eligible:0}%;background:#4F8B8B;"></div></div><div class="topic-pct" style="width:70px;">${selected.high} articles</div></div>`:'<div class="small-muted">Not yet measurable for this article-age window.</div>';
+    const row=(label,count,color,denominator=selected.eligible)=>`<div class="topic-row"><div class="topic-name" style="width:170px;">${label}</div><div class="topic-track"><div class="topic-fill core" style="width:${denominator?100*count/denominator:0}%;background:${color};"></div></div><div class="topic-pct" style="width:110px;">${odNum(count)} · ${fmt1(denominator?100*count/denominator:0)}%</div></div>`;
+    yieldChart.innerHTML=selected.eligible?`<div class="small-muted" style="margin:10px 0 12px;">Average: <strong>${fmt1(selected.yield)}</strong> citations per eligible article</div>${row('Eligible by day '+windowDays,selected.eligible,'#2E5EAA',selected.total)}${row('No citation',selected.zero,'#B23B3B')}${row('1–2 citations',selected.low,'#C98A2E')}${row('3+ citations',selected.high,'#4F8B8B')}`:'<div class="small-muted">Not yet measurable for this article-age window.</div>';
   }
   if(conversion){
     const onTopic=summary.onTopic, citedRate=summary.citedRate, medianDays=summary.firstDays.length?odMedian(summary.firstDays):null;
-    conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">Articles cited by day ${windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':citedRate>=.7?'#4F8B8B':citedRate>=.35?'#C98A2E':'#B23B3B'};"></div></div><div class="topic-pct" style="width:70px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':onTopic>=.7?'#4F8B8B':onTopic>=.4?'#C98A2E':'#B23B3B'};"></div></div><div class="topic-pct" style="width:70px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':medianDays<=7?'#4F8B8B':medianDays<=14?'#C98A2E':'#B23B3B'};"></div></div><div class="topic-pct" style="width:70px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
+    conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">Articles cited by day ${windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div><div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
   }
 }
 
@@ -5207,10 +5228,13 @@ function renderOwnedDomainQuality(page,filters){
   const colors={visibility:'#2E5EAA',favorability:'#7FA98F',depth:'#B79A5C',accuracy:'#B23B3B',narrative:'#4F8B8B'};
   const chart=document.getElementById('od-quality-chart-'+page), note=document.getElementById('od-quality-note-'+page), change=document.getElementById('od-quality-change-'+page);
   if(!cohort.size||!dates.some((_,i)=>dims.some(dim=>series[dim][i]!=null))){ chart.innerHTML='<div class="small-muted">No score rows match the current cited prompt and provider cohort.</div>'; note.textContent=''; if(change) change.innerHTML='<div class="small-muted">No cited prompt-provider cohort matches these filters. Change the citation or domain filter to inspect another cohort.</div>'; return; }
-  lineChart('od-quality-chart-'+page,dates,dims.map(dim=>({name:DIM_LABELS[dim],values:series[dim],color:colors[dim]})),{min:0,max:100,height:250});
-  const changes=dims.map(dim=>{const first=series[dim].findIndex(v=>v!=null), last=series[dim].map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop(),a=first<0?null:series[dim][first],b=last==null?null:series[dim][last],delta=a==null||b==null?null:b-a;return {dim,a,b,delta};});
-  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort.`;
-  if(change) change.innerHTML=`<div class="small-muted" style="grid-column:1/-1;">First observed / latest / change</div>${changes.map(row=>`<div class="od-quality-change-row"><span class="dim">${odEsc(DIM_LABELS[row.dim])}</span><span>${row.a==null?'—':fmt1(row.a)}</span><span>${row.b==null?'—':fmt1(row.b)}</span><span class="delta ${row.delta==null?'neutral':row.delta>.5?'good':row.delta<-.5?'bad':'neutral'}">${row.delta==null?'—':(row.delta>0?'+':'')+fmt1(row.delta)+' pp'}</span></div>`).join('')}`;
+  const values=dims.flatMap(dim=>series[dim].filter(Number.isFinite));
+  const axisMin=values.length?Math.max(0,Math.floor(Math.min(...values)/10)*10-5):0;
+  lineChart('od-quality-chart-'+page,dates,dims.map(dim=>({name:DIM_LABELS[dim],values:series[dim],color:colors[dim]})),{min:axisMin,max:100,height:250});
+  const baselineIndex=dates.indexOf('2026-08-31');
+  const changes=dims.map(dim=>{const last=series[dim].map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop(),a=baselineIndex<0?null:series[dim][baselineIndex],b=last==null?null:series[dim][last],delta=a==null||b==null?null:b-a;return {dim,a,b,delta};});
+  note.textContent=`${cohort.size} prompt-provider pair${cohort.size===1?'':'s'} in the latest cited cohort. The y-axis begins at ${axisMin} to make movement readable; changes use the Aug. 31 baseline where measured.`;
+  if(change) change.innerHTML=`<div class="small-muted" style="grid-column:1/-1;">Aug. 31 / latest / change</div>${changes.map(row=>`<div class="od-quality-change-row"><span class="dim">${odEsc(DIM_LABELS[row.dim])}</span><span>${row.a==null?'Not measured':fmt1(row.a)}</span><span>${row.b==null?'—':fmt1(row.b)}</span><span class="delta ${row.delta==null?'neutral':row.delta>.5?'good':row.delta<-.5?'bad':'neutral'}">${row.delta==null?'—':(row.delta>0?'+':'')+fmt1(row.delta)+' pp'}</span></div>`).join('')}`;
 }
 
 function renderOwnedDomainVisibility(page,filters,history){
@@ -5228,9 +5252,12 @@ function renderOwnedDomainVisibility(page,filters,history){
   const byUrl={}; odProjectHistory(history,group).forEach(r=>{const k=r.domain+'||'+r.url;(byUrl[k]||(byUrl[k]={domain:r.domain,url:r.url,citations:0,dates:new Set()})).citations+=r.citations;byUrl[k].dates.add(r.date);});
   const urls=Object.values(byUrl).sort((a,b)=>b.citations-a.citations||a.url.localeCompare(b.url));
   const selectedState=odState(page), current=selectedState.urlKey;
-  const key=urls.some(r=>r.domain+'||'+r.url===current)?current:(urls[0]?urls[0].domain+'||'+urls[0].url:null); odSetState(page,{urlKey:key});
-  const table=document.getElementById('od-url-table-'+page); table.innerHTML=`<table><tr><th>Domain</th><th>URL</th><th>Citations</th><th>Observed batches</th></tr>${urls.length?urls.slice(0,50).map((r,i)=>`<tr class="clickable" data-od-url="${i}"><td>${odEsc(r.domain)}</td><td style="max-width:330px;white-space:normal;word-break:break-all;">${odEsc(r.url)}</td><td>${odNum(r.citations)}</td><td>${r.dates.size}</td></tr>`).join(''):'<tr><td colspan="4" class="small-muted">No URLs match the selected filters.</td></tr>'}</table>`;
-  table.querySelectorAll('[data-od-url]').forEach(row=>row.addEventListener('click',()=>{const item=urls[+row.dataset.odUrl];odSetState(page,{urlKey:item.domain+'||'+item.url});renderOwnedDomainsPage(page);}));
+  const key=urls.some(r=>r.domain+'||'+r.url===current)?current:null;
+  if(key!==current) odSetState(page,{urlKey:key});
+  const clearUrlButton=document.getElementById('od-clear-url-'+page);
+  if(clearUrlButton) clearUrlButton.style.display=key?'':'none';
+  const urlRows=urls.map(item=>({label:odUrlLabel(item.url),title:item.url,value:item.citations,valueLabel:`${odNum(item.citations)} citations`,color:item.domain+'||'+item.url===key?'#B56A47':'#2E5EAA',item}));
+  odRankBars('od-url-bars-'+page,urlRows,row=>{odSetState(page,{urlKey:row.item.domain+'||'+row.item.url});renderOwnedDomainsPage(page);},50);
   const selected=urls.find(r=>r.domain+'||'+r.url===key), drill=document.getElementById('od-prompt-table-'+page), caption=document.getElementById('od-url-caption-'+page);
   if(!selected){caption.textContent='Select a URL to inspect its latest complete prompt citations.';drill.innerHTML='<div class="small-muted">No URL selected.</div>';return;}
   caption.textContent=selected.url;
@@ -5262,7 +5289,29 @@ function renderOwnedGapViews(page,filters,coverage){
   const candidateExpand=document.getElementById('od-candidate-expand-'+page);
   if(candidateExpand) candidateExpand.innerHTML=candidatePortfolio.length>12?`<button class="od-back" type="button">${state.showAllCandidates?'Show top 12':'Show all '+candidatePortfolio.length+' candidates'}</button>`:'';
   if(candidateExpand?.firstElementChild) candidateExpand.firstElementChild.addEventListener('click',()=>{odSetState(page,{showAllCandidates:!state.showAllCandidates});renderOwnedDomainsPage(page);});
-  const openGapDetail=cell=>{const ids=cell.mappedArticleIds, ps=cell.promptIds.map(id=>promptsById[id]).filter(Boolean);openSidePanel(`<div class="card-title">${odEsc(cell.candidate)} · ${odEsc(cell.topic_label)}</div><div class="card-caption">${cell.reached} of ${cell.total} monitored prompts reached in the latest complete snapshot. ${odEsc(odDiagnosisLabel(cell.diagnosis))}.</div><h4>Monitored prompts</h4>${ps.map(p=>`<div style="padding:8px 0;border-bottom:1px solid var(--border);">${odEsc(p.prompt)}</div>`).join('')||'<div class="small-muted">No prompt text is available.</div>'}<h4 style="margin-top:16px;">Relevant articles</h4>${ids.length?ids.map(id=>articlesById[id]).filter(Boolean).map(a=>`<div style="padding:6px 0;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${odEsc(a.title||a.url)}</a><div class="small-muted">${odEsc(a.topic_label||'')}</div></div>`).join(''):'<div class="small-muted">No deterministically mapped article is in the current inventory.</div>'}`,{wide:true});};
+  const coverageByPrompt=new Map(coverage.map(row=>[row.prompt_id,row]));
+  const projectEligible=row=>row.project || !['courier','heartland'].includes(filters.group);
+  const citationByPrompt={};
+  (OWNED_DOMAINS.latest_citation_drilldown||[]).filter(row=>row.group===filters.group&&projectEligible(row)&&(filters.domain==='all'||row.domain===filters.domain)).forEach(row=>{
+    const item=citationByPrompt[row.prompt_id]||(citationByPrompt[row.prompt_id]={citations:0,urls:new Map()});
+    item.citations+=(+row.citations||0);
+    const key=row.domain+'||'+row.url, url=item.urls.get(key)||{domain:row.domain,url:row.url,citations:0};
+    url.citations+=(+row.citations||0); item.urls.set(key,url);
+  });
+  const openGapDetail=cell=>{
+    const ids=cell.mappedArticleIds, ps=cell.promptIds.map(id=>promptsById[id]).filter(Boolean);
+    const articles=ids.map(id=>articlesById[id]).filter(Boolean);
+    const unreachableWithMapped=ps.filter(p=>!coverageByPrompt.get(p.prompt_id)?.reached).length;
+    const promptHtml=ps.map(p=>{
+      const status=coverageByPrompt.get(p.prompt_id), evidence=citationByPrompt[p.prompt_id];
+      const cited=[...(evidence?.urls?.values()||[])].sort((a,b)=>b.citations-a.citations);
+      const result=status?.reached
+        ? `<div style="margin-top:5px;color:#176548;font-weight:600;">Reached · ${odNum(evidence?.citations||0)} citation${evidence?.citations===1?'':'s'}</div>${cited.length?`<div class="small-muted" style="margin-top:4px;">Cited article${cited.length===1?'':'s'}: ${cited.map(item=>`<a href="${escXAttr(item.url)}" target="_blank" rel="noopener">${odEsc(item.domain+odUrlLabel(item.url))}</a> (${odNum(item.citations)})`).join('; ')}</div>`:''}`
+        : `<div style="margin-top:5px;color:#8B4B00;font-weight:600;">Not reached</div>${articles.length?`<div class="small-muted" style="margin-top:4px;">Mapped article${articles.length===1?'':'s'} that address this topic: ${articles.map(a=>`<a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${odEsc(a.title||a.url)}</a>`).join('; ')}</div>`:'<div class="small-muted" style="margin-top:4px;">No reviewed article is mapped to this topic.</div>'}`;
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">${odEsc(p.prompt)}${result}</div>`;
+    }).join('');
+    openSidePanel(`<div class="card-title">${odEsc(cell.candidate)} · ${odEsc(cell.topic_label)}</div><div class="card-caption">${cell.reached} of ${cell.total} monitored prompts reached in the latest complete snapshot. ${unreachableWithMapped} unreached prompt${unreachableWithMapped===1?'':'s'} ${articles.length?'have':'have no'} topic-mapped article evidence. ${odEsc(odDiagnosisLabel(cell.diagnosis))}.</div><h4>Prompt-level evidence</h4>${promptHtml||'<div class="small-muted">No prompt text is available.</div>'}<h4 style="margin-top:16px;">Topic-mapped articles</h4>${articles.length?articles.map(a=>`<div style="padding:6px 0;"><a href="${escXAttr(a.url)}" target="_blank" rel="noopener">${odEsc(a.title||a.url)}</a><div class="small-muted">${odEsc(a.topic_label||'')}</div></div>`).join(''):'<div class="small-muted">No deterministically mapped article is in the current inventory.</div>'}`,{wide:true});
+  };
   const queue=document.getElementById('od-gap-queue-'+page);
   queue.innerHTML=`<table><tr><th>Candidate</th><th>Topic</th><th>Reached</th><th>Diagnosis</th><th>Mapped articles</th></tr>${rows.length?rows.slice(0,gapLimit).map((r,i)=>`<tr class="clickable" data-od-gap="${i}"><td>${odEsc(r.candidate)}</td><td>${odEsc(r.topic_label)}</td><td>${r.reached} of ${r.total}</td><td><span style="background:${odDiagnosisColor(r.diagnosis)};padding:3px 6px;border-radius:10px;font-size:11px;">${odEsc(odDiagnosisLabel(r.diagnosis))}</span></td><td>${r.mappedArticleIds.length}</td></tr>`).join(''):'<tr><td colspan="5" class="small-muted">No monitored prompt groups match the filters.</td></tr>'}</table>`;
   queue.querySelectorAll('[data-od-gap]').forEach(row=>row.addEventListener('click',()=>openGapDetail(rows[+row.dataset.odGap])));
@@ -5284,14 +5333,22 @@ function renderOwnedPeerRanking(page,filters){
   // The renderer is intentionally tolerant of a missing category or filter cube: it shows an
   // honest not-measured state rather than turning a lack of matching observations into rank zero.
   const scope=filters.race!=='all'?'race::'+filters.race:(filters.workstream==='all'?'all':filters.workstream);
-  const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain));
+  const rows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope&&(filters.domain==='all'||r.domain===filters.domain)).sort((a,b)=>a.rank-b.rank||b.citations-a.citations||a.domain.localeCompare(b.domain));
   const allOwnedRows=(peer.rows||[]).filter(r=>r.group===filters.group&&r.workstream===scope);
-  const categorySummary=Object.entries(allOwnedRows.reduce((out,row)=>{(out[row.category]||(out[row.category]=[])).push(row);return out;},{})).map(([category,items])=>{
+  const rankedOwnedRows=filters.domain==='all'?allOwnedRows:rows;
+  const categorySummary=Object.entries(rankedOwnedRows.reduce((out,row)=>{(out[row.category]||(out[row.category]=[])).push(row);return out;},{})).map(([category,items])=>{
     const leaders=(peer.leaderboards||{})[items[0].leaderboard_key]||[];
     const owned=items.reduce((sum,row)=>sum+(+row.citations||0),0), universe=leaders.reduce((sum,row)=>sum+(+row.citations||0),0);
-    return {category,owned,universe,domains:items.length,share:universe?owned/universe:null};
+    const rank=leaders.length?1+leaders.filter(row=>(+row.citations||0)>owned).length:null;
+    return {category,owned,universe,domains:items.length,share:universe?owned/universe:null,rank,population:leaders.length};
   }).sort((a,b)=>b.owned-a.owned);
-  const categorySummaryHtml=categorySummary.length?`<div class="small-muted" style="margin:0 0 8px;">Portfolio citation share by peer category. Portfolio totals are shown separately from the individual-domain ranks below.</div>${categorySummary.map(row=>`<div class="topic-row"><div class="topic-name" style="width:175px;white-space:normal;">${odEsc(row.category.replace('Blog/Informal Content','Blogs'))}</div><div class="topic-track"><div class="topic-fill core" style="width:${row.share==null?0:100*row.share}%;background:#4F8B8B;"></div></div><div class="topic-pct" style="width:110px;text-align:right;">${row.share==null?'—':fmt1(100*row.share)+'%'} · ${odNum(row.owned)}</div></div>`).join('')}<hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">`:'';
+  const overallLeaders=categorySummary.flatMap(row=>{
+    const source=(rankedOwnedRows.find(item=>item.category===row.category)||{}).leaderboard_key;
+    return (peer.leaderboards||{})[source]||[];
+  });
+  const portfolioCitations=categorySummary.reduce((sum,row)=>sum+row.owned,0), overallRank=overallLeaders.length?1+overallLeaders.filter(row=>(+row.citations||0)>portfolioCitations).length:null;
+  const maxCategoryCitations=Math.max(1,...categorySummary.map(row=>row.owned));
+  const categorySummaryHtml=categorySummary.length?`<div class="kpis" style="margin:0 0 12px;"><div class="kpi"><div class="kpi-label">Portfolio citation frequency</div><div class="kpi-value">${odNum(portfolioCitations)}</div><div class="kpi-sub">combined citations across selected domains</div></div><div class="kpi"><div class="kpi-label">Overall portfolio rank</div><div class="kpi-value">${overallRank==null?'Not measured':'#'+overallRank+' of '+odNum(overallLeaders.length)}</div><div class="kpi-sub">combined portfolio versus individual peer domains</div></div></div><div class="small-muted" style="margin:0 0 8px;">The bar compares citation frequency across the selected portfolio’s categories. Combined portfolio ranks are shown alongside the individual-domain ranks below.</div>${categorySummary.map(row=>`<div class="topic-row"><div class="topic-name" style="width:175px;white-space:normal;">${odEsc(row.category.replace('Blog/Informal Content','Blogs'))}</div><div class="topic-track"><div class="topic-fill core" style="width:${100*row.owned/maxCategoryCitations}%;background:#2E5EAA;"></div></div><div class="topic-pct" style="width:160px;text-align:right;">${row.rank==null?'—':'#'+row.rank+' of '+odNum(row.population)} · ${odNum(row.owned)}</div></div>`).join('')}<hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">`:'';
   const promptLimited=filters.candidate!=='all'||filters.topic!=='all'||filters.prompt!=='all';
   if(promptLimited && OWNED_DOMAINS.prompt_peer_rankings?.leaderboards){
     const selected=odFilteredPrompts(filters), promptPeer=OWNED_DOMAINS.prompt_peer_rankings, totals={};
@@ -5309,14 +5366,14 @@ function renderOwnedPeerRanking(page,filters){
       const entry=entries.find(item=>item.domain===domain)||{domain,citations:0,rank:entries.length+1};
       promptRows.push({category,category_label:category.replace('Blog/Informal Content','Blogs'),domain,rank:entry.rank,citations:entry.citations,population:entries.length,leaderboard_key:key});
     });
-    const displayed=filters.domain==='all'?promptRows:promptRows.filter(row=>row.domain===filters.domain);
+    const displayed=(filters.domain==='all'?promptRows:promptRows.filter(row=>row.domain===filters.domain)).sort((a,b)=>a.rank-b.rank||b.citations-a.citations||a.domain.localeCompare(b.domain));
     const promptRankTable=displayed.length
       ? `<table><tr><th>Category</th><th>Owned domain</th><th>Rank</th><th>Citations</th><th>Domains ranked</th></tr>${displayed.map((r,i)=>`<tr class="clickable" data-od-prompt-peer="${i}"><td>${odEsc(r.category_label)}</td><td>${odEsc(r.domain)}</td><td>${odEsc(r.rank)}</td><td>${odNum(r.citations)}</td><td>${odNum(r.population)}</td></tr>`).join('')}</table>`
       : '<div class="small-muted">No peer ranking is measured for this filter yet.</div>';
     el.innerHTML=`${categorySummaryHtml}<details class="od-detail-fold"><summary>Open individual-domain ranks for ${selected.length} selected prompt${selected.length===1?'':'s'}</summary><div class="small-muted" style="margin-bottom:8px;">Exact selected-prompt ranking from the latest complete snapshot. Select an owned-domain row to open the complete ranked peer list.</div>${promptRankTable}</details>`;
     el.querySelectorAll('[data-od-prompt-peer]').forEach(node=>node.addEventListener('click',()=>{
       const row=displayed[+node.dataset.odPromptPeer], leaders=cache[row.leaderboard_key]||[];
-      openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · exact selected-prompt cohort · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#EAF2FC;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}</table></div>`,{wide:true});
+      openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · exact selected-prompt cohort · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#DDECFB;color:#174A84;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}</table></div>`,{wide:true});
     }));
     return;
   }
@@ -5326,7 +5383,7 @@ function renderOwnedPeerRanking(page,filters){
   el.innerHTML=`${categorySummaryHtml}<details class="od-detail-fold"><summary>Open individual-domain ranks</summary><div class="small-muted" style="margin-bottom:8px;">Individual-domain rank. ${promptLimited?'Candidate, topic, and prompt filters do not change this rank until their exact selected-prompt cohort loads. ':''}Select an owned-domain row to open the complete ranked peer list.</div>${scopeRankTable}</details>`;
   el.querySelectorAll('[data-od-peer]').forEach(node=>node.addEventListener('click',()=>{
     const row=rows[+node.dataset.odPeer], leaders=(peer.leaderboards||{})[row.leaderboard_key]||[];
-    openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · ${odEsc(scope==='all'?'all in-scope workstreams':scope.replace(/^race::/,'race: '))} · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#EAF2FC;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}${leaders.some(entry=>entry.domain===row.domain)?'':`<tr style="background:#EAF2FC;font-weight:700;"><td>${row.rank}</td><td>${odEsc(row.domain)}</td><td>0</td></tr>`}</table></div>`,{wide:true});
+    openSidePanel(`<div class="card-title">${odEsc(row.category_label)} citation ranking</div><div class="card-caption">${odEsc(odGroupLabel(filters.group))} · ${odEsc(scope==='all'?'all in-scope workstreams':scope.replace(/^race::/,'race: '))} · latest complete snapshot. ${odEsc(row.domain)} is ranked #${row.rank} of ${row.population}.</div><div class="scroll-table" style="max-height:none;margin-top:14px;"><table><tr><th>Rank</th><th>Domain</th><th>Citations</th></tr>${leaders.map(entry=>`<tr${entry.domain===row.domain?' style="background:#DDECFB;color:#174A84;font-weight:700;"':''}><td>${entry.rank}</td><td>${odEsc(entry.domain)}</td><td>${odNum(entry.citations)}</td></tr>`).join('')}${leaders.some(entry=>entry.domain===row.domain)?'':`<tr style="background:#DDECFB;color:#174A84;font-weight:700;"><td>${row.rank}</td><td>${odEsc(row.domain)}</td><td>0</td></tr>`}</table></div>`,{wide:true});
   }));
 }
 

@@ -5205,7 +5205,9 @@ function renderOwnedDomainsPage(page){
   ].join('');
   const citationTrend=document.getElementById('od-citation-trend-'+page), citationDates=[...new Set(projectHistory.map(row=>row.date))].sort();
   if(citationTrend){
-    if(citationDates.length){
+    if(odHasPromptScope(filters)&&!OWNED_DOMAINS.citation_prompt_history){
+      citationTrend.innerHTML='<div class="small-muted">Loading the filtered citation history for this selection…</div>';
+    }else if(citationDates.length){
       const byDate={}; projectHistory.forEach(row=>{byDate[row.date]=(byDate[row.date]||0)+(+row.citations||0);});
       lineChart('od-citation-trend-'+page,citationDates,[{name:'Citations',values:citationDates.map(day=>byDate[day]||0),color:'#2E5EAA'}],{min:0,max:Math.max(1,...citationDates.map(day=>byDate[day]||0)),height:190});
     }else citationTrend.innerHTML='<div class="small-muted">No matching final-answer citation observations are available in this period.</div>';

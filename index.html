@@ -5162,7 +5162,7 @@ function renderOwnedDomainQuality(page,filters){
   if(!compact || !compact.columns || !compact.row_count){
     const chart=document.getElementById('od-quality-chart-'+page), note=document.getElementById('od-quality-note-'+page), change=document.getElementById('od-quality-change-'+page);
     chart.innerHTML='<div class="small-muted">Loading answer-quality trend…</div>'; note.textContent=''; if(change) change.innerHTML='<div class="small-muted">Preparing the cited answer-quality cohort.</div>';
-    ensureOwnedDomainsQualityLoaded().then(()=>renderOwnedDomainQuality(page,filters)).catch(error=>{console.error('Owned Domains answer-quality load failed',error);chart.innerHTML='<div class="small-muted">Answer-quality trend could not load for this release.</div>';if(change)change.innerHTML='<div class="small-muted">The cited answer-quality cohort is unavailable.</div>';});
+    ensureOwnedDomainsQualityLoaded().then(()=>renderOwnedDomainQuality(page,odSelectedFilters(page))).catch(error=>{console.error('Owned Domains answer-quality load failed',error);chart.innerHTML='<div class="small-muted">Answer-quality trend could not load for this release.</div>';if(change)change.innerHTML='<div class="small-muted">The cited answer-quality cohort is unavailable.</div>';});
     return;
   }
   const dims=['visibility','favorability','depth','accuracy','narrative'];

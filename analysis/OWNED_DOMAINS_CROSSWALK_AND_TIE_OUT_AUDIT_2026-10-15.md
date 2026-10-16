@@ -1,6 +1,6 @@
 # Owned Domains crosswalk and chart tie-out audit
 
-**Release audited:** `owned-domains-2026-10-15-v9`  
+**Release audited:** `owned-domains-2026-10-15-v10`  
 **Latest complete citation snapshot:** October 11, 2026  
 **Audit status:** passed
 
@@ -23,7 +23,7 @@
 
 ## Release-wide chart reconciliation
 
-The release audit recomputes every compact chart input from its retained raw owned-event ledger. Its machine-readable results are in `owned_domains_crosswalk_review_2026-10-15/release_chart_tie_out_v9.json`.
+The release audit recomputes every compact chart input from its retained raw owned-event ledger. Its machine-readable results are in `owned_domains_crosswalk_review_2026-10-15/release_chart_tie_out_v10.json`. Version 10 splits prompt-grain history and literal-prompt peer leaderboards into a deferred detail asset; the audit loads and validates both assets before checking totals.
 
 | Input checked | Result |
 | --- | --- |
@@ -43,7 +43,7 @@ All citation-history, prompt-history, workstream-history, latest-drilldown, cove
 
 ## Answer-quality cohort reconciliation
 
-The quality trend selects exact prompt-provider pairs from the latest cited cohort, then calculates the five dimensions from the immutable score aggregate. The domain-level and all-domain cohort audit is in `owned_domains_crosswalk_review_2026-10-15/quality_cohort_tie_out_v9.json`.
+The quality trend selects exact prompt-provider pairs from the latest cited cohort, then calculates the five dimensions from the immutable score aggregate. The browser receives the exact pre-aggregated day/prompt/provider results rather than the full score aggregate. The domain-level and all-domain cohort audit is in `owned_domains_crosswalk_review_2026-10-15/quality_cohort_tie_out_v10.json`.
 
 - **48** all-domain and individual-domain cohorts were checked.
 - **3,180** cited prompt-provider pairs were checked.

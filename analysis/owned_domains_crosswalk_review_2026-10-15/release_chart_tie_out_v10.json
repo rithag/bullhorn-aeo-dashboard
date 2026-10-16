@@ -1,0 +1,47 @@
+{
+  "release": "/tmp/owned_domains_release_v10_main.json",
+  "latest_complete": "2026-10-11",
+  "events": 104920,
+  "prompts": 2610,
+  "articles": 660,
+  "citation_history": {
+    "rows": 9768,
+    "total": 687619.0
+  },
+  "citation_prompt_history": {
+    "rows": 66880,
+    "total": 687619.0
+  },
+  "latest_citation_drilldown": {
+    "rows": 7491,
+    "total": 62812.0
+  },
+  "citation_scoped_history": {
+    "rows": 1108,
+    "total": 687619.0
+  },
+  "crosswalk_links": {
+    "total": 14108,
+    "direct": 12076,
+    "parent_topic": 2032
+  },
+  "coverage_rows": {
+    "rows": 7749,
+    "reached": 2386
+  },
+  "article_milestones": {
+    "articles": 660,
+    "windows_per_article": 3,
+    "prepublication_events_excluded": true
+  },
+  "peer_rankings": {
+    "leaderboards": 289,
+    "rows": 3849,
+    "prompt_leaderboards": 5770,
+    "prompt_rows": 87944
+  },
+  "candidate_topic_articles": {
+    "rows": 2486,
+    "all_article_references_resolve": true
+  }
+}

@@ -4,10 +4,11 @@
 
 - Dashboard source deployed: current `main` release with reviewed crosswalk and literal-prompt peer ranks
 - Production page: `https://bullhorn-dashboard.netlify.app/`
-- Owned Domains release: `owned-domains-2026-10-15-v9`
-- Versioned data object: `gs://aeo-dashboard-assets-bullhorn/dashboard-data/owned-domain-releases/owned-domains-2026-10-15-v9/owned_domains_release.json`
-- Data object size: 56,232,424 bytes
-- Object generation: `1792087818515543`; local and downloaded SHA-256 matched before deployment: `a47cd30aa2a9e37a4c15409f6696e6e15f5b77841ab23a4df05545850414c17a`.
+- Owned Domains release: `owned-domains-2026-10-15-v10`
+- Versioned main data object: `gs://aeo-dashboard-assets-bullhorn/dashboard-data/owned-domain-releases/owned-domains-2026-10-15-v10/owned_domains_release.json`
+- Deferred detail object: `gs://aeo-dashboard-assets-bullhorn/dashboard-data/owned-domain-releases/owned-domains-2026-10-15-v10/owned_domains_detail.json`
+- Main data object size: 17,208,635 bytes. Deferred detail object size: 44,125,835 bytes.
+- Main-object SHA-256: `14b76fcf0bf64453fa4f69edd56c0ec74d4c9782bceca9c26630f7739ca17c62`. Deferred-object SHA-256: `13876c1c5424308751446b062780b4aa7bd8d15c7f85bf1bbf86b4b380cda40b`.
 
 ## Data validations passed
 
@@ -19,7 +20,7 @@
 3. Latest-snapshot prompt reach matches independently for all five groups.
 4. The release has coverage rows for every in-scope group: AEO Sites, Courier, Heartland Signal, Local Voter Guide, and Forward Majority.
 5. Every article metric has a consistent 7, 14, and 30-day milestone record. The legacy seven-day fields reconcile to the seven-day nested milestone record.
-6. The released HTML served in production contains `owned-domains-2026-10-15-v8` and the full-score load required for the five-dimension quality chart.
+6. The released HTML served in production contains `owned-domains-2026-10-15-v10`. Opening an Owned Domains page no longer loads the 282 MB full score aggregate. Its five-dimension quality trend uses a compact, source-equal cohort with 87,927 day/prompt/provider rows for 3,180 cited prompt-provider pairs.
 7. The Site Analytics tab points to the current Google Search Console release: `gsc-refresh-20261015-v1`.
 8. The in-scope citation history contains 9,768 compact rows and 687,619 source appearances. Its 66,880 prompt-history rows and 1,108 workstream-history rows both reconcile exactly to the same 687,619 appearances. Opponent-only and other excluded prompts do not enter any Owned Domains KPI.
 9. Every displayed peer-ranking row resolves to its complete source leaderboard, with matching rank, citation count, and peer-universe size. Race ranks are withheld when the source category cube has no measured peer universe for that race.
@@ -40,6 +41,13 @@
 - Category peer rank with complete clickable leaderboard for each owned domain, filtered to all in-scope workstreams, an individual workstream, a selected race, candidate, topic, or literal prompt.
 - Citation frequency, URL detail, citation total, and latest prompt drilldown filters for workstream, race, candidate, topic, prompt, domain, and date.
 - Candidate coverage portfolio with prompts reached and uncovered topic-group count, followed by the ranked candidate-topic queue, candidate-by-topic heatmap, and prompt/article drilldown.
+
+## Load-path optimization
+
+- The main Owned Domains release fell from 56,232,424 bytes to 17,208,635 bytes, a 69.4% reduction.
+- The default portfolio view keeps its compact citation history, article performance, coverage, peer-category ranks, Search Console data, and compact quality cohort in the main release.
+- The two prompt-grain components that are only necessary after a user narrows by workstream, race, candidate, topic, or literal prompt are deferred to the detail object: prompt-level citation history and literal-prompt peer leaderboards.
+- A user who applies one of those filters receives the deferred detail object once per session. No metric is removed and the release audit merges both assets before independently checking every chart input.
 
 ## v8 and v9 crosswalk remediation
 

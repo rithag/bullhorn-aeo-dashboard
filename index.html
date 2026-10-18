@@ -153,11 +153,24 @@ tr.clickable:hover td{background:#FAFBFC;cursor:pointer;}
 .od-quality-change-row .delta.good{color:var(--good);font-weight:700;}
 .od-quality-change-row .delta.bad{color:var(--bad);font-weight:700;}
 .od-quality-change-row .delta.neutral{color:var(--ink-soft);font-weight:700;}
+.od-voice-grid{display:grid;grid-template-columns:minmax(240px,.8fr) minmax(0,1.2fr);gap:18px;align-items:start;margin-top:12px;}
+.od-voice-value{font-size:36px;line-height:1.1;font-weight:750;color:var(--brand);letter-spacing:-.03em;}
+.od-voice-bands{display:flex;height:16px;border-radius:8px;overflow:hidden;background:#EEF1F4;margin:12px 0 8px;}
+.od-voice-bands span{height:100%;min-width:0;}
+.od-voice-legend{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--ink-soft);font-size:11px;}
+.od-voice-legend span{display:inline-flex;align-items:center;gap:4px;}
+.od-voice-legend i{width:8px;height:8px;border-radius:2px;display:inline-block;}
+.od-voice-prompt{display:grid;grid-template-columns:minmax(0,1fr) 56px;gap:8px;width:100%;padding:9px 2px;text-align:left;border:0;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;color:var(--ink);font-size:12px;}
+.od-voice-prompt:hover,.od-voice-prompt:focus-visible{background:#F3F6F9;outline:2px solid transparent;}
+.od-voice-prompt strong{text-align:right;color:var(--brand);}
+.od-voice-evidence{border-left:3px solid #D9E7F0;padding:7px 10px;margin:6px 0 10px;background:#F7FAFC;}
+.od-voice-response{white-space:pre-wrap;line-height:1.55;max-height:260px;overflow:auto;background:#F7F8FA;padding:10px;border-radius:6px;}
 .od-detail-fold{border-top:1px solid var(--border);padding-top:10px;margin-top:12px;}
 .od-detail-fold summary{cursor:pointer;color:var(--brand);font-size:12px;font-weight:700;}
 .od-detail-fold[open] summary{margin-bottom:10px;}
 @media (max-width:1150px){.od-quality-layout{grid-template-columns:1fr;}.od-quality-change{border-left:0;border-top:1px solid var(--border);padding:12px 0 0;grid-template-columns:repeat(2,minmax(0,1fr));}.od-at-glance .kpis{grid-template-columns:repeat(3,minmax(0,1fr));}}
 @media (max-width:640px){.od-at-glance .kpis,.od-investment .kpis{grid-template-columns:1fr;}.od-quality-change{grid-template-columns:1fr;}}
+@media (max-width:800px){.od-voice-grid{grid-template-columns:1fr;}}
 .topic-name{width:140px;flex:none;}
 .topic-track{flex:1;height:10px;background:#EEF1F4;border-radius:5px;overflow:hidden;}
 .topic-fill{height:100%;border-radius:5px;}
@@ -748,12 +761,48 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
 const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-18-v18-social-corrected/';
+const OWNED_VOICE_RELEASE_PREFIX = 'owned-voice-releases/observed-oct11-20261018-v1/';
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
 let ownedDomainsQualityLoadPromise = null;
+let ownedVoiceLoadPromise = null;
+let ownedVoiceDetailLoadPromise = null;
 let ownedPeerHistoryLoadPromise = null;
 let OWNED_QUALITY_ROWS = null;
 let OWNED_PEER_HISTORY = null;
+let OWNED_VOICE = null;
+let OWNED_VOICE_DETAIL = null;
+function ensureOwnedVoiceLoaded(){
+  if(!ownedVoiceLoadPromise){
+    ownedVoiceLoadPromise=fetch(heavyAssetUrl(OWNED_VOICE_RELEASE_PREFIX+'owned_voice_release.json')).then(r=>{
+      if(!r.ok) throw new Error('Owned voice release is unavailable ('+r.status+').');
+      return r.json();
+    }).then(raw=>{
+      if(raw?.artifact_category!=='owned_voice_observed_answer_estimate'||raw.status!=='MEASURED_ESTIMATE_OBSERVED_CITED_ANSWERS'||
+          raw.date!==OWNED_DOMAINS?.latest_complete_citation_snapshot||
+          JSON.stringify(raw.source?.owned_citation_release)!==JSON.stringify(OWNED_DOMAINS?.sources?.citation_release)||
+          JSON.stringify(raw.source?.owned_score_release)!==JSON.stringify(OWNED_DOMAINS?.sources?.score_release))
+        throw new Error('Owned voice and citation/score release contracts do not match.');
+      OWNED_VOICE=raw; return raw;
+    }).catch(error=>{ownedVoiceLoadPromise=null;throw error;});
+  }
+  return ownedVoiceLoadPromise;
+}
+function ensureOwnedVoiceDetailLoaded(){
+  if(OWNED_VOICE_DETAIL) return Promise.resolve(OWNED_VOICE_DETAIL);
+  if(!ownedVoiceDetailLoadPromise){
+    const asset=OWNED_VOICE?.detail_asset||'owned_voice_detail.json';
+    ownedVoiceDetailLoadPromise=fetch(heavyAssetUrl(OWNED_VOICE_RELEASE_PREFIX+asset)).then(r=>{
+      if(!r.ok) throw new Error('Owned voice evidence is unavailable ('+r.status+').');
+      return r.json();
+    }).then(raw=>{
+      if(raw?.artifact_category!=='owned_voice_observed_answer_detail'||raw.date!==OWNED_VOICE?.date||!Array.isArray(raw.rows)||raw.rows.length!==OWNED_VOICE?.rows?.length)
+        throw new Error('Owned voice evidence does not match its summary.');
+      OWNED_VOICE_DETAIL=raw; return raw;
+    }).catch(error=>{ownedVoiceDetailLoadPromise=null;throw error;});
+  }
+  return ownedVoiceDetailLoadPromise;
+}
 function ensureOwnedDomainsLoaded(){
   if(!ownedDomainsLoadPromise){
     ownedDomainsLoadPromise = fetch(heavyAssetUrl(OWNED_DOMAINS_RELEASE_PREFIX+'owned_domains_release.json')).then(r=>{
@@ -5163,6 +5212,7 @@ function buildOwnedDomainsPage(page){
   const investmentHtml=['courier','heartland'].includes(group)?`<div class="card od-at-glance od-investment section-gap"><div class="card-title">Investment efficiency</div><div class="card-caption" id="od-investment-caption-${page}">Loading commitment allocation and citation efficiency.</div><div class="kpis" id="od-investment-kpis-${page}"></div></div>`:'';
   const atGlanceHtml=layout.atGlance?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div>${investmentHtml}</section>`:'';
   const performanceExtras=layout.yield?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">The share of eligible ${isSocialMedia?'tracked posts':'articles'} cited by the selected milestone, the share of citations that directly match the post or article's reviewed topic, and time to first observed citation.</div><div id="od-conversion-chart-${page}"></div></div></div>`:'';
+  const voiceHtml=`<div class="card section-gap"><div class="card-title">Potential share of voice</div><div class="card-caption">Share of the monitored candidate's substantive answer text that closely reflects this portfolio's cited pages. An observed-answer estimate, not proof of influence, an accuracy score, or an all-answer census.</div><div id="od-voice-chart-${page}" class="small-muted" style="margin-top:10px;">Loading scored answer evidence…</div></div>`;
   const qualityHtml=layout.quality?`<div class="card section-gap"><div class="card-title">Answer quality where cited <span class="od-toggle" id="od-quality-toggle-${page}"></span></div><div class="card-caption">The five answer-quality measures for cited prompt-provider pairs. Choose whether to retain overlapping owned-portfolio citations or isolate answers citing this portfolio alone.</div><div class="od-quality-layout"><div><div id="od-quality-chart-${page}"></div><div class="small-muted" id="od-quality-note-${page}" style="margin-top:8px;"></div></div><div class="od-quality-change" id="od-quality-change-${page}"></div></div></div>`:'';
   const performanceScorecard=layout.yield?`<div class="card-caption" id="od-performance-caption-${page}" style="margin-bottom:12px;"></div><div class="kpis od-scorecard" id="od-performance-kpis-${page}"></div>`:'';
   const domainPath=layout.domainPath?`<div class="card section-gap"><div class="card-title"><span id="od-domain-title-${page}">${isSocialMedia?'Citation frequency by tracked Reddit post':'Citation frequency by owned domain'}</span> ${isSocialMedia?`<button class="od-back" id="od-clear-social-theme-${page}"${state.socialTheme?'':' style="display:none;"'}>Show all content themes</button>`:`<button class="od-back" id="od-clear-domain-${page}"${state.domain&&state.domain!=='all'?'':' style="display:none;"'}>Show all domains</button>`}</div><div class="card-caption" id="od-domain-caption-${page}">${isSocialMedia?'Each tracked post is ranked by final-answer citation frequency. Select a post for the monitored prompts, dates, and models behind it.':'The top domains are shown first. Select one to inspect its cited URLs and monitored prompts.'}</div><div class="small-muted" style="margin:8px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span>Citation-frequency period</span>${odFrequencyPeriodToggle(page,{group,workstream:state.workstream||'all',race:state.race||'all',candidate:state.candidate||'all',topic:state.topic||'all',prompt:state.prompt||'all',domain:state.domain||(group==='social_media'?'reddit.com':'all'),start:state.start||dates[0]||'',end:state.end||dates[dates.length-1]||''})}</div><div id="od-domain-frequency-${page}"></div><div class="small-muted" id="od-domain-note-${page}" style="margin-top:8px;"></div><div id="od-domain-expand-${page}" class="od-action-row"></div><div class="od-url-selection" id="od-url-selection-${page}"${state.urlKey?'':' style="display:none;"'}><div class="card-title">Prompt, date, and model detail <button class="od-back" id="od-clear-url-${page}"${state.urlKey?'':' style="display:none;"'}>Clear selected URL</button></div><div class="card-caption" id="od-url-caption-${page}"></div><div class="scroll-table" id="od-prompt-table-${page}"></div></div></div>`:'';
@@ -5192,6 +5242,7 @@ function buildOwnedDomainsPage(page){
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">1. How is our content performing?</div>${performanceScorecard}
       <div class="${performanceTrendLayout}"><div class="card"><div class="card-title">Citation frequency over time</div><div class="card-caption">Final-answer source appearances in the selected citation period.</div><div id="od-citation-trend-${page}"></div></div>${odSearchTrendHtml(page)}</div>
       ${performanceExtras}
+      ${voiceHtml}
       ${qualityHtml}
     </section>
     <section class="section-gap"><div class="section-title" style="margin-bottom:4px;">2. Where is it showing up?</div><div class="card-caption" style="margin-bottom:12px;">${visibilityIntro}</div>
@@ -5305,6 +5356,7 @@ function renderOwnedDomainsPage(page){
     }else citationTrend.innerHTML='<div class="small-muted">No matching final-answer citation observations are available in this period.</div>';
   }
   if(document.getElementById('od-yield-chart-'+page)) renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics,milestoneFor,windowDays,{yieldAtWindow,eligibleArticles,citedArticles,direct,allMilestone,firstDays,onTopic,citedRate});
+  renderOwnedVoice(page,filters);
   if(document.getElementById('od-quality-chart-'+page)) renderOwnedDomainQuality(page,filters);
   if(page==='siteanalytics') renderOwnedSearchPerformance(page,filters);
   if(document.getElementById('od-domain-frequency-'+page)) renderOwnedDomainVisibility(page,filters,history);
@@ -5398,6 +5450,73 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics
     const onTopicRow=`<div class="topic-row"><div class="topic-name" style="width:170px;">On-topic citations</div><div class="topic-track"><div class="topic-fill core" style="width:${onTopic==null?0:100*onTopic}%;background:${onTopic==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${onTopic==null?'—':fmt1(100*onTopic)+'%'}</div></div>`;
     conversion.innerHTML=`<div class="topic-row"><div class="topic-name" style="width:170px;">${citedLabel} cited ${latestWindow?'in latest snapshot':'by day '+windowDays}</div><div class="topic-track"><div class="topic-fill core" style="width:${citedRate==null?0:100*citedRate}%;background:${citedRate==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${citedRate==null?'—':fmt1(100*citedRate)+'%'}</div></div>${onTopicRow}<div class="topic-row"><div class="topic-name" style="width:170px;">Median first citation</div><div class="topic-track"><div class="topic-fill core" style="width:${medianDays==null?0:clamp(100*(30-medianDays)/30,0,100)}%;background:${medianDays==null?'#EEF1F4':'#2E5EAA'};"></div></div><div class="topic-pct" style="width:110px;">${medianDays==null?'—':fmt1(medianDays)+' days'}</div></div>`;
   }
+}
+
+function odVoiceScopedRows(filters){
+  if(!OWNED_VOICE) return [];
+  const allowed=new Set(odFilteredPrompts(filters).map(row=>row.prompt_id));
+  return OWNED_VOICE.rows.filter(row=>row.group===filters.group&&allowed.has(row.prompt_id)&&row.date>=filters.start&&row.date<=filters.end)
+    .map(row=>{
+      if(filters.domain==='all') return {...row,display_status:row.scoreability,display_share:row.share_pct,display_words:row.reflected_words};
+      const domain=row.domain_shares.find(item=>item.domain===filters.domain);
+      return domain?{...row,display_status:domain.status,display_share:domain.share_pct,display_words:domain.reflected_words}:null;
+    }).filter(Boolean);
+}
+function renderOwnedVoice(page,filters){
+  const host=document.getElementById('od-voice-chart-'+page); if(!host) return;
+  if(!OWNED_VOICE){
+    host.textContent='Loading observed-answer estimate…';
+    ensureOwnedVoiceLoaded().then(()=>renderOwnedVoice(page,odSelectedFilters(page))).catch(error=>{
+      console.error('Owned voice release load failed',error);
+      host.textContent='Potential share of voice is unavailable for this release.';
+    });
+    return;
+  }
+  const day=OWNED_VOICE.date;
+  if(day<filters.start||day>filters.end){
+    host.innerHTML=`<div class="small-muted">Not measured in this date range. This release scored captured cited answers on ${odEsc(odShortDate(day))} only; select a range including that day.</div>`;
+    return;
+  }
+  const rows=odVoiceScopedRows(filters), scored=rows.filter(row=>row.display_status==='scoreable'&&Number.isFinite(+row.display_share));
+  if(!scored.length){
+    host.innerHTML=`<div class="small-muted">No scoreable candidate-specific cited answers were observed for this selection on ${odEsc(odShortDate(day))}. ${odNum(rows.length)} captured answer${rows.length===1?' was':'s were'} excluded or outside this portfolio/domain.</div>`;
+    return;
+  }
+  const meanShare=scored.reduce((sum,row)=>sum+row.display_share,0)/scored.length;
+  const bandSpec=[['0–25%',row=>row.display_share<=25,'#D6E2EF'],['>25–50%',row=>row.display_share>25&&row.display_share<=50,'#AFC8DF'],['>50–75%',row=>row.display_share>50&&row.display_share<=75,'#6F9DC5'],['>75–100%',row=>row.display_share>75,'#2E5EAA']];
+  const bands=bandSpec.map(([label,includes,color])=>({label,count:scored.filter(includes).length,color}));
+  const promptById=Object.fromEntries((OWNED_DOMAINS.prompts||[]).map(row=>[row.prompt_id,row]));
+  const byPrompt=new Map();
+  scored.forEach(row=>{const values=byPrompt.get(row.prompt_id)||[];values.push(row.display_share);byPrompt.set(row.prompt_id,values);});
+  const promptStats=[...byPrompt].map(([id,values])=>({id,mean:values.reduce((a,b)=>a+b,0)/values.length,count:values.length,prompt:promptById[id]?.prompt||id}));
+  promptStats.sort((a,b)=>b.mean-a.mean||b.count-a.count||a.id.localeCompare(b.id));
+  const featured=[...promptStats.slice(0,2),...promptStats.slice(-2).reverse().filter(row=>!promptStats.slice(0,2).some(first=>first.id===row.id))];
+  const excluded=rows.length-scored.length;
+  host.innerHTML=`<div class="od-voice-grid"><div><div class="od-voice-value">${fmt1(meanShare)}%</div><div class="small-muted">Straight average across ${odNum(scored.length)} scoreable cited answers on ${odEsc(odShortDate(day))}${filters.domain==='all'?'':` · ${odEsc(filters.domain)}`}.</div><div class="od-voice-bands" aria-label="Distribution of answer-level estimates">${bands.map(b=>`<span style="width:${100*b.count/scored.length}%;background:${b.color};" title="${b.label}: ${b.count} answers"></span>`).join('')}</div><div class="od-voice-legend">${bands.map(b=>`<span><i style="background:${b.color};"></i>${b.label}: ${odNum(b.count)} (${fmt1(100*b.count/scored.length)}%)</span>`).join('')}</div><div class="small-muted" style="margin-top:10px;">${odNum(excluded)} captured answer${excluded===1?'':'s'} excluded for no substantive candidate coverage or no candidate-relevant cited page. Band colors describe ranges; they are not quality grades.</div></div><div><div class="card-title" style="font-size:13px;">Prompts with highest and lowest observed reflection</div><div class="small-muted">Open a prompt for its individual responses, word counts, cited pages, and supporting passages.</div>${featured.map(row=>`<button type="button" class="od-voice-prompt" data-od-voice-prompt="${escXAttr(row.id)}"><span>${odEsc(row.prompt)} <span class="small-muted">(${odNum(row.count)} answer${row.count===1?'':'s'})</span></span><strong>${fmt1(row.mean)}%</strong></button>`).join('')}</div></div><div class="small-muted" style="margin-top:12px;">Potential source reflection, not an accuracy or causal-attribution test. This is a model-assisted estimate for observed answers with extractable cited-page text, not a census of all citations; it has not been calibrated to an independent human gold set.</div>`;
+  host.querySelectorAll('[data-od-voice-prompt]').forEach(button=>button.addEventListener('click',()=>openOwnedVoicePrompt(page,button.dataset.odVoicePrompt)));
+}
+async function openOwnedVoicePrompt(page,promptId){
+  const filters=odSelectedFilters(page), summary=odVoiceScopedRows(filters).filter(row=>row.prompt_id===promptId);
+  const prompt=(OWNED_DOMAINS.prompts||[]).find(row=>row.prompt_id===promptId);
+  openSidePanel('<div class="small-muted">Loading original answers and supporting passages…</div>',{wide:true});
+  try{
+    const detail=await ensureOwnedVoiceDetailLoaded();
+    const byKey=new Map(detail.rows.filter(row=>row.group===filters.group&&row.prompt_id===promptId).map(row=>[row.response_id,row]));
+    const cards=summary.map((row,index)=>{
+      const evidence=byKey.get(row.response_id);
+      if(!evidence) return `<div class="small-muted">Evidence missing for answer ${odEsc(row.response_id)}.</div>`;
+      const pages=new Map(evidence.cited_pages.map(item=>[item.page_id,item]));
+      const reflected=evidence.reflected_spans.filter(span=>filters.domain==='all'||pages.get(span.page_id)?.domain===filters.domain);
+      const status=row.display_status==='scoreable'?`${fmt1(row.display_share)}% · ${odNum(row.display_words)} of ${odNum(row.candidate_words)} candidate-scope words potentially reflected`:row.display_status==='no_candidate_content'?'Unscoreable: no substantive candidate coverage in the answer':'Unscoreable: no candidate-relevant cited page';
+      const spans=reflected.length?reflected.map(span=>{
+        const source=pages.get(span.page_id), url=source?.url||'', link=/^https?:\/\//i.test(url)?`<a href="${escXAttr(url)}" target="_blank" rel="noopener noreferrer">${odEsc(source.domain||odUrlLabel(url))}</a>`:odEsc(source?.domain||'Cited page');
+        return `<div class="od-voice-evidence"><div><strong>Answer passage:</strong> ${odEsc(span.answer_quote)}</div><div class="small-muted" style="margin-top:4px;">Cited page: ${link}</div>${(span.evidence_quotes||[]).map(quote=>`<div class="small-muted" style="margin-top:3px;"><strong>Page evidence:</strong> ${odEsc(quote)}</div>`).join('')}</div>`;
+      }).join(''):'<div class="small-muted">No candidate-specific passage was credited to this selected domain or portfolio.</div>';
+      const candidateSpans=(evidence.candidate_spans||[]).map(span=>`<li>${odEsc(span.answer_quote)}</li>`).join('');
+      return `<details class="od-detail-fold"${index===0?' open':''}><summary>${odEsc(row.provider)} · ${odEsc(odShortDate(row.date))} · ${status}</summary><div class="small-muted" style="margin-bottom:5px;">Original answer; only substantive text about ${odEsc(evidence.monitored_candidate)} enters the denominator.</div><div class="od-voice-response">${odEsc(evidence.answer)}</div><details class="od-detail-fold"><summary>Candidate-scope passages (${odNum((evidence.candidate_spans||[]).length)})</summary><ul>${candidateSpans}</ul></details><details class="od-detail-fold" open><summary>Potentially reflected passages (${odNum(reflected.length)})</summary>${spans}</details></details>`;
+    }).join('');
+    openSidePanel(`<h2 style="font-size:18px;line-height:1.3;margin-bottom:5px;">${odEsc(prompt?.prompt||promptId)}</h2><div class="small-muted">${odEsc(odGroupLabel(filters.group))}${filters.domain==='all'?'':` · ${odEsc(filters.domain)}`} · ${odNum(summary.length)} observed cited answers · ${odEsc(odShortDate(OWNED_VOICE.date))}. A credited passage can reflect facts from more than one source; it is not proof that this cited page caused the wording.</div>${cards||'<div class="small-muted">No observed answers match the current filters.</div>'}`,{wide:true});
+  }catch(error){console.error('Owned voice evidence load failed',error);openSidePanel('<div class="small-muted">The answer-level evidence could not be loaded. The summary estimate has not changed.</div>');}
 }
 
 function renderOwnedDomainQuality(page,filters){

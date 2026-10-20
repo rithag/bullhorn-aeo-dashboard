@@ -745,6 +745,9 @@ const SCORE_RELEASE_PREFIX = 'score-releases/refresh-sep28-oct11-20261014-v2/';
 // separate from the raw score release means adding a performance view never mutates scoring data.
 const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/refresh-sep28-oct11-20261014-v4/';
 const CITATION_RELEASE_PREFIX = 'citation-releases/refresh-oct12-oct16-20261020-v1/';
+// The first Citation Breakout paint uses a smaller exact roll-up with no topic
+// dimension. The full topic cube remains deferred until a reader actually
+// selects a topic; this prevents 860k browser objects from blocking the tab.
 // This overlay is derived from (but never mutates) the sealed citation release above.  It adds
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
 // the complete Sources-URL corpus.
@@ -916,7 +919,10 @@ function ensureTextLoadedForRaceName(raceName){
    partitions. All remain deferred until their page opens, so the aggregate dashboard shell never
    pays their parse/memory cost. */
 let citationsLoadPromise = null;
+let citationFullSummaryLoadPromise = null;
 let citationCoverageLoadPromise = null;
+let CITATION_OVERVIEW = null;
+let CITATION_FULL_EVENTS = null;
 function ensureCitationCoverageLoaded(){
   if(!citationCoverageLoadPromise){
     citationCoverageLoadPromise = fetch(citationAssetUrl('citation_delivery_coverage.json')).then(r=>{
@@ -932,16 +938,35 @@ function ensureCitationCoverageLoaded(){
 function ensureCitationsLoaded(){
   if(!citationsLoadPromise){
     citationsLoadPromise = Promise.all([
-      fetch(citationAssetUrl('citation_summary.json')).then(r=>{ if(!r.ok) throw new Error('citation summary unavailable ('+r.status+')'); return r.json(); }),
+      fetch(citationAssetUrl('citation_breakout_overview.json')).then(r=>{ if(!r.ok) throw new Error('citation overview unavailable ('+r.status+')'); return r.json(); }),
       ensureCitationCoverageLoaded()
     ]).then(([raw, coverage])=>{
+      if(raw?.artifact_category!=='citation_breakout_first_paint_overview' || !Array.isArray(raw.columns) || !raw.columns.includes('prompt_category') || raw.columns.includes('topic'))
+        throw new Error('citation overview has an invalid contract');
       CITATIONS_RAW = raw;
+      CITATION_OVERVIEW = raw;
       CITATION_COVERAGE = coverage;
       buildCitationEvents();
       return CITATION_EVENTS;
-    });
+    }).catch(error=>{ citationsLoadPromise=null; throw error; });
   }
   return citationsLoadPromise;
+}
+function ensureCitationFullSummaryLoaded(){
+  if(CITATION_FULL_EVENTS) return Promise.resolve(CITATION_FULL_EVENTS);
+  if(!citationFullSummaryLoadPromise){
+    citationFullSummaryLoadPromise=fetch(citationAssetUrl('citation_summary.json')).then(r=>{
+      if(!r.ok) throw new Error('full citation summary unavailable ('+r.status+')');
+      return r.json();
+    }).then(raw=>{
+      if(!Array.isArray(raw?.columns) || !raw.columns.includes('topic') || !Number.isInteger(raw?.row_count) ||
+          raw.row_count!==CITATION_OVERVIEW?.source?.source_row_count)
+        throw new Error('full citation summary does not match the first-paint overview');
+      CITATION_FULL_EVENTS=buildCitationEventsFromRaw(raw);
+      return CITATION_FULL_EVENTS;
+    }).catch(error=>{ citationFullSummaryLoadPromise=null; throw error; });
+  }
+  return citationFullSummaryLoadPromise;
 }
 let citationRaceManifestPromise = null;
 const citationRaceLoadPromises = {};
@@ -1591,7 +1616,7 @@ function citationPromptTypeLabel(k){ const c=CITATION_PROMPT_TYPES.find(c=>c.key
 // and many Background/Comparison prompts have no narrative_tested value at all) is real, common,
 // and sorted to the end rather than alphabetically, since it isn't really a "topic" like the rest.
 function citationTopicOptions(){
-  const topics = [...new Set(CITATION_EVENTS.map(e=>e.topic).filter(Boolean))];
+  const topics = Array.isArray(CITATION_OVERVIEW?.topic_options) ? [...CITATION_OVERVIEW.topic_options] : [...new Set(CITATION_EVENTS.map(e=>e.topic).filter(Boolean))];
   topics.sort((a,b)=> (a==='No Topic Tested')-(b==='No Topic Tested') || a.localeCompare(b));
   return topics;
 }
@@ -1694,6 +1719,10 @@ function buildCitationEventsFromRaw(raw){
     const race = cd.race[i];
     const raceIdx = RACE_IDX_BY_RACE[race];
     const rosterRow = ROSTER[raceIdx];
+    // The first-paint roll-up deliberately omits individual domains. Its source
+    // category is already canonical, while the full cube retains domain so the
+    // Policy Information Center exception can still be applied defensively.
+    const normalizedDomain = col('domain') ? normalizeDomain(cd.domain[i]) : '';
     events[i] = {
       // domain falls back to a placeholder label (2026-09-10 audit fix) -- real data has a handful
       // of rows where Evertune's own `domain` field is blank (e.g. a bare "/user@host.com" mailto-
@@ -1706,7 +1735,7 @@ function buildCitationEventsFromRaw(raw){
       // preserve it. Keep it whenever the selected release supplies it so URL evidence can
       // identify the exact date/model observation without manufacturing a provider label.
       model: col('model') ? cd.model[i] || null : null,
-      catKey: normalizeDomain(cd.domain[i])==='policyinformationcenter.org' ? 'Reference Database' : cd.aeo_site_category[i],
+      catKey: normalizedDomain==='policyinformationcenter.org' ? 'Reference Database' : cd.aeo_site_category[i],
       // promptCategory/topic (2026-09-09): joined at ingestion (scripts/pipeline/evertune_citations.py)
       // from the citation row's literal prompt text against our own WS1/WS2 catalogs, NOT Evertune's
       // own `topic` column (their older, pre-consolidation 9-value bucket) -- promptCategory is our
@@ -1714,7 +1743,7 @@ function buildCitationEventsFromRaw(raw){
       // human-readable policy-topic field used on the Narrative Alignment page), falling back to
       // "Uncategorized"/"No Topic Tested" when a citation's prompt text didn't exact-match any
       // catalog row (phrasing drift / since-edited rows) -- still counted, just honestly unlabeled.
-      promptCategory: cd.prompt_category[i], topic: cd.topic[i], topicKey: col('topic_key') ? cd.topic_key[i] || null : null,
+      promptCategory: cd.prompt_category[i], topic: col('topic') ? cd.topic[i] : null, topicKey: col('topic_key') ? cd.topic_key[i] || null : null,
       // promptId (2026-09-10): the literal per-race prompt INSTANCE ("WS1-0551"), distinct from
       // topicKey's cross-race template identity -- added so the URL drill can point to the specific
       // prompt(s) that cited a URL, not just its topic/template bucket. Empty string for citation
@@ -1748,8 +1777,8 @@ function buildCitationEvents(){
       expected_race_count:expected.size, missing_race_count:missing.length,
     };
   });
-  // Drop the raw form once expanded. The summary has 415k rows; this is bounded, unlike the
-  // retired 8.9M-row monolith.
+  // Drop the compact raw overview once expanded. Topic-level rows remain deferred, rather than
+  // making the first Citation Breakout visit construct the full 860k-row cube.
   CITATIONS_RAW = null;
 }
 
@@ -6494,7 +6523,16 @@ function buildCitationsPage(){
   renderCitations();
 }
 function cbFilteredEvents(){
-  return filterCitationEvents(CITATION_EVENTS);
+  const topicFilter = document.getElementById('cb-pt-topic-filter')?.value || 'all';
+  if(topicFilter!=='all' && !CITATION_FULL_EVENTS){
+    ensureCitationFullSummaryLoaded().then(()=>renderCitations()).catch(error=>{
+      console.error('Full citation summary load failed',error);
+      const target=document.getElementById('cb-kpis');
+      if(target) target.innerHTML=`<div class="small-muted">Topic-filtered citation results could not load: ${escXHtml(String(error.message||error))}</div>`;
+    });
+    return null;
+  }
+  return filterCitationEvents(topicFilter==='all' ? CITATION_EVENTS : CITATION_FULL_EVENTS);
 }
 function filterCitationEvents(events){
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
@@ -6648,6 +6686,12 @@ function renderCitationTrend(events){
 }
 function renderCitations(){
   const events = cbFilteredEvents();
+  if(events===null){
+    const loading='<div class="small-muted">Loading the detailed topic citation cube…</div>';
+    const kpis=document.getElementById('cb-kpis'); if(kpis) kpis.innerHTML=loading;
+    ['cb-stackbar','cb-prompttype','cb-prompt-search-detail','cb-drill'].forEach(id=>{ const element=document.getElementById(id); if(element) element.innerHTML=loading; });
+    return;
+  }
   const detailEvents = cbFilteredDetailEvents();
   // "Citations" = summed source_count (each row's weight), not row count — a row is one
   // (domain,url,date,model,source_type) combination that can represent many actual citations
@@ -6974,7 +7018,7 @@ function renderPromptSearchDetail(detailEvents){
   crumbsEl.innerHTML = crumbs.join('');
 
   if(detailEvents===null){
-    renderCitationRaceChooser(detailEl, cbFilteredEvents().filter(event=>event.topicKey===tk), `Choose a race for "${labelText}"`);
+    renderCitationRaceChooser(detailEl, (cbFilteredEvents()||[]).filter(event=>event.topicKey===tk), `Choose a race for "${labelText}"`);
     return;
   }
   const events = excludeUnresolvedUnlessIncluded(detailEvents).filter(e=>e.topicKey===tk);

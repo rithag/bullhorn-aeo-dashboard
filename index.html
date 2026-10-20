@@ -745,9 +745,9 @@ const SCORE_RELEASE_PREFIX = 'score-releases/refresh-sep28-oct11-20261014-v2/';
 // separate from the raw score release means adding a performance view never mutates scoring data.
 const SCORE_BOOTSTRAP_PREFIX = 'score-bootstrap-releases/refresh-sep28-oct11-20261014-v4/';
 const CITATION_RELEASE_PREFIX = 'citation-releases/refresh-oct12-oct16-20261020-v1/';
-// The first Citation Breakout paint uses a smaller exact roll-up with no topic
-// dimension. The full topic cube remains deferred until a reader actually
-// selects a topic; this prevents 860k browser objects from blocking the tab.
+// The first Citation Breakout paint uses a tiny exact all-race roll-up. Race,
+// office, and state filtering fetch the larger no-topic cube only when used;
+// the full topic cube remains deferred until a reader actually selects a topic.
 // This overlay is derived from (but never mutates) the sealed citation release above.  It adds
 // cross-race category/prompt-type drill-downs without making the initial Citation Breakout load
 // the complete Sources-URL corpus.
@@ -919,9 +919,11 @@ function ensureTextLoadedForRaceName(raceName){
    partitions. All remain deferred until their page opens, so the aggregate dashboard shell never
    pays their parse/memory cost. */
 let citationsLoadPromise = null;
+let citationRaceSummaryLoadPromise = null;
 let citationFullSummaryLoadPromise = null;
 let citationCoverageLoadPromise = null;
 let CITATION_OVERVIEW = null;
+let CITATION_RACE_SUMMARY_EVENTS = null;
 let CITATION_FULL_EVENTS = null;
 function ensureCitationCoverageLoaded(){
   if(!citationCoverageLoadPromise){
@@ -938,11 +940,11 @@ function ensureCitationCoverageLoaded(){
 function ensureCitationsLoaded(){
   if(!citationsLoadPromise){
     citationsLoadPromise = Promise.all([
-      fetch(citationAssetUrl('citation_breakout_overview.json')).then(r=>{ if(!r.ok) throw new Error('citation overview unavailable ('+r.status+')'); return r.json(); }),
+      fetch(citationAssetUrl('citation_breakout_first_paint_v2.json')).then(r=>{ if(!r.ok) throw new Error('citation first-paint overview unavailable ('+r.status+')'); return r.json(); }),
       ensureCitationCoverageLoaded()
     ]).then(([raw, coverage])=>{
-      if(raw?.artifact_category!=='citation_breakout_first_paint_overview' || !Array.isArray(raw.columns) || !raw.columns.includes('prompt_category') || raw.columns.includes('topic'))
-        throw new Error('citation overview has an invalid contract');
+      if(raw?.artifact_category!=='citation_breakout_first_paint_global' || !Array.isArray(raw.columns) || !raw.columns.includes('prompt_category') || raw.columns.includes('topic') || raw.columns.includes('race'))
+        throw new Error('citation first-paint overview has an invalid contract');
       CITATIONS_RAW = raw;
       CITATION_OVERVIEW = raw;
       CITATION_COVERAGE = coverage;
@@ -951,6 +953,22 @@ function ensureCitationsLoaded(){
     }).catch(error=>{ citationsLoadPromise=null; throw error; });
   }
   return citationsLoadPromise;
+}
+function ensureCitationRaceSummaryLoaded(){
+  if(CITATION_RACE_SUMMARY_EVENTS) return Promise.resolve(CITATION_RACE_SUMMARY_EVENTS);
+  if(!citationRaceSummaryLoadPromise){
+    citationRaceSummaryLoadPromise=fetch(citationAssetUrl('citation_breakout_overview.json')).then(r=>{
+      if(!r.ok) throw new Error('race-filterable citation overview unavailable ('+r.status+')');
+      return r.json();
+    }).then(raw=>{
+      if(raw?.artifact_category!=='citation_breakout_first_paint_overview' || !Array.isArray(raw?.columns) || !raw.columns.includes('race') || raw.columns.includes('topic') ||
+          raw?.source?.citation_summary_sha256!==CITATION_OVERVIEW?.source?.citation_summary_sha256)
+        throw new Error('race-filterable citation overview does not match the first-paint release');
+      CITATION_RACE_SUMMARY_EVENTS=buildCitationEventsFromRaw(raw);
+      return CITATION_RACE_SUMMARY_EVENTS;
+    }).catch(error=>{ citationRaceSummaryLoadPromise=null; throw error; });
+  }
+  return citationRaceSummaryLoadPromise;
 }
 function ensureCitationFullSummaryLoaded(){
   if(CITATION_FULL_EVENTS) return Promise.resolve(CITATION_FULL_EVENTS);
@@ -1716,9 +1734,9 @@ function buildCitationEventsFromRaw(raw){
   const col = name => cd[name] || null;
   const events = new Array(raw.row_count);
   for(let i=0;i<raw.row_count;i++){
-    const race = cd.race[i];
-    const raceIdx = RACE_IDX_BY_RACE[race];
-    const rosterRow = ROSTER[raceIdx];
+    const race = col('race') ? cd.race[i] : null;
+    const raceIdx = race ? RACE_IDX_BY_RACE[race] : null;
+    const rosterRow = raceIdx===null || raceIdx===undefined ? null : ROSTER[raceIdx];
     // The first-paint roll-up deliberately omits individual domains. Its source
     // category is already canonical, while the full cube retains domain so the
     // Policy Information Center exception can still be applied defensively.
@@ -1761,22 +1779,30 @@ function buildCitationEvents(){
   // audits whether every race already active in this release actually has citation rows that day.
   // It caught Sep. 28/29: all files were delivered, but the 34 CO-04/WS3/WS4 races disappeared
   // after Sep. 27 and would otherwise look like a false all-race citation decline.
-  const observed={};
-  const first={};
-  CITATION_EVENTS.forEach(event=>{
-    (observed[event.date]||(observed[event.date]=new Set())).add(event.race);
-    if(!first[event.race] || event.date<first[event.race]) first[event.race]=event.date;
-  });
-  CITATION_DATA_COVERAGE={};
-  Object.keys(observed).sort().forEach(date=>{
-    const expected=new Set(Object.keys(first).filter(race=>first[race]<=date));
-    const present=observed[date];
-    const missing=[...expected].filter(race=>!present.has(race));
-    CITATION_DATA_COVERAGE[date]={
-      date, status:missing.length?'partial':'complete', observed_race_count:present.size,
-      expected_race_count:expected.size, missing_race_count:missing.length,
-    };
-  });
+  const publishedContinuity=CITATIONS_RAW?.race_continuity;
+  if(Array.isArray(publishedContinuity) && publishedContinuity.every(row=>row && typeof row.date==='string' && ['complete','partial'].includes(row.status) && Number.isInteger(row.observed_race_count) && Number.isInteger(row.expected_race_count) && Number.isInteger(row.missing_race_count))){
+    // The global first-paint asset intentionally drops race rows. It carries the exact
+    // continuity ledger derived from the same full source cube, so completeness rules do
+    // not become weaker merely because the page is loading faster.
+    CITATION_DATA_COVERAGE=Object.fromEntries(publishedContinuity.map(row=>[row.date,{...row}]));
+  } else {
+    const observed={};
+    const first={};
+    CITATION_EVENTS.forEach(event=>{
+      (observed[event.date]||(observed[event.date]=new Set())).add(event.race);
+      if(!first[event.race] || event.date<first[event.race]) first[event.race]=event.date;
+    });
+    CITATION_DATA_COVERAGE={};
+    Object.keys(observed).sort().forEach(date=>{
+      const expected=new Set(Object.keys(first).filter(race=>first[race]<=date));
+      const present=observed[date];
+      const missing=[...expected].filter(race=>!present.has(race));
+      CITATION_DATA_COVERAGE[date]={
+        date, status:missing.length?'partial':'complete', observed_race_count:present.size,
+        expected_race_count:expected.size, missing_race_count:missing.length,
+      };
+    });
+  }
   // Drop the compact raw overview once expanded. Topic-level rows remain deferred, rather than
   // making the first Citation Breakout visit construct the full 860k-row cube.
   CITATIONS_RAW = null;
@@ -6532,7 +6558,21 @@ function cbFilteredEvents(){
     });
     return null;
   }
-  return filterCitationEvents(topicFilter==='all' ? CITATION_EVENTS : CITATION_FULL_EVENTS);
+  if(topicFilter==='all' && citationFilterNeedsRaceSummary() && !CITATION_RACE_SUMMARY_EVENTS){
+    ensureCitationRaceSummaryLoaded().then(()=>renderCitations()).catch(error=>{
+      console.error('Race-filterable citation overview load failed',error);
+      const target=document.getElementById('cb-kpis');
+      if(target) target.innerHTML=`<div class="small-muted">Race-filtered citation results could not load: ${escXHtml(String(error.message||error))}</div>`;
+    });
+    return null;
+  }
+  return filterCitationEvents(topicFilter==='all' ? (citationFilterNeedsRaceSummary() ? CITATION_RACE_SUMMARY_EVENTS : CITATION_EVENTS) : CITATION_FULL_EVENTS);
+}
+function citationFilterNeedsRaceSummary(){
+  return ['cb-office','cb-state','cb-race'].some(id=>{
+    const element=document.getElementById(id);
+    return element && element.value!=='all';
+  });
 }
 function filterCitationEvents(events){
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
@@ -6687,7 +6727,8 @@ function renderCitationTrend(events){
 function renderCitations(){
   const events = cbFilteredEvents();
   if(events===null){
-    const loading='<div class="small-muted">Loading the detailed topic citation cube…</div>';
+    const topicSelected=(document.getElementById('cb-pt-topic-filter')?.value||'all')!=='all';
+    const loading=`<div class="small-muted">Loading the ${topicSelected?'detailed topic':'race-filterable'} citation view…</div>`;
     const kpis=document.getElementById('cb-kpis'); if(kpis) kpis.innerHTML=loading;
     ['cb-stackbar','cb-prompttype','cb-prompt-search-detail','cb-drill'].forEach(id=>{ const element=document.getElementById(id); if(element) element.innerHTML=loading; });
     return;

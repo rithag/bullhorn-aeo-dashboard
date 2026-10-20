@@ -35,7 +35,7 @@ refresh, and its own date remains explicit in the interface.
 
 ## Owned Domains release
 
-`owned-domain-releases/owned-domains-2026-10-20-v19-oct16/`
+`owned-domain-releases/owned-domains-2026-10-20-v20-rankfix/`
 
 - Compact release: `owned_domains_release.json` — 13,381,063 bytes
 - URL/prompt detail: `owned_domains_detail.json` — 51,223,513 bytes
@@ -46,6 +46,17 @@ refresh, and its own date remains explicit in the interface.
   history totals reconcile exactly.
 - The quality cohort contains 114,116 score rows, with observed score dates from August 31 through
   October 11 only.
+
+### Citation-ranking category correction
+
+`localvoterguide.com` is classified as a **Reference Database** in the vendor citation-detail
+release. An earlier dashboard release incorrectly compared it with Local/Regional News, leaving
+its peer rank at zero despite observed citations. The source configuration and compact release now
+use Reference Database consistently. At the October 16 WS2 snapshot, Local Voter Guide is #11 of
+172 observed Reference Database domains with 2,764 citations; over the latest seven complete days,
+it is #13 of 175 with 14,616 citations. All Courier and Heartland domains were also checked against
+their source-detail category and correctly remain Local/Regional News; Policy Information Center
+remains Reference Database.
 
 ## Crosswalk integrity
 

@@ -760,7 +760,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-20-v22-partner-roster-direct-review/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-20-v23-21day-yield/';
 const OWNED_VOICE_RELEASE_PREFIX = 'owned-voice-releases/observed-oct11-20261018-v1/';
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
@@ -5192,7 +5192,7 @@ function odPageTemplate(group){
   if(group==='forward_majority') return {atGlance:false,yield:false,domainPath:true,portfolio:true,coverageMap:true,quality:true,ranking:true,gaps:true};
   // A tracked Reddit post is the unit of performance for Social Media, just
   // as an article is the unit for the publisher portfolios. The volunteer
-  // tracker includes each post's publication date, so its 7/14/30-day yield
+  // tracker includes each post's publication date, so its 7/14/21/30-day yield
   // and observed time to first citation are measurable without an article
   // crosswalk.
   if(group==='social_media') return {atGlance:true,yield:true,domainPath:true,portfolio:true,coverageMap:true,quality:true,ranking:true,gaps:true};
@@ -5414,11 +5414,11 @@ function renderOwnedPerformanceVisuals(page,filters,metrics,scopedArticleMetrics
   const latestWindow=windowDays==='latest', windowLabel=latestWindow?'latest complete snapshot':`${windowDays}-day milestone`;
   const toggle=document.getElementById('od-window-toggle-'+page);
   if(toggle){
-    toggle.innerHTML=['7','14','30','latest'].map(day=>`<button type="button" data-od-window="${day}" class="${day===windowDays?'active':''}">${day==='latest'?'Latest snapshot':day+'d'}</button>`).join('');
+    toggle.innerHTML=['7','14','21','30','latest'].map(day=>`<button type="button" data-od-window="${day}" class="${day===windowDays?'active':''}">${day==='latest'?'Latest snapshot':day+'d'}</button>`).join('');
     toggle.querySelectorAll('[data-od-window]').forEach(button=>button.addEventListener('click',()=>{odSetState(page,{window:button.dataset.odWindow});renderOwnedDomainsPage(page);}));
   }
   const yieldCaption=document.getElementById('od-yield-caption-'+page), yieldChart=document.getElementById('od-yield-chart-'+page), conversion=document.getElementById('od-conversion-chart-'+page);
-  const windows=['7','14','30','latest'];
+  const windows=['7','14','21','30','latest'];
   const windowRows=windows.map(day=>{
     const eligible=scopedArticleMetrics.filter(row=>(row.milestones?.[day]||{}).status==='eligible');
     const values=eligible.map(row=>+(row.milestones?.[day]?.citation_count||0));

@@ -3246,7 +3246,9 @@ function wireChartFilterBar(prefix, opts, onChange){
 }
 function buildDimensionPage(key){
   const el = document.getElementById('page-'+key);
-  const hasRootCause = HAS_ROOT_CAUSE_SECTION[key] && key!=='visibility'; // Visibility: comparison+trend+search now cover this ground
+  // Narrative's detailed topic explorer is its response-level analysis. Avoid presenting a
+  // second, generic load card for the same deferred data.
+  const hasRootCause = HAS_ROOT_CAUSE_SECTION[key] && key!=='visibility' && key!=='narrative'; // Visibility: comparison+trend+search now cover this ground
   // The compact bootstrap can answer the comparison, trend, and all-races views exactly for
   // their default filters.  Response-level sections need the much larger aggregate, so make
   // their cost explicit and defer them rather than holding up the whole page.

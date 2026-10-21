@@ -6829,7 +6829,7 @@ function renderCitations(){
       <div class="topic-row" style="cursor:pointer;" onclick="openCitationCategoryDrill('${escXAttr(r.key)}')">
         <div class="topic-name" style="width:190px;">${escXHtml(r.label)}</div>
         <div class="topic-track"><div class="topic-fill core" style="width:${clamp(100*r.count/max,2,100)}%;background:${r.color};"></div></div>
-        <div class="topic-pct" style="width:54px;">${r.count}</div>
+        <div class="topic-pct" style="width:108px;text-align:right;">${saNum(r.count)}${total ? ` (${fmt1(100 * r.count / total)}%)` : ''}</div>
       </div>`).join('') + (total? '' : `<div class="small-muted section-gap">No citations match the current filters.</div>`);
   } else if(drill.level==='race'){
     const catInfo=CITATION_CATEGORIES.find(c=>c.key===drill.catKey);

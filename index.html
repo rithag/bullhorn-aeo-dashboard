@@ -2525,14 +2525,14 @@ document.querySelectorAll('.nav-item').forEach(item=>{
     }
     if(!PAGE_BUILT[page] && PAGE_BUILD[page]){
       const pageEl=document.getElementById('page-'+page);
-      pageEl.innerHTML='<div class="small-muted" style="padding:40px;text-align:center;">Loading detailed score data…</div>';
-      try{
-        await ensureFullScoreData();
-      }catch(e){
-        console.error('Detailed score data load failed', e);
-        pageEl.innerHTML='<div class="err-banner">Detailed score data could not load: '+escXHtml(String(e.message||e))+'</div>';
-        return;
-      }
+      // Dimension pages deliberately paint from the 10 MB score bootstrap first.  Waiting here
+      // used to make the very first dimension click download, JSON-parse, and object-index the
+      // 282 MB response-level aggregate before rendering a single chart.  That made Visibility
+      // (and every other dimension) appear frozen for tens of seconds.  The bootstrap contains
+      // the exact all-candidate/day bucket totals required for the default comparison, trend, and
+      // race-table views.  The exhaustive response corpus remains lazy and is requested only for
+      // a category, prompt, or statement-level evidence drill-down.
+      pageEl.innerHTML='<div class="small-muted" style="padding:40px;text-align:center;">Preparing score view…</div>';
       safe(page, PAGE_BUILD[page]);
       PAGE_BUILT[page] = true;
       // Bug fix (2026-09-08): collapseAllFilterbars() only ran once at initial load, before any
@@ -2657,10 +2657,25 @@ function toggleShowAll(containerId, dimKey, filters){
   window.__showAllState[containerId] = !window.__showAllState[containerId];
   renderRaceTable(containerId, dimKey, filters);
 }
-function toggleFanoutRow(containerId, raceIdx, dimKey){
+async function toggleFanoutRow(containerId, raceIdx, dimKey){
   const rowEl = document.getElementById(`fanoutrow-${containerId}-${raceIdx}`);
   const bodyEl = document.getElementById(`fanoutbody-${containerId}-${raceIdx}`);
-  const isOpen = rowEl.style.display!=='none';
+  let loadedOnThisClick=false;
+  // The summary row above is available from the compact bootstrap.  Its prompt evidence is not:
+  // load the response-level release only after the reader actually opens a race.
+  if(!FULL_SCORE_DATA_READY){
+    document.querySelectorAll(`tr[id^="fanoutrow-${containerId}-"]`).forEach(el=>el.style.display='none');
+    rowEl.style.display='';
+    bodyEl.innerHTML='<div class="fanout-wrap"><span class="small-muted">Loading this race\'s prompt-level evidence…</span></div>';
+    try{
+      await ensureFullScoreData();
+    }catch(error){
+      bodyEl.innerHTML='<div class="err-banner">Prompt-level evidence could not load: '+escXHtml(String(error.message||error))+'</div>';
+      return;
+    }
+    loadedOnThisClick=true;
+  }
+  const isOpen = !loadedOnThisClick && rowEl.style.display!=='none';
   // close any other open fanout in this table to keep it tidy
   document.querySelectorAll(`tr[id^="fanoutrow-${containerId}-"]`).forEach(el=>el.style.display='none');
   if(isOpen) return;
@@ -3232,6 +3247,15 @@ function wireChartFilterBar(prefix, opts, onChange){
 function buildDimensionPage(key){
   const el = document.getElementById('page-'+key);
   const hasRootCause = HAS_ROOT_CAUSE_SECTION[key] && key!=='visibility'; // Visibility: comparison+trend+search now cover this ground
+  // The compact bootstrap can answer the comparison, trend, and all-races views exactly for
+  // their default filters.  Response-level sections need the much larger aggregate, so make
+  // their cost explicit and defer them rather than holding up the whole page.
+  const detailedReady = FULL_SCORE_DATA_READY;
+  const deferredDetail = (label='response-level analysis') => `<div class="card section-gap">
+    <div class="card-title">Detailed ${label}</div>
+    <div class="card-caption">The overview above is ready. Load the response-level evidence only when you need category, prompt, or statement detail.</div>
+    <button class="btn ghost sm" onclick="loadDimensionDetail('${key}')">Load detailed analysis</button>
+  </div>`;
   el.innerHTML = `
     <div class="page-head"><div><div class="page-title">${DIM_LABELS[key]}</div></div></div>
     ${key==='visibility' ? `<div class="card" style="margin-bottom:16px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;">
@@ -3257,9 +3281,9 @@ function buildDimensionPage(key){
         ${IS_BUCKET3[key] && key!=='consistency' && key!=='visibility' ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="${key}-trend-compare"> <span id="${key}-trend-compare-label">Compare with the other party</span></label>` : ''}
         <div id="${key}-trend"></div></div>
     </div>
-    ${key==='narrative' ? topicComparisonHtml() : ''}
-    ${key==='consistency' ? consistencyCandidateSummaryHtml()+consistencyFlaggedHtml() : ''}
-    ${hasRootCause ? dimSourceHtml(key) : ''}
+    ${key==='narrative' ? (detailedReady ? topicComparisonHtml() : deferredDetail('topic analysis')) : ''}
+    ${key==='consistency' ? (detailedReady ? consistencyCandidateSummaryHtml()+consistencyFlaggedHtml() : deferredDetail('prompt-consistency analysis')) : ''}
+    ${hasRootCause ? (detailedReady ? dimSourceHtml(key) : deferredDetail()) : ''}
     ${key!=='consistency' ? `<div class="card section-gap" id="${key}-racetable-card">
       <div class="card-title">All races — ${DIM_LABELS[key].toLowerCase()}</div>
       <div class="card-caption">Defaults to the most recent day we have data for (${escXHtml(DATES[DATES.length-1]||'')}); use Range to average over more. Sorted by biggest gap first. Click a race, then any prompt, to inspect the sampled response and scoring basis.</div>
@@ -3298,15 +3322,46 @@ function buildDimensionPage(key){
   if(IS_BUCKET3[key]){
     const catSel=document.getElementById(key+'-cmp-cat'); catSel.dataset.xselDone='1'; buildXSel(catSel);
     const topicSel=document.getElementById(key+'-cmp-topic'); topicSel.dataset.xselDone='1'; buildXSel(topicSel);
-    catSel.addEventListener('change', ()=>{ syncIssueFilter(key); renderDimensionPage(key); });
-    topicSel.addEventListener('change', ()=>renderDimensionPage(key));
+    catSel.addEventListener('change', async ()=>{
+      // Category and issue cuts are deliberately more granular than the bootstrap.  Do not make
+      // the whole page pay for them, but preserve their exact response-level behavior once used.
+      if(catSel.value!=='all' && !FULL_SCORE_DATA_READY){
+        const chart=document.getElementById(key+'-cmp');
+        if(chart) chart.innerHTML='<div class="small-muted" style="padding:18px 0;">Loading category detail…</div>';
+        try{ await ensureFullScoreData(); }
+        catch(error){ if(chart) chart.innerHTML='<div class="err-banner">Category detail could not load: '+escXHtml(String(error.message||error))+'</div>'; return; }
+      }
+      syncIssueFilter(key); renderDimensionPage(key);
+    });
+    topicSel.addEventListener('change', async ()=>{
+      if(topicSel.value!=='all' && !FULL_SCORE_DATA_READY){
+        try{ await ensureFullScoreData(); }
+        catch(error){ return; }
+      }
+      renderDimensionPage(key);
+    });
     const trendCompareEl = document.getElementById(key+'-trend-compare');
     if(trendCompareEl) trendCompareEl.addEventListener('change', ()=>renderDimensionPage(key));
   }
-  if(key==='narrative'){ wireTopicComparison(); }
-  if(key==='consistency') wireConsistencyFlagged();
-  if(hasRootCause) wireDimSource(key);
+  if(key==='narrative' && detailedReady){ wireTopicComparison(); }
+  if(key==='consistency' && detailedReady) wireConsistencyFlagged();
+  if(hasRootCause && detailedReady) wireDimSource(key);
   renderDimensionPage(key);
+}
+// The response-level aggregate is intentionally exhaustive.  Keep it out of the first-paint
+// path, but retain every existing evidence and drill-down capability when a reader asks for it.
+async function loadDimensionDetail(key){
+  const pageEl=document.getElementById('page-'+key);
+  if(pageEl) pageEl.insertAdjacentHTML('afterbegin','<div id="'+key+'-detail-loading" class="small-muted" style="padding:8px 0;">Loading detailed response evidence…</div>');
+  try{
+    await ensureFullScoreData();
+    buildDimensionPage(key);
+    enhanceSelects(); collapseAllFilterbars();
+  }catch(error){
+    console.error('Detailed score data load failed',error);
+    const loading=document.getElementById(key+'-detail-loading');
+    if(loading) loading.outerHTML='<div class="err-banner">Detailed response evidence could not load: '+escXHtml(String(error.message||error))+'</div>';
+  }
 }
 /* ---- Topic Comparison (Task 2, added 2026-08-31): pick a narrative_tested topic, see the real
    0/1/2 Narrative Alignment score share — Democrats vs. Republicans by default, narrowing to
@@ -3862,6 +3917,7 @@ function computeAccuracyIssueRows(){
   return rows;
 }
 function buildAccuracyInsights(){
+  if(!FULL_SCORE_DATA_READY) return ['Use the detailed analysis control below to inspect the exact flagged statements and their underlying responses.'];
   const rows = computeAccuracyIssueRows();
   if(!rows.length) return ['No flagged inaccuracies in the current filter — accuracy looks clean.'];
   const bullets = [];
@@ -4325,6 +4381,7 @@ async function openConsistencyDetail(rowId, raceIdx){
    ============================================================================ */
 function buildAccuracyPage(){
   buildDimensionPage('accuracy');
+  if(!FULL_SCORE_DATA_READY) return;
   const el = document.getElementById('page-accuracy');
   const priorityHtml = `<div class="card section-gap" id="acc-priority-card">
       <div class="card-title">Accuracy issues — prioritized by candidate</div>

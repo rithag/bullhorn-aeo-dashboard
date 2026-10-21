@@ -1046,12 +1046,28 @@ const citationCrossRaceIndexPromises = {};
 const CITATION_CROSS_RACE_DETAIL_EVENTS = {};
 const citationCrossRaceDetailPromises = {};
 const CITATION_CROSS_RACE_LOAD_ERRORS = {};
+
+// Cross-race category files can be several megabytes. Fetch them without reusing a cached
+// redirect: the authenticated proxy issues short-lived signed GCS URLs, and a stale redirect can
+// surface as the browser's unhelpful "Failed to fetch." Retry once with a fresh signed URL before
+// treating a category or domain drill as unavailable.
+async function fetchCrossRaceCitationJson(relativePath, label){
+  let latestError;
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const response=await fetch(citationDetailAssetUrl(relativePath), {cache:'no-store'});
+      if(!response.ok) throw new Error(`${label} unavailable (${response.status})`);
+      return await response.json();
+    }catch(error){
+      latestError=error;
+      if(attempt===0) await new Promise(resolve=>setTimeout(resolve,150));
+    }
+  }
+  throw latestError;
+}
 function ensureCitationCrossRaceManifest(){
   if(!citationCrossRaceManifestPromise){
-    citationCrossRaceManifestPromise = fetch(citationDetailAssetUrl('manifest.json')).then(r=>{
-      if(!r.ok) throw new Error('cross-race citation detail manifest unavailable ('+r.status+')');
-      return r.json();
-    }).then(raw=>{
+    citationCrossRaceManifestPromise = fetchCrossRaceCitationJson('manifest.json','cross-race citation detail manifest').then(raw=>{
       if(raw.schema_version!==1 || !raw.assets || !raw.assets.categories || !raw.assets.prompt_types || !raw.assets.detail_shards){
         throw new Error('cross-race citation detail manifest has an unsupported contract');
       }
@@ -1073,10 +1089,7 @@ function ensureCitationCrossRaceIndex(kind, key){
       const family=kind==='category' ? manifest.assets.categories : manifest.assets.prompt_types;
       const entry=family[key];
       if(!entry || !entry.relative_path) throw new Error('cross-race citation index is unavailable for '+key);
-      return fetch(citationDetailAssetUrl(entry.relative_path)).then(r=>{
-        if(!r.ok) throw new Error('cross-race citation index unavailable ('+r.status+')');
-        return r.json();
-      });
+      return fetchCrossRaceCitationJson(entry.relative_path,'cross-race citation index');
     }).then(raw=>{
       const events=buildCitationEventsFromRaw(raw);
       CITATION_CROSS_RACE_INDEX_EVENTS[cacheKey]=events;
@@ -1095,10 +1108,7 @@ function ensureCitationCrossRaceDomainDetail(domain){
     citationCrossRaceDetailPromises[shardKey]=ensureCitationCrossRaceManifest().then(manifest=>{
       const entry=manifest.assets.detail_shards[shardKey];
       if(!entry || !entry.relative_path) throw new Error('cross-race citation detail shard is unavailable');
-      return fetch(citationDetailAssetUrl(entry.relative_path)).then(r=>{
-        if(!r.ok) throw new Error('cross-race citation detail shard unavailable ('+r.status+')');
-        return r.json();
-      });
+      return fetchCrossRaceCitationJson(entry.relative_path,'cross-race citation detail shard');
     }).then(raw=>{
       const events=buildCitationEventsFromRaw(raw);
       CITATION_CROSS_RACE_DETAIL_EVENTS[shardKey]=events;
@@ -1768,7 +1778,9 @@ function buildCitationEventsFromRaw(raw){
       // rows whose literal prompt text didn't exact-match the catalog (same rows topicKey is also
       // blank for) -- kept as null here, same convention as topicKey just above.
       promptId: col('prompt_id') ? cd.prompt_id[i] || null : null,
-      office: rosterRow ? rosterRow.office : null, state: rosterRow ? rosterRow.state : null
+      office: rosterRow ? rosterRow.office : null,
+      state: rosterRow ? rosterRow.state : null,
+      raceLevel: rosterRow ? rosterRow.race_level : null
     };
   }
   return events;
@@ -1806,6 +1818,29 @@ function buildCitationEvents(){
   // Drop the compact raw overview once expanded. Topic-level rows remain deferred, rather than
   // making the first Citation Breakout visit construct the full 860k-row cube.
   CITATIONS_RAW = null;
+}
+
+// The compact source summary intentionally omits literal prompt IDs, so the Citation Breakout
+// workstream control uses this audited race map for the active prompt universe. This keeps the
+// first-paint, race-filtered, full-summary, and deferred drill assets on one definition without
+// repeating a workstream field in every citation row. Races outside the monitored universe stay
+// visibly unclassified rather than being assigned by inference.
+const CITATION_WORKSTREAM_BY_RACE = Object.freeze({
+  "AZ Superior Court Judge, Division 1, Santa Cruz County":"WS2","AZ Superior Court Judge, Division 10, Pinal County":"WS2","AZ Superior Court Judge, Division 15, Pima County":"WS2","AZ Superior Court Judge, Division 25, Pima County":"WS2","AZ Superior Court Judge, Division 5, Yuma County":"WS2","AZ Superior Court Judge, Division 8, Pinal County":"WS2","AZ Superior Court Judge, Division 9, Pinal County":"WS2","AZ-01 House":"WS1","AZ-06 House":"WS1","Alamance County Commissioner — Ramona Allen":"WS2","Alamance County Commissioner — Sean Ewing":"WS2","Arapahoe County Clerk-Recorder":"WS2","Arizona Secretary of State":"WS2","Bay City, MI Commission, Ward 7":"WS2","CO-04 House":"CO-04","Clark County Commissioner, District E":"WS2","Clark County Commissioner, District F":"WS2","Clark County Commissioner, District G":"WS2","Forsyth County Commission, District B":"WS2","Fort Bend County Commission, District 2":"WS2","Fort Bend County Commission, District 4":"WS2","Fort Bend County Judge":"WS2","Fulton County Commissioner, District 1":"WS2","GA Governor":"GA Governor","Garden City, MI Council — Kim Dold":"WS2","Garden City, MI Council — Stacy Karafotis":"WS2","Georgia Secretary of State":"WS2","Grand County Clerk-Recorder":"WS2","IA-01 House":"WS1","IA-03 House":"WS1","Indiana Secretary of State":"WS2","Kansas Secretary of State":"WS2","MI Circuit Court Judge, 16th Circuit, Seat 2, Macomb County":"WS2","MI Circuit Court Judge, 38th Circuit, Seat 1, Monroe County":"WS2","MI House 109":"WS3","MI House 27":"WS3","MI House 28":"WS3","MI House 44":"WS3","MI House 46":"WS3","MI House 54":"WS3","MI House 55":"WS3","MI House 86":"WS3","MI Senate 32":"WS3","MI Senate 9":"WS3","MI-04 House":"WS1","MS Circuit Court Judge, District 12, Place 2":"WS2","MS Circuit Court Judge, District 3, Place 2":"WS2","Michigan Secretary of State":"WS2","NC Court of Appeals, Seat 1":"WS2","NC Court of Appeals, Seat 2":"WS2","NC Court of Appeals, Seat 3":"WS2","NC District Court Judge, District 6, Seat 2, New Hanover-Pender Counties":"WS2","NC District Court Judge, District 6, Seat 3, New Hanover-Pender Counties":"WS2","NC District Court Judge, District 6, Seat 4, New Hanover-Pender Counties":"WS2","NC Superior Court Judge, District 6B, Seat 1, New Hanover County":"WS2","NV District Court Judge, 2nd District, Department 1, Washoe County":"WS2","NV District Court Judge, 8th District, Department 17, Clark County":"WS2","NV District Court Judge, 8th District, Department 21, Clark County":"WS2","NV District Court Judge, 8th District, Department 23, Clark County":"WS2","NV District Court Judge, 8th District, Department 28, Clark County":"WS2","NV District Court Judge, 8th District, Department 29, Clark County":"WS2","NV District Court Judge, 8th District, Department 5, Clark County":"WS2","Nevada Secretary of State":"WS2","New Hanover County Commission — LeShonda Wallace":"WS2","New Hanover County Commission — Rob Zapple":"WS2","North Carolina Supreme Court":"WS2","Nueces County Clerk":"WS2","Nueces County County Judge":"WS2","PA House 137":"WS3","PA House 142":"WS3","PA House 143":"WS3","PA House 144":"WS3","PA House 160":"WS3","PA House 18":"WS3","PA House 44":"WS3","PA House 88":"WS3","PA Senate 16":"WS3","PA Senate 6":"WS3","PA-07 House":"WS1","PA-08 House":"WS1","PA-10 House":"WS1","Pitt County Commission, District 4":"WS2","Pitt County Commission, District 5":"WS2","Pueblo County Clerk-Recorder":"WS2","Tarrant County Clerk":"WS2","Tarrant County Commission, District 2":"WS2","Tarrant County Commission, District 4":"WS2","Tarrant County Judge":"WS2","VA-01 House":"WS1","WI Assembly 21":"WS3","WI Assembly 30":"WS3","WI Assembly 51":"WS3","WI Assembly 53":"WS3","WI Assembly 61":"WS3","WI Assembly 85":"WS3","WI Assembly 88":"WS3","WI Assembly 92":"WS3","WI Senate 17":"WS3","WI Senate 21":"WS3","WI Senate 5":"WS3","WI-03 House":"WS1","Wake County Commission, District 2":"WS2","Washoe County Commissioner, District 3":"WS2","Watauga County Commission, District 1":"WS2","Watauga County Commission, District 2":"WS2","Wyoming, MI City Council — Cassandra Kawka-Vlahos":"WS2","Wyoming, MI City Council — Daniel Rivera":"WS2"
+});
+function citationEventWorkstream(event){
+  const mapped=CITATION_WORKSTREAM_BY_RACE[event.race];
+  if(mapped) return mapped;
+  const match=String(event.promptId||'').match(/^(WS\d+)-/i);
+  return match ? match[1].toUpperCase() : 'Unclassified';
+}
+function citationWorkstreamOptions(){
+  const observed=new Set(Object.values(CITATION_WORKSTREAM_BY_RACE));
+  (CITATION_RACE_SUMMARY_EVENTS||CITATION_EVENTS).forEach(event=>observed.add(citationEventWorkstream(event)));
+  const preferred=['WS1','WS2','WS3','CO-04','GA Governor'];
+  const ordered=preferred.filter(value=>observed.has(value));
+  [...observed].filter(value=>!preferred.includes(value)).sort().forEach(value=>ordered.push(value));
+  return ordered;
 }
 
 function buildFromFetchedData(){
@@ -6474,9 +6509,12 @@ function renderPartnerInsights(page){
    15. CITATION BREAKOUT PAGE
    ============================================================================ */
 function buildCitationsPage(){
+  const citationWorkstreams=citationWorkstreamOptions();
   document.getElementById('page-citations').innerHTML = `
     <div class="page-head"><div><div class="page-title">Citation Breakout</div></div></div>
     <div class="filterbar">
+      <div class="fitem"><label>Workstream</label><select id="cb-workstream">${selectOptions(citationWorkstreams,'All')}</select></div>
+      <div class="fitem"><label>Race level</label><select id="cb-race-level">${selectOptions(ALL_LEVELS,'All')}</select></div>
       <div class="fitem"><label>Office</label><select id="cb-office">${selectOptions(ALL_OFFICES,'All')}</select></div>
       <div class="fitem"><label>State</label><select id="cb-state">${selectOptions(ALL_STATES,'All')}</select></div>
       <div class="fitem"><label>Race</label><select id="cb-race"><option value="all">All</option>${ALL_RACES.map(r=>opt(r.idx,r.label)).join('')}</select></div>
@@ -6569,12 +6607,14 @@ function cbFilteredEvents(){
   return filterCitationEvents(topicFilter==='all' ? (citationFilterNeedsRaceSummary() ? CITATION_RACE_SUMMARY_EVENTS : CITATION_EVENTS) : CITATION_FULL_EVENTS);
 }
 function citationFilterNeedsRaceSummary(){
-  return ['cb-office','cb-state','cb-race'].some(id=>{
+  return ['cb-workstream','cb-race-level','cb-office','cb-state','cb-race'].some(id=>{
     const element=document.getElementById(id);
     return element && element.value!=='all';
   });
 }
 function filterCitationEvents(events){
+  const workstream=document.getElementById('cb-workstream').value;
+  const raceLevel=document.getElementById('cb-race-level').value;
   const office = document.getElementById('cb-office').value, state = document.getElementById('cb-state').value, race = document.getElementById('cb-race').value;
   // Prompt type / Topic controls live on the Citations-by-prompt-type card (not the filterbar
   // above) purely for visual placement (2026-09-09 feedback: having Topic filter the whole page
@@ -6595,6 +6635,8 @@ function filterCitationEvents(events){
   const moreChecked = document.getElementById('cb-src-more').checked;
   const srcTypesOn = {sources_cited: document.getElementById('cb-src-cited').checked, sources_search: document.getElementById('cb-src-search').checked, sources_more: moreChecked, sources_references: moreChecked};
   return events.filter(e=>{
+    if(workstream!=='all' && citationEventWorkstream(e)!==workstream) return false;
+    if(raceLevel!=='all' && e.raceLevel!==raceLevel) return false;
     if(office!=='all' && e.office!==office) return false;
     if(state!=='all' && e.state!==state) return false;
     if(race!=='all' && String(e.raceIdx)!==race) return false;

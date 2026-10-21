@@ -4381,8 +4381,15 @@ async function openConsistencyDetail(rowId, raceIdx){
    ============================================================================ */
 function buildAccuracyPage(){
   buildDimensionPage('accuracy');
-  if(!FULL_SCORE_DATA_READY) return;
   const el = document.getElementById('page-accuracy');
+  if(!FULL_SCORE_DATA_READY){
+    document.getElementById('accuracy-racetable-card').insertAdjacentHTML('beforebegin', `<div class="card section-gap">
+      <div class="card-title">Detailed accuracy analysis</div>
+      <div class="card-caption">The summary above is ready. Load the flagged-statement review only when you need candidate, category, and response-level evidence.</div>
+      <button class="btn ghost sm" onclick="loadDimensionDetail('accuracy')">Load detailed analysis</button>
+    </div>`);
+    return;
+  }
   const priorityHtml = `<div class="card section-gap" id="acc-priority-card">
       <div class="card-title">Accuracy issues — prioritized by candidate</div>
       <div class="card-caption">Ranked by flagged-statement volume, respecting the filters above. Click a candidate, then a category, to see the full statement history in detail.</div>

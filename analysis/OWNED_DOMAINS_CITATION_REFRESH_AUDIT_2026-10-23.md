@@ -26,3 +26,7 @@
 ## Measurement boundary
 
 Peer-category rankings deliberately include **all observed final-answer source rows in the selected races and dates**, including source prompts outside the 2,630 monitored-prompt roster. Owned content-performance and coverage totals use that monitored roster. The dashboard labels this distinction; peer-rank totals should not be equated with article-performance totals. Project article metrics for Courier and Heartland count only their confirmed project URLs, while the peer leaderboard represents the full publisher domains.
+
+## Production smoke check
+
+The production HTML at `https://bullhorn-dashboard.netlify.app/` serves the October 20 citation, citation-detail, Site Analytics, and Owned Domains release pointers while retaining the October 11 share-of-voice pointer. The Citation Breakout rendered with an October 20 range end; its Reference Database category opened the complete domain ranking, and Policy Information Center opened its URL ranking. The inspected browser session logged no JavaScript errors. Partner and Site Analytics pages require their separate reporting passwords, so their visible charts were not inspected in that unauthenticated session; the source assets and numerical audits above were verified independently.

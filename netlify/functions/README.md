@@ -5,6 +5,8 @@ Netlify dashboard — never commit these):
 
 - `DASHBOARD_PASSWORD` — the shared password typed into the login form.
 - `SITE_ANALYTICS_PASSWORD` — the separate password typed only when opening Site Analytics.
+- `INVESTMENT_ANALYTICS_PASSWORD` — optional separate password for partner investment metrics.
+  If omitted, the internal `SITE_ANALYTICS_PASSWORD` is used; partner passwords never qualify.
 - `COURIER_CITATIONS_PASSWORD` — the separate password typed only when opening Courier Citations.
 - `HEARTLAND_CITATIONS_PASSWORD` — the separate password typed only when opening Heartland Signal.
 - `SLEA_CITATIONS_PASSWORD` — the separate password typed only when opening Local Voter Guide.
@@ -38,6 +40,11 @@ must still never be committed or used in browser code.
    cookie for each partner's reporting tab. These are secondary gates within the internally
    authenticated dashboard—not a substitute for a separate deployment and segregated data assets
    if external users will receive dashboard credentials.
+6. `investment-analytics-login.js` and `check-investment-analytics-auth.js` protect commitment,
+   allocation, and cost-per-citation metrics behind a third purpose-bound cookie. Before that
+   cookie is present, the browser renders only a generic “Protected analytics” card.
+   `investment-analytics-data.js` serves the cost bases only after that cookie is verified; they
+   are deliberately absent from the general Owned Domains browser release.
 
 The bucket itself has no `allUsers` grant once this is live — only a valid, freshly-signed URL (or
 the `dashboard-data-reader` service account directly) can read it. Bucket CORS must still allow the

@@ -763,7 +763,7 @@ function siteAnalyticsAssetUrl(relPath){ return heavyAssetUrl(SITE_ANALYTICS_REL
 // download the full citation corpus.  Its immutable release is generated from the same validated
 // citation release as the dashboard's core reports.  Raw evidence stays outside the browser
 // asset, while current-snapshot URL/prompt/provider detail remains available for drilldowns.
-const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-23-v24-oct20/';
+const OWNED_DOMAINS_RELEASE_PREFIX = 'owned-domain-releases/owned-domains-2026-10-23-v25-protected-costs/';
 const OWNED_VOICE_RELEASE_PREFIX = 'owned-voice-releases/observed-oct11-20261018-v1/';
 let ownedDomainsLoadPromise = null;
 let ownedDomainsDetailLoadPromise = null;
@@ -1153,6 +1153,69 @@ async function checkSiteAnalyticsAuthed(){
     return r.ok;
   } catch(e) {
     return false;
+  }
+}
+let INVESTMENT_ANALYTICS_DATA = null;
+let investmentAnalyticsDataLoadPromise = null;
+async function checkInvestmentAnalyticsAuthed(){
+  try {
+    const r = await fetch('/api/check-investment-analytics-auth', { credentials: 'same-origin' });
+    return r.ok;
+  } catch(e) {
+    return false;
+  }
+}
+function ensureInvestmentAnalyticsLoaded(){
+  if(!investmentAnalyticsDataLoadPromise){
+    investmentAnalyticsDataLoadPromise=fetch('/api/investment-analytics-data',{credentials:'same-origin'}).then(r=>{
+      if(!r.ok) throw new Error('Protected analytics are unavailable ('+r.status+').');
+      return r.json();
+    }).then(raw=>{INVESTMENT_ANALYTICS_DATA=raw;return raw;}).catch(error=>{
+      investmentAnalyticsDataLoadPromise=null;
+      throw error;
+    });
+  }
+  return investmentAnalyticsDataLoadPromise;
+}
+function renderProtectedAnalyticsGate(page,errorMsg){
+  const card=document.getElementById('od-protected-analytics-'+page);
+  if(!card) return;
+  card.dataset.unlocked='false';
+  card.innerHTML=`<div class="card-title">Protected analytics</div><div class="card-caption">Enter the internal analytics password to view this section.</div><form id="od-protected-analytics-form-${page}" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;"><label style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;">Analytics password<input id="od-protected-analytics-password-${page}" type="password" autocomplete="current-password" style="padding:8px 10px;font-size:14px;border:1px solid #ccc;border-radius:5px;"></label><button class="btn" type="submit">Unlock</button>${errorMsg?`<span style="color:var(--bad);font-size:13px;">${odEsc(errorMsg)}</span>`:''}</form>`;
+  card.querySelector('#od-protected-analytics-form-'+page)?.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const password=card.querySelector('#od-protected-analytics-password-'+page)?.value||'';
+    const button=event.submitter;
+    if(button) button.disabled=true;
+    try{
+      const response=await fetch('/api/investment-analytics-login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+      if(!response.ok){renderProtectedAnalyticsGate(page,'Incorrect password.');return;}
+      investmentAnalyticsDataLoadPromise=null;
+      await ensureInvestmentAnalyticsLoaded();
+      revealProtectedAnalytics(page);
+    }catch(error){
+      renderProtectedAnalyticsGate(page,'Unlock failed. Check your connection and try again.');
+    }
+  });
+}
+function revealProtectedAnalytics(page){
+  const card=document.getElementById('od-protected-analytics-'+page);
+  if(!card) return;
+  card.dataset.unlocked='true';
+  card.innerHTML=`<div class="card-title">Investment efficiency</div><div class="card-caption" id="od-investment-caption-${page}">Loading commitment allocation and citation efficiency.</div><div class="kpis" id="od-investment-kpis-${page}"></div>`;
+  renderOwnedDomainsPage(page);
+}
+async function initializeProtectedAnalytics(page){
+  if(!document.getElementById('od-protected-analytics-'+page)) return;
+  if(!(await checkInvestmentAnalyticsAuthed())){
+    renderProtectedAnalyticsGate(page);
+    return;
+  }
+  try{
+    await ensureInvestmentAnalyticsLoaded();
+    revealProtectedAnalytics(page);
+  }catch(error){
+    renderProtectedAnalyticsGate(page,'Protected analytics are temporarily unavailable.');
   }
 }
 function renderSiteAnalyticsPasswordGate(errorMsg){
@@ -5390,7 +5453,7 @@ function buildOwnedDomainsPage(page){
   const performanceTrendLayout=page==='siteanalytics'?'row-eq section-gap':'section-gap';
   const layout=odPageTemplate(group);
   const isSocialMedia=group==='social_media';
-  const investmentHtml=['courier','heartland'].includes(group)?`<div class="card od-at-glance od-investment section-gap"><div class="card-title">Investment efficiency</div><div class="card-caption" id="od-investment-caption-${page}">Loading commitment allocation and citation efficiency.</div><div class="kpis" id="od-investment-kpis-${page}"></div></div>`:'';
+  const investmentHtml=['courier','heartland'].includes(group)?`<div class="card od-at-glance section-gap" id="od-protected-analytics-${page}"><div class="card-title">Protected analytics</div><div class="card-caption">Checking access…</div></div>`:'';
   const atGlanceHtml=layout.atGlance?`<section class="section-gap"><div class="section-title" style="margin-bottom:4px;">At a glance</div><div class="card-caption">The top-line AI citation footprint${page==='siteanalytics'?' and Google Search reach':''} for the selected portfolio and filters.</div><div class="${atGlanceLayout}"><div class="card od-at-glance"><div class="card-title">AI citation footprint</div><div class="card-caption" id="od-footprint-caption-${page}"></div><div class="kpis" id="od-footprint-kpis-${page}"></div></div>${odSearchPerformanceHtml(page)}</div>${investmentHtml}</section>`:'';
   const performanceExtras=layout.yield?`<div class="row-eq section-gap"><div class="card"><div class="card-title">Citation yield <span class="od-toggle" id="od-window-toggle-${page}"></span></div><div class="card-caption" id="od-yield-caption-${page}"></div><div id="od-yield-chart-${page}"></div></div><div class="card"><div class="card-title">Citation quality and speed</div><div class="card-caption">The share of eligible ${isSocialMedia?'tracked posts':'articles'} cited by the selected milestone, the share of citations that directly match the post or article's reviewed topic, and time to first observed citation.</div><div id="od-conversion-chart-${page}"></div></div></div>`:'';
   const voiceHtml=`<div class="card section-gap"><div class="card-title">Potential share of voice</div><div class="card-caption">Share of the monitored candidate's substantive answer text that closely reflects this portfolio's cited pages. An observed-answer estimate, not proof of influence, an accuracy score, or an all-answer census.</div><div id="od-voice-chart-${page}" class="small-muted" style="margin-top:10px;">Loading scored answer evidence…</div></div>`;
@@ -5457,6 +5520,7 @@ function buildOwnedDomainsPage(page){
     qualityToggle.querySelectorAll('[data-od-quality-cohort]').forEach(button=>button.addEventListener('click',()=>{odSetState(page,{qualityCohort:button.dataset.odQualityCohort});renderOwnedDomainsPage(page);}));
   }
   renderOwnedDomainsPage(page);
+  initializeProtectedAnalytics(page);
 }
 
 function renderOwnedDomainsPage(page){
@@ -5486,7 +5550,7 @@ function renderOwnedDomainsPage(page){
   const yieldAtWindow=avg(metrics.map(r=>+milestoneFor(r).citation_count||0));
   const direct=metrics.reduce((s,r)=>s+(+milestoneFor(r).direct_topic_citations||0),0), allMilestone=metrics.reduce((s,r)=>s+(+milestoneFor(r).citation_count||0),0);
   const firstDays=metrics.filter(r=>r.first_observed_citation_date&&milestoneFor(r)?.eligible_snapshot).map(r=>(Date.parse(r.first_observed_citation_date)-Date.parse((OWNED_DOMAINS.articles||[]).find(a=>a.id===r.article_id)?.published_on||''))/86400000).filter(v=>Number.isFinite(v)&&v>=0);
-  const cost=config.cost||{};
+  const cost=INVESTMENT_ANALYTICS_DATA?.groups?.[group]?.cost||{};
   const planned=cost.planned_articles||cost.planned_articles_minimum;
   const plannedCostPerArticle=cost.commitment_usd&&planned ? cost.commitment_usd/planned : null;
   const costCohortArticles=eligibleArticles;
@@ -5509,7 +5573,7 @@ function renderOwnedDomainsPage(page){
       investmentKpis.innerHTML=odKpi('Cost basis','Not measured','Awaiting a confirmed commitment and article roster.');
     }else{
       const commitmentLabel=cost.status==='allocated_minimum_commitment'?'minimum planned articles':'planned articles';
-      if(investmentCaption) investmentCaption.textContent=`Allocated at the approved planned-slot rate: ${odCurrency(allocatedCost)} across ${costCohortArticles} confirmed project article${costCohortArticles===1?'':'s'} eligible for the ${latestWindow?'latest snapshot':windowDays+'-day milestone'}. Cost per citation uses ${odNum(allMilestone)} citations from that same article cohort and window; it is not final-program ROI.`;
+      if(investmentCaption) investmentCaption.textContent=`Allocated at the approved planned-slot rate: ${odCurrency(allocatedCost)} across ${costCohortArticles} confirmed project article${costCohortArticles===1?'':'s'} eligible for the ${latestWindow?'latest snapshot':windowDays+'-day milestone'}. Cost per citation uses ${odNum(allMilestone)} citations from that same article cohort and window. Each rolling snapshot is counted once rather than summed across days; this is not final-program ROI.`;
       investmentKpis.innerHTML=[
         odKpi('Planned cost per article',odCurrency(plannedCostPerArticle),`${odNum(planned)} ${commitmentLabel}`),
         odKpi('Allocated cost per citation',odCurrencyCents(allocatedCostPerCitation),allocatedCostPerCitation==null?'No citations in the selected article window':`${odCurrency(allocatedCost)} allocated ÷ ${odNum(allMilestone)} citations`)

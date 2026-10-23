@@ -10,6 +10,7 @@ const crypto = require('crypto');
 
 const COOKIE_NAME = 'aeo_dash_auth';
 const SITE_ANALYTICS_COOKIE_NAME = 'aeo_site_analytics_auth';
+const INVESTMENT_ANALYTICS_COOKIE_NAME = 'aeo_investment_analytics_auth';
 const SESSION_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 function base64url(buf) {
@@ -70,4 +71,12 @@ function purposeSecret(secret, purpose) {
   return crypto.createHmac('sha256', secret).update(`aeo-dashboard:${purpose}`).digest('hex');
 }
 
-module.exports = { COOKIE_NAME, SITE_ANALYTICS_COOKIE_NAME, makeCookieHeader, isValidSession, passwordMatches, purposeSecret };
+module.exports = {
+  COOKIE_NAME,
+  SITE_ANALYTICS_COOKIE_NAME,
+  INVESTMENT_ANALYTICS_COOKIE_NAME,
+  makeCookieHeader,
+  isValidSession,
+  passwordMatches,
+  purposeSecret,
+};
